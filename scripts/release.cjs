@@ -60,22 +60,23 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 完美对齐 DSH 官方 Cordis 补丁 insert 规范，彻底消除 scandir 报错与加载静默失效`;
+  const releaseTitle = `Release ${version} - 完美对齐 DSH 大模型 Tools 规范与 Cordis 依赖注入，彻底打通灵宝等模型原生生图/生视频技能`;
   const releaseBody = `## 🚀 DeepSeek Harness WineToken 插件 ${version}
 
-### 🛠️ 关键修复：根治两项底层加载兼容性病根
+### 🎨 核心重磅更新：彻底打通大模型原生创作工坊技能调用 (Tool Calling)
 
-1. **[完全对齐 Cordis 补丁原生规范 (- insert:)]**
-   - 官方底层 \`applyEntryPatches\` 要求新增插件 Entry 必须包裹在 \`- insert:\` 块内，否则会被系统当做覆盖已有节点并在底层找不到时静默丢弃；
-   - 本次更新完美补全 \`- insert:\` 结构，确保插件在安装和启用后 100% 自动注入 Cordis 容器并加载前端 entries，无需任何手动注入！
+1. **[完全对齐 DSH Tools 官方底层规范 (output.schema)]**
+   - 官方底层 \`@deepseek-ai/dsh-tools\` 强制执行 \`assertSupportedJsonSchema(output.schema)\` 硬断言校验；
+   - 本次更新为 \`winetoken_generate_image\`（AI 绘图）与 \`winetoken_generate_video\`（AI 视频生成）补全了标准 JSON Schema 输出规范与 \`isConcurrencySafe\` 并发标记，工具注册 100% 顺畅通过底层校验！
 
-2. **[彻底消除 scandir ENOENT 异常]**
-   - 移除了 package.json 中 exports 字段的通配规则；
-   - 移除后，DSH 在元数据校验时自动平稳回退至 package.json 的标准 description，100% 杜绝红字崩溃，任何环境下均可平稳加载！
+2. **[Cordis 插件依赖注入 (inject: ['tools', 'systemPrompt'])]**
+   - 严格遵循 Cordis 容器标准，在模块导出声明静态依赖，确保 \`ctx.tools\` 与 \`ctx.systemPrompt\` 准备就绪后再行注入，100% 杜绝时序竞态问题。
 
-3. **[纯净代码库与零侵入原生集成]**
-   - 源码库严格脱敏，不含任何硬编码密钥或测试凭据；
-   - 纯原生 Bundle 架构，多插件无缝共存，零触碰 app.asar。
+3. **[注入会话级动态 System Prompt 认知引导]**
+   - 通过 \`ctx.systemPrompt.section\` 注入专属技能指令，彻底消除大模型（如王者荣耀灵宝、DeepSeek、GLM 等）预训练自认“我是文本模型无法生图”的认知惯性，引导大模型在用户提出绘画、设计、头像或视频需求时 100% 积极触发创作工坊！
+
+4. **[端到端闭环渲染与持久化沉淀]**
+   - 大模型调用创作工坊生成的图片与视频，直接在对话流中以内联高保真卡片/HTML5 播放器渲染，并自动沉淀至左侧「创作工坊」历史库。
 
 ---
 

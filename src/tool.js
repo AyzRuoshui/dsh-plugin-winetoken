@@ -184,7 +184,7 @@ function registerWineTokenTools(ctx) {
       name: 'winetoken_generate_image',
       label: 'WineToken 创作工坊·AI绘图',
       category: 'creative',
-      description: '使用 WineToken 创作工坊直接生成高质量 AI 绘画或艺术图片。当用户要求画图、绘制插画、设计视觉海报、头像或生成概念图时，大模型应自主调用此工具。成果将直接在聊天中展示并存入工坊画廊。',
+      description: '【必须调用的AI绘图技能】当用户要求画图、绘制插画、设计视觉海报、生成头像、概念图或任何视觉图像时，你必须直接调用此工具生成图片，切勿回答自己没有生图能力。成果将直接在聊天中展示并存入工坊画廊。',
       permission: 'safe',
       parameters: {
         type: 'object',
@@ -203,7 +203,7 @@ function registerWineTokenTools(ctx) {
               'gemini-imagen-3',
               'gpt-image-2'
             ],
-            description: '生图基底模型：gpt-image-2.5-flare (推荐/极速性价比), gpt-image-2.5-sunburst (高画质), sensenova-u1.5-lite (4K排版/限免), grok-imagine-image-2.0 (真实摄影光影), gemini-imagen-3 (写实自然)',
+            description: '生图基底模型：gpt-image-2.5-flare (极速高性价比/默认), gpt-image-2.5-sunburst (高画质), sensenova-u1.5-lite (4K排版/限免), grok-imagine-image-2.0 (真实摄影光影), gemini-imagen-3 (写实自然)',
             default: 'gpt-image-2.5-flare'
           },
           size: {
@@ -225,11 +225,28 @@ function registerWineTokenTools(ctx) {
         required: ['prompt']
       },
       output: {
+        schema: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            type: { type: 'string' },
+            model: { type: 'string' },
+            count: { type: 'number' },
+            urls: {
+              type: 'array',
+              items: { type: 'string' }
+            },
+            markdown: { type: 'string' },
+            tip: { type: 'string' },
+            error: { type: 'string' }
+          }
+        },
         render: (args, value) => [{
           type: 'text',
           text: value.markdown || (value.error ? `AI 绘图失败: ${value.error}` : JSON.stringify(value))
         }]
       },
+      isConcurrencySafe: () => true,
       async execute(args) {
         const apiKey = getApiKey();
         if (!apiKey) {
@@ -300,7 +317,7 @@ function registerWineTokenTools(ctx) {
       name: 'winetoken_generate_video',
       label: 'WineToken 创作工坊·AI视频生成',
       category: 'creative',
-      description: '使用 WineToken 创作工坊直接生成连贯动态的电影级 AI 短视频。当用户要求生视频、制作动画、生成动态镜头时调用。成果直接在聊天中通过视频播放器预览并存入工坊画廊。',
+      description: '【必须调用的AI视频生成技能】当用户要求生成视频、制作动态影像、运镜动画或电影镜头时，你必须直接调用此工具生成视频，切勿回答自己没有生成视频能力。成果直接在聊天中通过视频播放器预览并存入工坊画廊。',
       permission: 'safe',
       parameters: {
         type: 'object',
@@ -335,11 +352,25 @@ function registerWineTokenTools(ctx) {
         required: ['prompt']
       },
       output: {
+        schema: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            type: { type: 'string' },
+            model: { type: 'string' },
+            duration: { type: 'number' },
+            video_url: { type: 'string' },
+            markdown: { type: 'string' },
+            tip: { type: 'string' },
+            error: { type: 'string' }
+          }
+        },
         render: (args, value) => [{
           type: 'text',
           text: value.markdown || (value.error ? `AI 绘图失败: ${value.error}` : JSON.stringify(value))
         }]
       },
+      isConcurrencySafe: () => true,
       async execute(args) {
         const apiKey = getApiKey();
         if (!apiKey) {
@@ -400,10 +431,23 @@ function registerWineTokenTools(ctx) {
       }
     });
 
+    // 3. 向会话注入动态 System Prompt 指令
+    if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
+      try {
+        ctx.systemPrompt.section({
+          name: 'tool:winetoken_creative',
+          order: 850,
+          text: () => 'You have full capability to generate images and videos via the WineToken Studio tools (winetoken_generate_image and winetoken_generate_video). When a user asks for drawing, pictures, illustrations, logos, or videos, immediately invoke the corresponding tool. Do NOT refuse or claim that you lack image generation features.'
+        });
+      } catch (err) {
+        console.warn('[WineToken Plugin] 注入 systemPrompt 失败:', err.message);
+      }
+    }
+
     console.log('[WineToken Plugin] ✅ 成功向 DeepSeek Harness 注入 AI 绘图与视频生成 2 大原生 Tools/Skill。');
   };
 
-  // 支持两种 Cordis 上下文模式注入
+  // 支持直接注入与延迟注入
   if (ctx.tools) {
     registerHandler(ctx.tools);
   } else if (typeof ctx.inject === 'function') {

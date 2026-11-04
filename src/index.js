@@ -2,6 +2,9 @@ const { existsSync, readFileSync } = require('fs');
 const { homedir } = require('os');
 const { join } = require('path');
 
+const name = 'dsh-plugin-winetoken';
+const inject = ['tools', 'systemPrompt'];
+
 /**
  * WineToken Harness Host Plugin (CommonJS)
  * 纯原生生命周期随 DSH 容器存亡，开机静默同步最新模型
@@ -74,4 +77,4 @@ function apply(ctx) {
   }, 4 * 3600 * 1000);
 }
 
-module.exports = { apply };
+module.exports = { name, inject, apply };
