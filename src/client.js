@@ -621,6 +621,35 @@
               h('line', { key: 'l1', x1: '12', x2: '12', y1: '20', y2: '10' }),
               h('line', { key: 'l2', x1: '18', x2: '18', y1: '20', y2: '4' }),
               h('line', { key: 'l3', x1: '6', x2: '6', y1: '20', y2: '16' })
+            ],
+            help: [
+              h('circle', { key: 'c', cx: '12', cy: '12', r: '10' }),
+              h('path', { key: 'p', d: 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3' }),
+              h('line', { key: 'l', x1: '12', y1: '17', x2: '12.01', y2: '17' })
+            ],
+            canvas: [
+              h('rect', { key: 'r', x: '3', y: '3', width: '18', height: '18', rx: '2' }),
+              h('path', { key: 'p', d: 'M3 9h18M9 21V9' })
+            ],
+            plus: [
+              h('line', { key: 'l1', x1: '12', y1: '5', x2: '12', y2: '19' }),
+              h('line', { key: 'l2', x1: '5', y1: '12', x2: '19', y2: '12' })
+            ],
+            user: [
+              h('path', { key: 'p1', d: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2' }),
+              h('circle', { key: 'c1', cx: '12', cy: '7', r: '4' })
+            ],
+            link: [
+              h('path', { key: 'p1', d: 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71' }),
+              h('path', { key: 'p2', d: 'M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71' })
+            ],
+            messageSquare: [
+              h('path', { key: 'p1', d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' })
+            ],
+            download: [
+              h('path', { key: 'p1', d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }),
+              h('polyline', { key: 'pl', points: '7 10 12 15 17 10' }),
+              h('line', { key: 'l1', x1: '12', y1: '15', x2: '12', y2: '3' })
             ]
           };
 
@@ -1260,10 +1289,1390 @@
           ]);
         }
 
-        // 3. 创作工坊主工作台 (StudioPage)
+        // ==========================================
+        // 3. 漫剧 AI 画布 (Canvas) 底层双轨存储驱动
+        // ==========================================
+        const CANVAS_TUTORIAL_SEEN_KEY = 'WINETOKEN_CANVAS_TUTORIAL_SEEN_V1';
+
+        const CanvasStorage = {
+          getTutorialDismissed() {
+            try {
+              if (typeof localStorage !== 'undefined') {
+                const val = localStorage.getItem(CANVAS_TUTORIAL_SEEN_KEY);
+                if (val !== null) return val === 'true';
+              }
+            } catch (_) {}
+            try {
+              const fs = require('fs');
+              const path = require('path');
+              const os = require('os');
+              const cfgFile = path.join(os.homedir(), '.dsh', 'storages', 'winetoken_canvas_config.json');
+              if (fs.existsSync(cfgFile)) {
+                const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
+                return Boolean(cfg.tutorialDismissed);
+              }
+            } catch (_) {}
+            return false;
+          },
+          setTutorialDismissed(dismissed) {
+            const flag = Boolean(dismissed);
+            try {
+              if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(CANVAS_TUTORIAL_SEEN_KEY, flag ? 'true' : 'false');
+              }
+            } catch (_) {}
+            try {
+              const fs = require('fs');
+              const path = require('path');
+              const os = require('os');
+              const dir = path.join(os.homedir(), '.dsh', 'storages');
+              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+              const cfgFile = path.join(dir, 'winetoken_canvas_config.json');
+              let cfg = {};
+              if (fs.existsSync(cfgFile)) {
+                try { cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8')); } catch (_) {}
+              }
+              cfg.tutorialDismissed = flag;
+              cfg.lastUpdated = new Date().toISOString();
+              fs.writeFileSync(cfgFile, JSON.stringify(cfg, null, 2), 'utf8');
+            } catch (_) {}
+          }
+        };
+
+        // ==========================================
+        // 4. 交互式探照灯新手引导组件 (零 Emoji 工业风)
+        // ==========================================
+        function CanvasOnboardingTutorial({ isOpen, onClose }) {
+          const theme = useTheme();
+          const [step, setStep] = React.useState(0);
+          const [dontShowAgain, setDontShowAgain] = React.useState(false);
+          const [targetRect, setTargetRect] = React.useState(null);
+
+          const STEPS = [
+            {
+              badge: '01 / 03',
+              tag: '视口操控',
+              targetSelector: '#winetoken-canvas-viewport',
+              title: '无限画布 · 自由平移与阻尼缩放',
+              desc: '专为漫剧多镜头排布打造的高帧率无限画板，支持全局全景鸟瞰与微距细节精修。',
+              tips: [
+                { key: 'Space + 鼠标拖拽 / 鼠标中键', text: '自由平移漫游视野' },
+                { key: '鼠标滚轮 / 触控板捏合', text: '以光标为中心自适应阻尼缩放 (20% ~ 300%)' },
+                { key: 'Ctrl + 0 / 快速复位', text: '一键复位 100% 居中视野' }
+              ]
+            },
+            {
+              badge: '02 / 03',
+              tag: '角色定妆',
+              targetSelector: '#winetoken-canvas-char-deck',
+              title: '角色锚点 · 连线锁定五官与画风',
+              desc: '在左侧建立主角定妆卡，设定外貌特征词与定妆照，拖出连线赋予分镜格，跨镜头绝不崩脸。',
+              tips: [
+                { key: '角色定妆卡', text: '配置主角外貌特征 DNA 标签与标准三视图' },
+                { key: '锚点贝塞尔连线', text: '点击或按住连接点，直接绑定至目标分镜卡' },
+                { key: '多镜头特征流转', text: '多分镜复用同一角色，模型自动注入一致性设定' }
+              ]
+            },
+            {
+              badge: '03 / 03',
+              tag: '分镜出图',
+              targetSelector: '#winetoken-canvas-panels-area',
+              title: '景别运镜 · 对白气泡与条漫拼版',
+              desc: '一键切换特写/中景/全景镜头，输入台词自动生成漫画气泡，一键无损拼版导出 1080P 条漫。',
+              tips: [
+                { key: '标准景别切换', text: '特写 CU、中景 MS、全景 WS 一键注入运镜提示词' },
+                { key: '矢量漫画对白', text: '输入角色台词，自动排布标准漫画对白气泡框' },
+                { key: '导出长图条漫', text: '按镜头时序一键拼接导出符合发布规范的高清长图' }
+              ]
+            }
+          ];
+
+          React.useEffect(() => {
+            if (!isOpen) return;
+            const current = STEPS[step];
+            if (current && current.targetSelector) {
+              const el = document.querySelector(current.targetSelector);
+              if (el) {
+                const r = el.getBoundingClientRect();
+                setTargetRect({ left: r.left, top: r.top, width: r.width, height: r.height });
+                return;
+              }
+            }
+            setTargetRect(null);
+          }, [isOpen, step]);
+
+          React.useEffect(() => {
+            if (!isOpen) return;
+            const onKeyDown = (e) => {
+              if (e.key === 'Escape') handleClose();
+            };
+            window.addEventListener('keydown', onKeyDown);
+            return () => window.removeEventListener('keydown', onKeyDown);
+          }, [isOpen, dontShowAgain]);
+
+          if (!isOpen) return null;
+
+          const current = STEPS[step];
+          const isFirst = step === 0;
+          const isLast = step === STEPS.length - 1;
+
+          const handleClose = () => {
+            if (dontShowAgain) CanvasStorage.setTutorialDismissed(true);
+            onClose();
+          };
+
+          const handleNext = () => {
+            if (isLast) handleClose();
+            else setStep(s => s + 1);
+          };
+
+          const handlePrev = () => {
+            if (!isFirst) setStep(s => s - 1);
+          };
+
+          // SVG 探照灯抠孔遮罩
+          const renderMask = () => {
+            const vw = typeof window !== 'undefined' ? window.innerWidth : 1920;
+            const vh = typeof window !== 'undefined' ? window.innerHeight : 1080;
+            if (!targetRect) {
+              return h('path', { d: `M 0 0 H ${vw} V ${vh} H 0 Z`, fill: 'rgba(0, 0, 0, 0.65)' });
+            }
+            const pad = 8;
+            const r = 10;
+            const x = Math.max(0, targetRect.left - pad);
+            const y = Math.max(0, targetRect.top - pad);
+            const w = targetRect.width + pad * 2;
+            const hVal = targetRect.height + pad * 2;
+
+            const pathD = [
+              `M 0 0 H ${vw} V ${vh} H 0 Z`,
+              `M ${x + r} ${y}`,
+              `H ${x + w - r}`,
+              `A ${r} ${r} 0 0 1 ${x + w} ${y + r}`,
+              `V ${y + hVal - r}`,
+              `A ${r} ${r} 0 0 1 ${x + w - r} ${y + hVal}`,
+              `H ${x + r}`,
+              `A ${r} ${r} 0 0 1 ${x} ${y + hVal - r}`,
+              `V ${y + r}`,
+              `A ${r} ${r} 0 0 1 ${x + r} ${y}`,
+              `Z`
+            ].join(' ');
+
+            return h('path', { d: pathD, fill: 'rgba(0, 0, 0, 0.65)', fillRule: 'evenodd' });
+          };
+
+          // 卡片自适应位置
+          const getCardStyle = () => {
+            if (!targetRect) {
+              return { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+            }
+            const cardW = 480;
+            const cardH = 320;
+            const vh = window.innerHeight;
+            const vw = window.innerWidth;
+
+            let left = targetRect.left + (targetRect.width - cardW) / 2;
+            left = Math.max(20, Math.min(vw - cardW - 20, left));
+
+            let top = targetRect.top + targetRect.height + 16;
+            if (top + cardH > vh - 20) {
+              top = targetRect.top - cardH - 16;
+            }
+            top = Math.max(20, Math.min(vh - cardH - 20, top));
+
+            return { position: 'fixed', left: `${left}px`, top: `${top}px` };
+          };
+
+          return h('div', {
+            style: { position: 'fixed', inset: 0, zIndex: 9999 }
+          }, [
+            h('svg', {
+              key: 'mask-svg',
+              style: { position: 'fixed', inset: 0, width: '100%', height: '100%' },
+              onClick: handleClose
+            }, [renderMask()]),
+
+            h('div', {
+              key: 'card',
+              style: {
+                ...getCardStyle(),
+                width: '480px',
+                maxWidth: '92vw',
+                backgroundColor: theme.popoverBg,
+                border: `1px solid ${theme.popoverBorder}`,
+                borderRadius: '12px',
+                boxShadow: '0 20px 45px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+                zIndex: 10000,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                userSelect: 'none'
+              },
+              onClick: (e) => e.stopPropagation()
+            }, [
+              h('div', {
+                style: {
+                  padding: '12px 18px',
+                  borderBottom: `1px solid ${theme.chipNormalBorder}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }
+              }, [
+                h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+                  h('span', {
+                    style: {
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      backgroundColor: theme.isDark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)',
+                      color: '#22c55e',
+                      border: '1px solid rgba(34, 197, 94, 0.3)'
+                    }
+                  }, current.badge),
+                  h('span', { style: { fontSize: '12px', color: theme.textMuted, fontWeight: 500 } }, current.tag)
+                ]),
+                h('button', {
+                  type: 'button',
+                  onClick: handleClose,
+                  style: {
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '12px',
+                    color: theme.textMuted,
+                    cursor: 'pointer',
+                    padding: '4px 6px',
+                    borderRadius: '4px'
+                  }
+                }, '跳过 (Esc)')
+              ]),
+
+              h('div', {
+                style: { padding: '18px 20px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }
+              }, [
+                h('h3', { style: { margin: 0, fontSize: '15px', fontWeight: 600, color: theme.textPrimary } }, current.title),
+                h('p', { style: { margin: 0, fontSize: '12px', lineHeight: '1.6', color: theme.textSecondary } }, current.desc),
+                h('div', {
+                  style: {
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    marginTop: '4px',
+                    backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                    padding: '10px 12px',
+                    borderRadius: '6px',
+                    border: `1px solid ${theme.chipNormalBorder}`
+                  }
+                }, current.tips.map((tip, i) => h('div', {
+                  key: i,
+                  style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }
+                }, [
+                  h('span', {
+                    style: {
+                      fontSize: '11px',
+                      fontFamily: 'ui-monospace, monospace',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      backgroundColor: theme.isDark ? '#27272a' : '#f4f4f5',
+                      border: `1px solid ${theme.chipNormalBorder}`,
+                      color: theme.textPrimary
+                    }
+                  }, tip.key),
+                  h('span', { style: { fontSize: '11.5px', color: theme.textSecondary } }, tip.text)
+                ])))
+              ]),
+
+              h('div', {
+                style: {
+                  padding: '12px 18px',
+                  borderTop: `1px solid ${theme.chipNormalBorder}`,
+                  backgroundColor: theme.isDark ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.01)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }
+              }, [
+                h('label', {
+                  style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: theme.textMuted, cursor: 'pointer' }
+                }, [
+                  h('input', {
+                    type: 'checkbox',
+                    checked: dontShowAgain,
+                    onChange: (e) => setDontShowAgain(e.target.checked),
+                    style: { cursor: 'pointer', accentColor: '#22c55e' }
+                  }),
+                  '不再自动弹出'
+                ]),
+                h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+                  !isFirst && h('button', {
+                    type: 'button',
+                    onClick: handlePrev,
+                    style: {
+                      padding: '5px 12px',
+                      fontSize: '12px',
+                      borderRadius: '5px',
+                      border: `1px solid ${theme.chipNormalBorder}`,
+                      backgroundColor: 'transparent',
+                      color: theme.textPrimary,
+                      cursor: 'pointer'
+                    }
+                  }, '上一步'),
+                  h('button', {
+                    type: 'button',
+                    onClick: handleNext,
+                    style: {
+                      padding: '5px 16px',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      borderRadius: '5px',
+                      border: 'none',
+                      backgroundColor: theme.btnPrimaryBg,
+                      color: theme.btnPrimaryText,
+                      cursor: 'pointer'
+                    }
+                  }, isLast ? '开始创作' : '下一步')
+                ])
+              ])
+            ])
+          ]);
+        }
+
+        // ==========================================
+        // 5. 漫剧 AI 画布全景工作台组件 (CanvasWorkspace)
+        // ==========================================
+        function CanvasWorkspace({ theme: propTheme, isVip, isSvip, isSuper, onOpenTutorial }) {
+          const hookTheme = useTheme();
+          const theme = propTheme || hookTheme;
+          // 视口变换参数 (基于 Direct DOM Transform 硬件加速)
+          const viewportRef = React.useRef({ x: 40, y: 30, zoom: 1 });
+          const canvasLayerRef = React.useRef(null);
+          const isDraggingRef = React.useRef(false);
+          const dragStartRef = React.useRef({ x: 0, y: 0, originX: 0, originY: 0 });
+          const isSpacePressedRef = React.useRef(false);
+          const [zoomDisplay, setZoomDisplay] = React.useState(100);
+
+          // 角色资产库
+          const [characters, setCharacters] = React.useState([
+            {
+              id: 'char_chuyun',
+              name: '主角·楚云',
+              dna: '少年剑客，黑袍高领，银白碎发，剑眉星目，冷峻英气，电影质感',
+              avatar: ''
+            }
+          ]);
+
+          // 分镜格资产
+          const [panels, setPanels] = React.useState([
+            {
+              id: 'shot_01',
+              num: 1,
+              x: 360,
+              y: 60,
+              width: 280,
+              height: 420,
+              aspectRatio: '2:3',
+              shot: 'CU',
+              shotLabel: '特写',
+              prompt: '少年剑客面部特写，发丝微动，冷峻眼神，侧逆光，细致皮肤纹理，虚化背景，电影光影',
+              dialogue: '“这一剑，我已等了三年。”',
+              characterId: 'char_chuyun',
+              imageUrl: '',
+              isGenerating: false,
+              stagingCandidateUrl: null
+            },
+            {
+              id: 'shot_02',
+              num: 2,
+              x: 690,
+              y: 60,
+              width: 360,
+              height: 240,
+              aspectRatio: '16:9',
+              shot: 'MS',
+              shotLabel: '中景',
+              prompt: '雨夜长街，黑袍剑客拔剑而立，剑锋泛起寒光，雨水飞溅，深邃冷色调，宽银幕构图',
+              dialogue: '长街风雨骤急，杀气四伏。',
+              characterId: 'char_chuyun',
+              imageUrl: '',
+              isGenerating: false,
+              stagingCandidateUrl: null
+            }
+          ]);
+
+          // 更新视图 Transform
+          const updateTransform = () => {
+            if (!canvasLayerRef.current) return;
+            const { x, y, zoom } = viewportRef.current;
+            canvasLayerRef.current.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${zoom})`;
+          };
+
+          // 键盘空格监听
+          React.useEffect(() => {
+            const onKeyDown = (e) => {
+              if (e.code === 'Space' && !e.repeat && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                isSpacePressedRef.current = true;
+                if (canvasLayerRef.current) canvasLayerRef.current.style.cursor = 'grab';
+              }
+            };
+            const onKeyUp = (e) => {
+              if (e.code === 'Space') {
+                isSpacePressedRef.current = false;
+                if (canvasLayerRef.current) canvasLayerRef.current.style.cursor = 'default';
+              }
+            };
+            window.addEventListener('keydown', onKeyDown);
+            window.addEventListener('keyup', onKeyUp);
+            return () => {
+              window.removeEventListener('keydown', onKeyDown);
+              window.removeEventListener('keyup', onKeyUp);
+            };
+          }, []);
+
+          // 滚轮缩放处理 (支持光标定点缩放与阻尼平滑)
+          const handleWheel = (e) => {
+            e.preventDefault();
+            const container = canvasLayerRef.current?.parentElement;
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            let delta = e.deltaY;
+            if (e.deltaMode === 1) delta *= 16;
+            const clampedDelta = Math.max(-80, Math.min(80, delta));
+            const factor = 1 - clampedDelta * 0.0018;
+
+            const cur = viewportRef.current;
+            const nextZoom = Math.min(3.0, Math.max(0.2, cur.zoom * factor));
+            const ratio = nextZoom / cur.zoom;
+
+            cur.x = mouseX - (mouseX - cur.x) * ratio;
+            cur.y = mouseY - (mouseY - cur.y) * ratio;
+            cur.zoom = nextZoom;
+
+            requestAnimationFrame(() => {
+              updateTransform();
+              setZoomDisplay(Math.round(nextZoom * 100));
+            });
+          };
+
+          // 鼠标按下漫游
+          const handlePointerDown = (e) => {
+            if (e.button === 1 || (e.button === 0 && isSpacePressedRef.current)) {
+              e.preventDefault();
+              isDraggingRef.current = true;
+              dragStartRef.current = {
+                x: e.clientX,
+                y: e.clientY,
+                originX: viewportRef.current.x,
+                originY: viewportRef.current.y
+              };
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            }
+          };
+
+          const handlePointerMove = (e) => {
+            if (!isDraggingRef.current) return;
+            const dx = e.clientX - dragStartRef.current.x;
+            const dy = e.clientY - dragStartRef.current.y;
+            viewportRef.current.x = dragStartRef.current.originX + dx;
+            viewportRef.current.y = dragStartRef.current.originY + dy;
+            requestAnimationFrame(updateTransform);
+          };
+
+          const handlePointerUp = (e) => {
+            if (isDraggingRef.current) {
+              isDraggingRef.current = false;
+              e.currentTarget.releasePointerCapture?.(e.pointerId);
+            }
+          };
+
+          // 视口快速复位
+          const handleResetView = () => {
+            viewportRef.current = { x: 40, y: 30, zoom: 1 };
+            updateTransform();
+            setZoomDisplay(100);
+          };
+
+          const handleZoomStep = (inOut) => {
+            const cur = viewportRef.current;
+            const factor = inOut ? 1.2 : 0.833;
+            const nextZoom = Math.min(3.0, Math.max(0.2, cur.zoom * factor));
+            cur.zoom = nextZoom;
+            updateTransform();
+            setZoomDisplay(Math.round(nextZoom * 100));
+          };
+
+          // 添加新角色锚点卡
+          const handleAddCharacter = () => {
+            const newChar = {
+              id: `char_${Date.now()}`,
+              name: `新角色 ${characters.length + 1}`,
+              dna: '面容清晰，发型规整，服饰统一，插画质感',
+              avatar: ''
+            };
+            setCharacters(prev => [...prev, newChar]);
+          };
+
+          // 添加新分镜卡
+          const handleAddPanel = (aspectRatio = '2:3', shot = 'CU', shotLabel = '特写') => {
+            const nextNum = panels.length + 1;
+            const lastPanel = panels[panels.length - 1];
+            const newX = lastPanel ? lastPanel.x + lastPanel.width + 40 : 360;
+            const newY = lastPanel ? lastPanel.y : 60;
+            const w = aspectRatio === '16:9' ? 360 : 280;
+            const h = aspectRatio === '16:9' ? 240 : 420;
+
+            const newP = {
+              id: `shot_${Date.now()}`,
+              num: nextNum,
+              x: newX,
+              y: newY,
+              width: w,
+              height: h,
+              aspectRatio: aspectRatio,
+              shot: shot,
+              shotLabel: shotLabel,
+              prompt: `镜头 #${nextNum}，人物画面，专业漫剧光影，构图严谨`,
+              dialogue: '',
+              characterId: characters[0]?.id || '',
+              imageUrl: '',
+              isGenerating: false,
+              stagingCandidateUrl: null
+            };
+            setPanels(prev => [...prev, newP]);
+          };
+
+          // 加载四格漫画预设模版
+          const handleLoad4KomaTemplate = () => {
+            const char = {
+              id: 'char_hero',
+              name: '主角·林风',
+              dna: '黑发少年，高领运动夹克，眼神明朗，现代漫画风格',
+              avatar: ''
+            };
+            setCharacters([char]);
+            setPanels([
+              {
+                id: 'koma_1',
+                num: 1,
+                x: 360,
+                y: 60,
+                width: 280,
+                height: 280,
+                aspectRatio: '1:1',
+                shot: 'WS',
+                shotLabel: '远景',
+                prompt: '晨光洒落在空旷的操场，安静而开阔，日系清新漫画风格',
+                dialogue: '“新学期的第一天，天气晴朗。”',
+                characterId: 'char_hero',
+                imageUrl: '',
+                isGenerating: false,
+                stagingCandidateUrl: null
+              },
+              {
+                id: 'koma_2',
+                num: 2,
+                x: 680,
+                y: 60,
+                width: 280,
+                height: 280,
+                aspectRatio: '1:1',
+                shot: 'MS',
+                shotLabel: '中景',
+                prompt: '少年小跑奔向校门口，背着单肩包，神情匆忙',
+                dialogue: '“糟了，闹钟居然没响！”',
+                characterId: 'char_hero',
+                imageUrl: '',
+                isGenerating: false,
+                stagingCandidateUrl: null
+              },
+              {
+                id: 'koma_3',
+                num: 3,
+                x: 1000,
+                y: 60,
+                width: 280,
+                height: 280,
+                aspectRatio: '1:1',
+                shot: 'CU',
+                shotLabel: '特写',
+                prompt: '少年惊讶的表情特写，目光直视前方，大汗淋漓',
+                dialogue: '“校门……已经关上了？！”',
+                characterId: 'char_hero',
+                imageUrl: '',
+                isGenerating: false,
+                stagingCandidateUrl: null
+              },
+              {
+                id: 'koma_4',
+                num: 4,
+                x: 1320,
+                y: 60,
+                width: 280,
+                height: 280,
+                aspectRatio: '1:1',
+                shot: 'FS',
+                shotLabel: '全景',
+                prompt: '少年呆呆站在紧闭的校门前，头顶乌鸦飞过，幽默漫画定格',
+                dialogue: '“今天原来是星期天啊……”',
+                characterId: 'char_hero',
+                imageUrl: '',
+                isGenerating: false,
+                stagingCandidateUrl: null
+              }
+            ]);
+            handleResetView();
+          };
+
+          // 执行单格分镜绘制 (调度商汤 4K 限免或 GPT-Image)
+          const handleGeneratePanel = async (panelId) => {
+            const target = panels.find(p => p.id === panelId);
+            if (!target || target.isGenerating) return;
+
+            setPanels(prev => prev.map(p => p.id === panelId ? { ...p, isGenerating: true } : p));
+
+            try {
+              const char = characters.find(c => c.id === target.characterId);
+              let fullPrompt = target.prompt;
+              if (char) {
+                fullPrompt = `${char.dna}，${target.prompt}，${target.shotLabel}镜头，画面张力`;
+              }
+
+              // 尺寸对齐
+              let reqSize = '1024x1024';
+              if (target.aspectRatio === '2:3') reqSize = '1024x1536';
+              else if (target.aspectRatio === '16:9') reqSize = '1536x1024';
+
+              const apiKey = getKey();
+              if (!apiKey) throw new Error('未检测到 API Key，请先点击顶栏钥匙图标输入');
+
+              const payload = {
+                model: 'sensenova-u1.5-lite',
+                prompt: fullPrompt,
+                size: reqSize,
+                n: 1
+              };
+              if (char && char.avatar) {
+                payload.image = char.avatar;
+                payload.image_url = char.avatar;
+              }
+
+              // 优先使用限免 4K 模型 sensenova-u1.5-lite
+              const res = await fetch(`${BASE_URL}/v1/images/generations`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify(payload)
+              });
+
+              if (!res.ok) {
+                const errJson = await res.json().catch(() => ({}));
+                throw new Error(errJson.error?.message || `HTTP ${res.status}`);
+              }
+
+              const data = await res.json();
+              const url = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : '');
+              if (!url) throw new Error('接口未返回有效图像');
+
+              // 采用 InvokeAI 风格的幽灵暂存层
+              setPanels(prev => prev.map(p => p.id === panelId ? {
+                ...p,
+                isGenerating: false,
+                stagingCandidateUrl: url
+              } : p));
+
+              updateBilling();
+            } catch (err) {
+              alert(`分镜 #${target.num} 生成失败: ${err.message}`);
+              setPanels(prev => prev.map(p => p.id === panelId ? { ...p, isGenerating: false } : p));
+            }
+          };
+
+          // 幽灵暂存动作
+          const handleAcceptStaging = (panelId) => {
+            setPanels(prev => prev.map(p => {
+              if (p.id === panelId && p.stagingCandidateUrl) {
+                return { ...p, imageUrl: p.stagingCandidateUrl, stagingCandidateUrl: null };
+              }
+              return p;
+            }));
+          };
+
+          const handleDiscardStaging = (panelId) => {
+            setPanels(prev => prev.map(p => {
+              if (p.id === panelId) {
+                return { ...p, stagingCandidateUrl: null };
+              }
+              return p;
+            }));
+          };
+
+          // 一键导出高清条漫长图 (零依赖 HTML5 Canvas 像素拼接)
+          const handleExportStrip = async () => {
+            const readyPanels = panels.filter(p => !!p.imageUrl);
+            if (readyPanels.length === 0) {
+              alert('画布中尚无已生成的画面，请先完成至少一个分镜的绘制后再导出。');
+              return;
+            }
+
+            const standardW = 1080;
+            const gutter = 32;
+            let totalH = gutter;
+
+            // 计算总高
+            const panelMetrics = readyPanels.map(p => {
+              const h = Math.round((standardW * p.height) / p.width);
+              totalH += h + gutter;
+              return { ...p, renderH: h };
+            });
+
+            const canvas = document.createElement('canvas');
+            canvas.width = standardW;
+            canvas.height = totalH;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#111827';
+            ctx.fillRect(0, 0, standardW, totalH);
+
+            let curY = gutter;
+            for (const item of panelMetrics) {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              await new Promise((res, rej) => {
+                img.onload = res;
+                img.onerror = rej;
+                img.src = item.imageUrl;
+              }).catch(() => {});
+
+              if (img.width > 0) {
+                ctx.drawImage(img, 0, curY, standardW, item.renderH);
+              }
+
+              // 绘制台词对白气泡
+              if (item.dialogue) {
+                ctx.save();
+                const bubW = Math.min(standardW - 80, 520);
+                const bubH = 54;
+                const bubX = (standardW - bubW) / 2;
+                const bubY = curY + item.renderH - bubH - 24;
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                ctx.strokeStyle = '#111827';
+                ctx.lineWidth = 3;
+
+                ctx.beginPath();
+                ctx.roundRect(bubX, bubY, bubW, bubH, 10);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#111827';
+                ctx.font = 'bold 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(item.dialogue, standardW / 2, bubY + bubH / 2);
+                ctx.restore();
+              }
+
+              curY += item.renderH + gutter;
+            }
+
+            const dataUrl = canvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.download = `winetoken-comic-strip-${Date.now()}.png`;
+            a.href = dataUrl;
+            a.click();
+          };
+
+          return h('div', {
+            id: 'winetoken-canvas-viewport',
+            style: {
+              width: '100%',
+              height: '100%',
+              overflow: 'hidden',
+              position: 'relative',
+              backgroundColor: theme.isDark ? '#0b0f17' : '#f8fafc',
+              backgroundImage: theme.isDark
+                ? 'radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px)'
+                : 'radial-gradient(rgba(0, 0, 0, 0.08) 1px, transparent 1px)',
+              backgroundSize: '24px 24px',
+              userSelect: 'none'
+            },
+            onWheel: handleWheel,
+            onPointerDown: handlePointerDown,
+            onPointerMove: handlePointerMove,
+            onPointerUp: handlePointerUp
+          }, [
+            // 1. 顶部悬浮工具栏 (黑白极简纯文字与矢量图标)
+            h('div', {
+              style: {
+                position: 'absolute',
+                top: '16px',
+                left: '20px',
+                zIndex: 100,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                backgroundColor: theme.popoverBg,
+                border: `1px solid ${theme.popoverBorder}`,
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)'
+              }
+            }, [
+              h('button', {
+                type: 'button',
+                onClick: handleAddCharacter,
+                style: {
+                  padding: '5px 10px',
+                  borderRadius: '5px',
+                  border: `1px solid ${theme.borderSubtle}`,
+                  backgroundColor: 'transparent',
+                  color: theme.textPrimary,
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px'
+                }
+              }, [h(Icon, { name: 'user', size: 13 }), h('span', {}, '添加角色')]),
+
+              h('button', {
+                type: 'button',
+                onClick: () => handleAddPanel('2:3', 'CU', '特写'),
+                style: {
+                  padding: '5px 10px',
+                  borderRadius: '5px',
+                  border: `1px solid ${theme.borderSubtle}`,
+                  backgroundColor: 'transparent',
+                  color: theme.textPrimary,
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px'
+                }
+              }, [h(Icon, { name: 'plus', size: 13 }), h('span', {}, '添加分镜')]),
+
+              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 4px' } }),
+
+              h('button', {
+                type: 'button',
+                onClick: handleLoad4KomaTemplate,
+                style: {
+                  padding: '5px 10px',
+                  borderRadius: '5px',
+                  border: `1px solid ${theme.borderSubtle}`,
+                  backgroundColor: 'transparent',
+                  color: theme.textSecondary,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px'
+                }
+              }, [h(Icon, { name: 'canvas', size: 13 }), h('span', {}, '四格模版')]),
+
+              h('button', {
+                type: 'button',
+                onClick: handleExportStrip,
+                style: {
+                  padding: '5px 12px',
+                  borderRadius: '5px',
+                  border: 'none',
+                  backgroundColor: theme.btnPrimaryBg,
+                  color: theme.btnPrimaryText,
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }
+              }, [h(Icon, { name: 'download', size: 13 }), h('span', {}, '导出条漫长图')])
+            ]),
+
+            // 2. 右下角视口浮岛 (平移缩放比 + 帮助入口)
+            h('div', {
+              style: {
+                position: 'absolute',
+                bottom: '16px',
+                right: '20px',
+                zIndex: 100,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '5px 10px',
+                borderRadius: '8px',
+                backgroundColor: theme.popoverBg,
+                border: `1px solid ${theme.popoverBorder}`,
+                boxShadow: '0 6px 18px rgba(0,0,0,0.2)'
+              }
+            }, [
+              h('button', {
+                type: 'button',
+                onClick: () => handleZoomStep(false),
+                style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '13px', padding: '2px 6px' }
+              }, '-'),
+              h('span', {
+                onClick: handleResetView,
+                style: { fontSize: '11px', fontFamily: 'monospace', color: theme.textPrimary, cursor: 'pointer', padding: '0 4px' },
+                title: '点击重置为 100%'
+              }, `${zoomDisplay}%`),
+              h('button', {
+                type: 'button',
+                onClick: () => handleZoomStep(true),
+                style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '13px', padding: '2px 6px' }
+              }, '+'),
+              h('div', { style: { width: '1px', height: '14px', backgroundColor: theme.borderSubtle, margin: '0 4px' } }),
+              h('button', {
+                type: 'button',
+                onClick: onOpenTutorial,
+                style: {
+                  background: 'none',
+                  border: 'none',
+                  color: theme.textSecondary,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11.5px',
+                  padding: '2px 6px'
+                },
+                title: '打开漫剧新手引导教程'
+              }, [h(Icon, { name: 'help', size: 13 }), h('span', {}, '教程')])
+            ]),
+
+            // 3. 变换视口层 (包含连线 + 角色卡 + 分镜卡)
+            h('div', {
+              ref: canvasLayerRef,
+              style: {
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                transformOrigin: '0 0',
+                willChange: 'transform'
+              }
+            }, [
+              // 3.1 贝塞尔拓扑流光连线层
+              h('svg', {
+                style: {
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  width: '5000px',
+                  height: '5000px',
+                  pointerEvents: 'none'
+                }
+              }, panels.map(p => {
+                const char = characters.find(c => c.id === p.characterId);
+                if (!char) return null;
+                const startX = 260; // 角色卡右锚点
+                const startY = 140;
+                const endX = p.x;
+                const endY = p.y + 30;
+                const ctrlX1 = startX + (endX - startX) * 0.5;
+                const ctrlY1 = startY;
+                const ctrlX2 = startX + (endX - startX) * 0.5;
+                const ctrlY2 = endY;
+
+                return h('path', {
+                  key: `wire_${p.id}`,
+                  d: `M ${startX} ${startY} C ${ctrlX1} ${ctrlY1}, ${ctrlX2} ${ctrlY2}, ${endX} ${endY}`,
+                  fill: 'none',
+                  stroke: theme.isDark ? '#06b6d4' : '#0891b2',
+                  strokeWidth: 2,
+                  strokeDasharray: '4 4',
+                  opacity: 0.65
+                });
+              })),
+
+              // 3.2 角色资产库锚点卡
+              h('div', {
+                id: 'winetoken-canvas-char-deck',
+                style: {
+                  position: 'absolute',
+                  left: '40px',
+                  top: '60px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '16px'
+                }
+              }, characters.map(c => h('div', {
+                key: c.id,
+                style: {
+                  width: '220px',
+                  padding: '14px',
+                  borderRadius: '10px',
+                  backgroundColor: theme.bgCard,
+                  border: `1px solid ${theme.borderSubtle}`,
+                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }
+              }, [
+                h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
+                  h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, [
+                    h(Icon, { name: 'user', size: 14 }),
+                    h('input', {
+                      value: c.name,
+                      onChange: (e) => {
+                        const val = e.target.value;
+                        setCharacters(prev => prev.map(x => x.id === c.id ? { ...x, name: val } : x));
+                      },
+                      style: {
+                        background: 'transparent',
+                        border: 'none',
+                        color: theme.textPrimary,
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        width: '120px'
+                      }
+                    })
+                  ]),
+                  h('span', {
+                    style: {
+                      fontSize: '10px',
+                      color: '#06b6d4',
+                      padding: '1px 5px',
+                      borderRadius: '3px',
+                      backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                      border: '1px solid rgba(6, 182, 212, 0.25)'
+                    }
+                  }, '角色锚点')
+                ]),
+
+                h('div', {
+                  onClick: () => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/png,image/jpeg,image/webp';
+                    input.onchange = (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (evt) => {
+                        const b64 = evt.target?.result;
+                        if (b64) {
+                          setCharacters(prev => prev.map(x => x.id === c.id ? { ...x, avatar: b64 } : x));
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    };
+                    input.click();
+                  },
+                  title: '点击上传主角定妆照 (PNG/JPG/WEBP)',
+                  style: {
+                    height: '100px',
+                    borderRadius: '6px',
+                    backgroundColor: theme.isDark ? '#181b22' : '#f1f5f9',
+                    border: `1px dashed ${c.avatar ? '#06b6d4' : theme.borderSubtle}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: theme.textMuted,
+                    fontSize: '11px',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    overflow: 'hidden'
+                  }
+                }, [
+                  c.avatar
+                    ? h('div', { style: { position: 'relative', width: '100%', height: '100%' } }, [
+                        h('img', { src: c.avatar, style: { width: '100%', height: '100%', objectFit: 'cover' } }),
+                        h('button', {
+                          type: 'button',
+                          onClick: (e) => {
+                            e.stopPropagation();
+                            setCharacters(prev => prev.map(x => x.id === c.id ? { ...x, avatar: '' } : x));
+                          },
+                          title: '清除定妆照',
+                          style: {
+                            position: 'absolute',
+                            top: '4px',
+                            right: '4px',
+                            background: 'rgba(0, 0, 0, 0.65)',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '2px 5px',
+                            fontSize: '10px',
+                            cursor: 'pointer'
+                          }
+                        }, '清除')
+                      ])
+                    : h('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' } }, [
+                        h(Icon, { name: 'camera', size: 16 }),
+                        h('span', {}, '上传主角定妆照')
+                      ])
+                ]),
+
+                h('textarea', {
+                  value: c.dna,
+                  onChange: (e) => {
+                    const val = e.target.value;
+                    setCharacters(prev => prev.map(x => x.id === c.id ? { ...x, dna: val } : x));
+                  },
+                  placeholder: '输入角色固定外貌特征 DNA 标签...',
+                  rows: 2,
+                  style: {
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '6px',
+                    fontSize: '11px',
+                    borderRadius: '4px',
+                    backgroundColor: theme.isDark ? '#141720' : '#ffffff',
+                    border: `1px solid ${theme.borderSubtle}`,
+                    color: theme.textSecondary,
+                    resize: 'none',
+                    lineHeight: '1.4'
+                  }
+                })
+              ]))),
+
+              // 3.3 分镜格卡片群
+              h('div', {
+                id: 'winetoken-canvas-panels-area'
+              }, panels.map(p => {
+                const char = characters.find(c => c.id === p.characterId);
+                const isCandidate = Boolean(p.stagingCandidateUrl);
+                const displayUrl = p.stagingCandidateUrl || p.imageUrl;
+
+                return h('div', {
+                  key: p.id,
+                  style: {
+                    position: 'absolute',
+                    left: `${p.x}px`,
+                    top: `${p.y}px`,
+                    width: `${p.width}px`,
+                    backgroundColor: theme.bgCard,
+                    border: `1px solid ${isCandidate ? '#f59e0b' : theme.borderSubtle}`,
+                    borderRadius: '10px',
+                    boxShadow: isCandidate
+                      ? '0 12px 30px rgba(245, 158, 11, 0.25)'
+                      : '0 12px 28px rgba(0, 0, 0, 0.25)',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }
+                }, [
+                  // 镜号与景别顶栏
+                  h('div', {
+                    style: {
+                      padding: '8px 12px',
+                      borderBottom: `1px solid ${theme.borderSubtle}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'
+                    }
+                  }, [
+                    h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, [
+                      h('span', { style: { fontSize: '12px', fontWeight: 700, color: theme.textPrimary } }, `#${p.num}`),
+                      h('span', {
+                        style: {
+                          fontSize: '10px',
+                          color: '#06b6d4',
+                          border: '1px solid rgba(6, 182, 212, 0.3)',
+                          padding: '1px 5px',
+                          borderRadius: '3px'
+                        }
+                      }, p.shotLabel),
+                      char && h('span', {
+                        style: {
+                          fontSize: '10px',
+                          color: theme.textSecondary,
+                          backgroundColor: theme.isDark ? '#27272a' : '#f4f4f5',
+                          padding: '1px 5px',
+                          borderRadius: '3px'
+                        }
+                      }, char.name)
+                    ]),
+                    h('button', {
+                      type: 'button',
+                      onClick: () => {
+                        setPanels(prev => prev.filter(x => x.id !== p.id));
+                      },
+                      style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '11px' }
+                    }, '删除')
+                  ]),
+
+                  // 画面展示区 (支持 InvokeAI 幽灵暂存层)
+                  h('div', {
+                    style: {
+                      width: '100%',
+                      height: `${p.height}px`,
+                      backgroundColor: theme.isDark ? '#0f1219' : '#f1f5f9',
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden'
+                    }
+                  }, [
+                    displayUrl
+                      ? h('img', {
+                          src: displayUrl,
+                          style: {
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            filter: isCandidate ? 'brightness(0.95)' : 'none'
+                          }
+                        })
+                      : h('div', {
+                          style: {
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '6px',
+                            color: theme.textMuted,
+                            fontSize: '11.5px',
+                            padding: '20px',
+                            textAlign: 'center'
+                          }
+                        }, [
+                          h(Icon, { name: p.isGenerating ? 'spinner' : 'image', size: 24, style: p.isGenerating ? { animation: 'spin 1s linear infinite' } : {} }),
+                          h('span', {}, p.isGenerating ? '正在 4K 极速直出...' : '等待绘制')
+                        ]),
+
+                    // 幽灵暂存候选浮层
+                    isCandidate && h('div', {
+                      style: {
+                        position: 'absolute',
+                        bottom: '10px',
+                        left: '10px',
+                        right: '10px',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        backgroundColor: 'rgba(17, 24, 39, 0.92)',
+                        backdropFilter: 'blur(8px)',
+                        border: '1px solid rgba(245, 158, 11, 0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }
+                    }, [
+                      h('span', { style: { fontSize: '11px', color: '#f59e0b', fontWeight: 600 } }, '候选成果'),
+                      h('div', { style: { display: 'flex', gap: '6px' } }, [
+                        h('button', {
+                          type: 'button',
+                          onClick: () => handleDiscardStaging(p.id),
+                          style: {
+                            padding: '3px 8px',
+                            fontSize: '11px',
+                            borderRadius: '4px',
+                            border: '1px solid #4b5563',
+                            backgroundColor: 'transparent',
+                            color: '#9ca3af',
+                            cursor: 'pointer'
+                          }
+                        }, '放弃'),
+                        h('button', {
+                          type: 'button',
+                          onClick: () => handleAcceptStaging(p.id),
+                          style: {
+                            padding: '3px 8px',
+                            fontSize: '11px',
+                            borderRadius: '4px',
+                            border: 'none',
+                            backgroundColor: '#22c55e',
+                            color: '#ffffff',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }
+                        }, '保留')
+                      ])
+                    ])
+                  ]),
+
+                  // 分镜提示词与台词输入区
+                  h('div', {
+                    style: { padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }
+                  }, [
+                    h('input', {
+                      value: p.prompt,
+                      onChange: (e) => {
+                        const val = e.target.value;
+                        setPanels(prev => prev.map(x => x.id === p.id ? { ...x, prompt: val } : x));
+                      },
+                      placeholder: '画面场景与镜头语言描述...',
+                      style: {
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '5px 8px',
+                        fontSize: '11px',
+                        borderRadius: '4px',
+                        backgroundColor: theme.isDark ? '#141720' : '#ffffff',
+                        border: `1px solid ${theme.borderSubtle}`,
+                        color: theme.textPrimary
+                      }
+                    }),
+
+                    h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, [
+                      h(Icon, { name: 'messageSquare', size: 12 }),
+                      h('input', {
+                        value: p.dialogue,
+                        onChange: (e) => {
+                          const val = e.target.value;
+                          setPanels(prev => prev.map(x => x.id === p.id ? { ...x, dialogue: val } : x));
+                        },
+                        placeholder: '角色对白台词 (自动生成对白气泡)...',
+                        style: {
+                          flex: 1,
+                          boxSizing: 'border-box',
+                          padding: '4px 6px',
+                          fontSize: '11px',
+                          borderRadius: '4px',
+                          backgroundColor: theme.isDark ? '#141720' : '#ffffff',
+                          border: `1px solid ${theme.borderSubtle}`,
+                          color: theme.textPrimary
+                        }
+                      })
+                    ]),
+
+                    h('button', {
+                      type: 'button',
+                      disabled: p.isGenerating,
+                      onClick: () => handleGeneratePanel(p.id),
+                      style: {
+                        padding: '6px 10px',
+                        borderRadius: '5px',
+                        border: 'none',
+                        backgroundColor: p.isGenerating ? '#4b5563' : theme.btnPrimaryBg,
+                        color: theme.btnPrimaryText,
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        cursor: p.isGenerating ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
+                      }
+                    }, [
+                      h(Icon, { name: p.isGenerating ? 'spinner' : 'sparkles', size: 12, style: p.isGenerating ? { animation: 'spin 1s linear infinite' } : {} }),
+                      h('span', {}, p.isGenerating ? '正在全力绘制...' : (p.imageUrl ? '重新绘制' : '立即绘制分镜'))
+                    ])
+                  ])
+                ]);
+              }))
+            ])
+          ]);
+        }
+
+        // ==========================================
+        // 6. 创作工坊主工作台 (StudioPage)
+        // ==========================================
         function StudioPage() {
           const theme = useTheme();
-          const [mode, setMode] = React.useState('image'); // 'image' | 'video'
+          const [mode, setMode] = React.useState('image'); // 'image' | 'video' | 'canvas'
+          const [showTutorial, setShowTutorial] = React.useState(false);
           const [selectedModel, setSelectedModel] = React.useState('gpt-image-2.5-flare');
           const [prompt, setPrompt] = React.useState('');
           const [size, setSize] = React.useState('1024x1024');
@@ -1856,6 +3265,33 @@
                 }, [
                   h(Icon, { name: 'video', size: 14 }),
                   h('span', {}, '视频工坊')
+                ]),
+                h('button', {
+                  type: 'button',
+                  style: {
+                    padding: '4px 14px',
+                    borderRadius: '5px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: mode === 'canvas' ? '600' : '400',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: mode === 'canvas' ? theme.chipActiveBg : 'transparent',
+                    color: mode === 'canvas' ? theme.chipActiveText : theme.textMuted,
+                    boxShadow: mode === 'canvas' ? (theme.isDark ? '0 1px 3px rgba(0,0,0,0.4)' : '0 1px 3px rgba(0,0,0,0.1)') : 'none',
+                    transition: 'all 0.15s ease'
+                  },
+                  onClick: () => {
+                    setMode('canvas');
+                    if (!CanvasStorage.getTutorialDismissed()) {
+                      setShowTutorial(true);
+                    }
+                  }
+                }, [
+                  h(Icon, { name: 'canvas', size: 14 }),
+                  h('span', {}, '漫剧画布')
                 ])
               ]),
 
@@ -1889,6 +3325,28 @@
                     onClose: () => setShowStudioPopover(false)
                   })
                 ]),
+                mode === 'canvas' && h('button', {
+                  type: 'button',
+                  style: {
+                    background: 'transparent',
+                    border: `1px solid ${theme.borderStrong}`,
+                    color: theme.textSecondary,
+                    borderRadius: '6px',
+                    padding: '4px 10px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    transition: 'all 0.15s ease'
+                  },
+                  onMouseEnter: (e) => { e.currentTarget.style.color = theme.textPrimary; e.currentTarget.style.borderColor = theme.textPrimary; },
+                  onMouseLeave: (e) => { e.currentTarget.style.color = theme.textSecondary; e.currentTarget.style.borderColor = theme.borderStrong; },
+                  onClick: () => setShowTutorial(true)
+                }, [
+                  h(Icon, { name: 'help', size: 13 }),
+                  h('span', {}, '画布教程')
+                ]),
                 h('button', {
                   type: 'button',
                   style: {
@@ -1918,8 +3376,14 @@
               ])
             ]),
 
-            // 2. 主体工作台 (左侧 360px 参数栏 + 右侧画廊展台，全量自适应)
-            h('div', {
+            // 2. 主体工作台 (漫剧画布 vs 传统工坊双栏)
+            mode === 'canvas' ? h(CanvasWorkspace, {
+              theme,
+              isVip,
+              isSvip,
+              isSuper,
+              onOpenTutorial: () => setShowTutorial(true)
+            }) : h('div', {
               style: {
                 flex: 1,
                 display: 'grid',
@@ -3016,7 +4480,13 @@
                   }))
                 ])
               ])
-            ])
+            ]),
+
+            // 3. 画布新手引导层 (SVG evenodd 探照灯反向遮罩，可一键跳过与持久化记忆)
+            h(CanvasOnboardingTutorial, {
+              isOpen: showTutorial,
+              onClose: () => setShowTutorial(false)
+            })
           ]);
         }
 
