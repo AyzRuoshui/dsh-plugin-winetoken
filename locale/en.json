@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "WineToken AI Gateway",
+    "description": "Auto-sync all WineToken reasoning models and display live balance & subscription usage on the native composer status bar."
+  }
+}

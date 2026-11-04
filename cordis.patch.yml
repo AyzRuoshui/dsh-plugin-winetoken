@@ -1,0 +1,250 @@
+- id: winetoken-plugin
+  name: "@winetoken/dsh-plugin-winetoken"
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: winetoken
+    model: 王者荣耀灵宝
+    reasoningEffort: high
+- id: ui-settings-account
+  name: "@deepseek-ai/dsh-client-ui-settings-account"
+  config:
+    version: 1
+    step: done
+    purpose: development
+    process: detailed
+    completion: completed
+    usage: detailed
+    developerTools: true
+- id: ui-chat
+  name: "@deepseek-ai/dsh-client-ui-chat"
+  config:
+    transcriptView: detailed
+    performanceUsage: detailed
+- id: ui-settings
+  name: "@deepseek-ai/dsh-client-ui-settings"
+  config:
+    enabled: true
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      winetoken:
+        displayName: WineToken (全平台推理模型)
+        api: openai-completions
+        baseURL: https://www.winetoken.asia/v1
+        apiKeyEnv: WINETOKEN_API_KEY
+        defaultContextWindow: 262144
+        defaultMaxTokens: 65536
+        models:
+          - id: 王者荣耀灵宝
+            name: 王者荣耀灵宝 (推理官渠)
+            contextWindow: 262144
+            maxTokens: 16384
+            input:
+              - text
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          - id: grok-4.7
+            name: xAI Grok 4.7 (全模态推理)
+            contextWindow: 131072
+            maxTokens: 16384
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          - id: minimax-m3.1-flash
+            name: MiniMax M3.1 Flash (高速多模态)
+            contextWindow: 1048576
+            maxTokens: 32768
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          - id: kimi-k2.8-preview
+            name: 月之暗面 Kimi K2.8 Preview (多模态)
+            contextWindow: 262144
+            maxTokens: 16384
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          - id: claude-opus-5-5
+            name: Claude 5.5 Opus (旗舰长文本)
+            contextWindow: 200000
+            maxTokens: 65536
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+          - id: gpt-oss-120b-medium
+            name: GPT-OSS 120B Medium (开源推理)
+            contextWindow: 1048576
+            maxTokens: 16384
+            input:
+              - text
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          - id: claude-opus-4-6-thinking
+            name: Claude 4.6 Opus Thinking (深度思考)
+            contextWindow: 1048576
+            maxTokens: 65536
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          - id: glm-5.2
+            name: 智谱 GLM-5.2 (夜间免费/推理)
+            contextWindow: 1048576
+            maxTokens: 16384
+            input:
+              - text
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+          - id: sensenova-6.8-flash
+            name: 商汤日日新 6.8 Flash (多模态推理)
+            contextWindow: 262144
+            maxTokens: 65536
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          - id: claude-sonnet-4-6
+            name: Claude 4.6 Sonnet (编程主力)
+            contextWindow: 1048576
+            maxTokens: 65536
+            input:
+              - text
+              - image
+          - id: glm-5.3
+            name: 智谱 GLM-5.3 (旗舰推理)
+            contextWindow: 1048576
+            maxTokens: 16384
+            input:
+              - text
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+          - id: deepseek-v4.1-flash
+            name: DeepSeek V4.1 Flash (多模态推理)
+            contextWindow: 1048576
+            maxTokens: 393216
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+          - id: gpt-6-astra
+            name: GPT-6 Astra (全模态推理)
+            contextWindow: 1048576
+            maxTokens: 131072
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+          - id: kimi-k3.1-pro
+            name: 月之暗面 Kimi K3.1 Pro (多模态推理)
+            contextWindow: 1048576
+            maxTokens: 32768
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          - id: mimo-v2.6-pro
+            name: 小米 MiMo 2.6 Pro (全模态推理)
+            contextWindow: 1048576
+            maxTokens: 131072
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          - id: deepseek-v4-pro
+            name: DeepSeek V4 Pro (旗舰推理)
+            contextWindow: 1048576
+            maxTokens: 65536
+            input:
+              - text
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+          - id: glm-5.3-flash
+            name: 智谱 GLM-5.3 Flash (多模态推理)
+            contextWindow: 1048576
+            maxTokens: 16384
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+          - id: step-5-preview
+            name: 阶跃星辰 Step-5 Preview (全模态基模)
+            contextWindow: 1048576
+            maxTokens: 65536
+            input:
+              - text
+              - image
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          - id: gpt-6.1-sol
+            name: GPT-6.1 Sol (严谨逻辑推理)
+            contextWindow: 131072
+            maxTokens: 16384
+            input:
+              - text
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              max: max
+- id: ui-theme
+  name: "@deepseek-ai/dsh-client-ui-theme"
+  config:
+    preference: system

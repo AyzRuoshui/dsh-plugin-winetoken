@@ -1,0 +1,38 @@
+{
+  "name": "@winetoken/dsh-plugin-winetoken",
+  "version": "1.5.3",
+  "description": "WineToken 全平台推理模型自动同步与账户资产/用量状态监控。",
+  "author": "AyzRuoshui",
+  "license": "MIT",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./src/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/",
+    "locale/",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "scripts": {
+    "sync": "node src/sync.js",
+    "release": "node scripts/release.cjs"
+  }
+}

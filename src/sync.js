@@ -1,0 +1,276 @@
+// -*- coding: utf-8 -*-
+/**
+ * WineToken 自动模型同步引擎 (DeepSeek Harness 专属插件)
+ * 支持一次性填写 API Key、开机自启更新、每小时定时轮询
+ */
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
+const http = require('http');
+const YAML = require('yaml');
+const { parseModelList } = require('./parser');
+
+/**
+ * 原生请求 WineToken 网关模型列表
+ */
+function fetchModels(baseUrl, apiKey) {
+  return new Promise((resolve, reject) => {
+    const url = baseUrl.endsWith('/') ? baseUrl + 'models' : baseUrl + '/models';
+    const client = url.startsWith('https:') ? https : http;
+    const req = client.get(url, {
+      headers: {
+        'Authorization': 'Bearer ' + apiKey.trim(),
+        'User-Agent': 'WineToken-DSH-Plugin/1.3.0',
+        'Accept': 'application/json'
+      },
+      timeout: 10000
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(body);
+          if (json && json.data && Array.isArray(json.data)) {
+            resolve(json.data);
+          } else if (Array.isArray(json)) {
+            resolve(json);
+          } else {
+            reject(new Error('网关返回数据异常: ' + body.slice(0, 100)));
+          }
+        } catch (e) {
+          reject(new Error('解析网关模型列表失败: ' + e.message));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('请求网关模型超时'));
+    });
+  });
+}
+
+const BASE_DIR = __dirname;
+const CONFIG_PATH = path.join(BASE_DIR, 'config.json');
+
+// DeepSeek Harness 用户配置主路径
+const DSH_HOME = path.join(process.env.USERPROFILE || process.env.HOME || 'C:\\Users\\CodyAllison', '.dsh');
+const CREDENTIALS_FILE = path.join(DSH_HOME, '.credentials.yaml');
+const CORDIS_PATCH_FILE = path.join(DSH_HOME, 'profiles', 'desktop', 'cordis.patch.yml');
+
+/**
+ * 读取或初始化插件配置
+ */
+function loadConfig() {
+  let cfg = {
+    apiKey: '',
+    baseUrl: 'https://www.winetoken.asia/v1',
+    providerId: 'winetoken',
+    providerDisplayName: 'WineToken 聚合平台 (全推理)',
+    syncIntervalHours: 1,
+    filterNonChatModels: true
+  };
+
+  if (fs.existsSync(CONFIG_PATH)) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+      cfg = { ...cfg, ...saved };
+    } catch (e) {
+      console.warn('警告: 读取 config.json 失败，使用默认配置:', e.message);
+    }
+  }
+
+  // 支持命令行参数覆盖: --key sk-xxx, --url https://...
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--key' && args[i + 1]) {
+      cfg.apiKey = args[i + 1];
+      i++;
+    } else if (args[i] === '--url' && args[i + 1]) {
+      cfg.baseUrl = args[i + 1];
+      i++;
+    }
+  }
+
+  return cfg;
+}
+
+/**
+ * 保存配置回文件
+ */
+function saveConfig(cfg) {
+  try {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('保存 config.json 失败:', e.message);
+  }
+}
+
+/**
+ * 更新 ~/.dsh/.credentials.yaml
+ */
+function updateCredentials(apiKey, envKeyName = 'WINETOKEN_API_KEY') {
+  if (!fs.existsSync(DSH_HOME)) {
+    fs.mkdirSync(DSH_HOME, { recursive: true });
+  }
+
+  let credsDoc = { version: 1, refs: {}, records: {} };
+
+  if (fs.existsSync(CREDENTIALS_FILE)) {
+    try {
+      const content = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
+      const parsed = YAML.parse(content);
+      if (parsed && typeof parsed === 'object') {
+        credsDoc = parsed;
+        if (!credsDoc.refs) credsDoc.refs = {};
+      }
+    } catch (e) {
+      console.warn('读取 .credentials.yaml 失败，将重新初始化:', e.message);
+    }
+  }
+
+  // 注入或更新密钥
+  credsDoc.refs[envKeyName] = apiKey.trim();
+
+  // 写回 YAML
+  const newYaml = YAML.stringify(credsDoc, { indent: 2 });
+  fs.writeFileSync(CREDENTIALS_FILE, newYaml, 'utf-8');
+  console.log(`[凭证更新] 已成功注入 ${envKeyName} 到 ~/.dsh/.credentials.yaml`);
+}
+
+/**
+ * 更新 ~/.dsh/profiles/desktop/cordis.patch.yml
+ */
+function updateCordisPatch(providerConfig) {
+  const desktopProfileDir = path.dirname(CORDIS_PATCH_FILE);
+  if (!fs.existsSync(desktopProfileDir)) {
+    fs.mkdirSync(desktopProfileDir, { recursive: true });
+  }
+
+  let patches = [];
+
+  if (fs.existsSync(CORDIS_PATCH_FILE)) {
+    try {
+      const content = fs.readFileSync(CORDIS_PATCH_FILE, 'utf-8');
+      const parsed = YAML.parse(content);
+      if (Array.isArray(parsed)) {
+        patches = parsed;
+      }
+    } catch (e) {
+      console.warn('读取 cordis.patch.yml 失败，将新建补丁列表:', e.message);
+    }
+  }
+
+  // 查找或新建 llm-pi-ai 补丁项
+  let llmPatch = patches.find(p => p && p.id === 'llm-pi-ai');
+  if (!llmPatch) {
+    llmPatch = {
+      id: 'llm-pi-ai',
+      name: '@deepseek-ai/dsh-llm-pi-ai',
+      config: {
+        providers: {}
+      }
+    };
+    patches.push(llmPatch);
+  }
+
+  if (!llmPatch.config) llmPatch.config = {};
+  if (!llmPatch.config.providers) llmPatch.config.providers = {};
+
+  // 将我们的 Provider 注入
+  llmPatch.config.providers[providerConfig.id] = {
+    displayName: providerConfig.displayName,
+    api: 'openai-completions',
+    baseURL: providerConfig.baseURL,
+    apiKeyEnv: providerConfig.apiKeyEnv,
+    defaultContextWindow: 262144,
+    defaultMaxTokens: 65536,
+    models: providerConfig.models
+  };
+
+  // 写回 cordis.patch.yml
+  const newYaml = YAML.stringify(patches, { indent: 2 });
+  fs.writeFileSync(CORDIS_PATCH_FILE, newYaml, 'utf-8');
+  console.log(`[模型注入] 已成功注入/更新 Provider [${providerConfig.id}] (共 ${providerConfig.models.length} 个模型) 到 cordis.patch.yml`);
+}
+
+/**
+ * 主执行流程
+ */
+async function runSync() {
+  console.log('='.repeat(60));
+  console.log(`[WineToken 同步引擎] 任务触发时间: ${new Date().toLocaleString()}`);
+
+  const cfg = loadConfig();
+  if (!cfg.apiKey || !cfg.apiKey.trim()) {
+    console.error('错误: 未配置 apiKey！请在 config.json 填写，或使用 --key 参数指定。');
+    process.exit(1);
+  }
+
+  // 保存最新的参数
+  saveConfig(cfg);
+
+  try {
+    console.log(`[网络连接] 正在请求 WineToken 网关: ${cfg.baseUrl}...`);
+    const rawModels = await fetchModels(cfg.baseUrl, cfg.apiKey);
+    console.log(`[网络响应] 网关返回模型原始条目: ${rawModels.length} 个`);
+
+    // 解析与规格推断
+    const parsedModels = parseModelList(rawModels, cfg.filterNonChatModels);
+    console.log(`[规格推断] 成功解析可对话推理模型: ${parsedModels.length} 个 (过滤非对话模型: ${rawModels.length - parsedModels.length} 个)`);
+
+    // 统计推理与多模态
+    const reasoningCount = parsedModels.filter(m => !!m.reasoningEfforts).length;
+    const visionCount = parsedModels.filter(m => Array.isArray(m.input) && m.input.includes('image')).length;
+    console.log(`[能力统计] 推理/思维链模型: ${reasoningCount} 个 | 多模态视觉模型: ${visionCount} 个`);
+
+    // 1. 更新凭据文件
+    const envKeyName = 'WINETOKEN_API_KEY';
+    updateCredentials(cfg.apiKey, envKeyName);
+
+    // 2. 更新 cordis.patch.yml
+    updateCordisPatch({
+      id: cfg.providerId || 'winetoken',
+      displayName: cfg.providerDisplayName || 'WineToken 聚合平台',
+      baseURL: cfg.baseUrl,
+      apiKeyEnv: envKeyName,
+      models: parsedModels
+    });
+
+    console.log('='.repeat(60));
+    console.log('✅ [同步成功] 模型已全部自动映射并生效！DeepSeek Harness HMR 机制将实时刷新界面。');
+    return true;
+  } catch (err) {
+    console.error('❌ [同步失败]:', err.message);
+    return false;
+  }
+}
+
+/**
+ * 供插件生命周期或外部模块直接调用的注入接口
+ */
+function syncWithHarness(parsedModels, options = {}) {
+  const cfg = loadConfig();
+  const envKeyName = 'WINETOKEN_API_KEY';
+  if (options.apiKey) {
+    updateCredentials(options.apiKey, envKeyName);
+  }
+  updateCordisPatch({
+    id: cfg.providerId || 'winetoken',
+    displayName: cfg.providerDisplayName || 'WineToken 聚合平台',
+    baseURL: cfg.baseUrl || 'https://www.winetoken.asia/v1',
+    apiKeyEnv: envKeyName,
+    models: parsedModels
+  });
+  return true;
+}
+
+// 如果直接运行该脚本
+if (require.main === module) {
+  runSync();
+}
+
+module.exports = {
+  runSync,
+  syncWithHarness
+};
