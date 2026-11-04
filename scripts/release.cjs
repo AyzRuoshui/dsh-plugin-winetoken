@@ -60,20 +60,22 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 根治总累计调用与套餐已用口径矛盾，恢复并强化大模型原生 Tool Calling 技能`;
+  const releaseTitle = `Release ${version} - 修复容灾 fallback 分支中 usedCNYNum 未定义的运行时异常`;
   const releaseBody = `## 🚀 DeepSeek Harness WineToken 插件 ${version}
 
-### 💎 账目精确度与大模型技能重大升级
+### 🐞 关键运行时异常修复与健壮性加固
 
-1. **[彻底根治总累计调用与套餐已用数据口径矛盾]**
-   - **服务端账轨精准对齐**：修正服务端 \`/api/subscription/status\` 计算逻辑。在会员订阅期内，业务语义上的“总累计调用”严格对齐并大于等于套餐当期真实消耗（\`max(token_used, sub_amount_used)\`），彻底根除“总累计调用 (¥0.11) 反而低于单个会员套餐已用 (¥0.17)”的账目悖论；
-   - **客户端多维透明外显**：账户中心卡片在展示真实总累计调用的同时，若当前为子密钥调用，智能追加显示 \`(本Key: ¥XX.XX)\`，两套账本分毫不差、清晰透明。
+1. **[修复容灾 Fallback 分支中 usedCNYNum 未定义崩溃]**
+   - 采纳第三方 AI 助手审查指认：在主双账轨状态接口遇网络抖动进入容灾降级分支（旧接口兼容链路）时，补齐了 \`usedCNYNum\` 变量的安全声明与初始化；
+   - 优先拉取 \`/dashboard/billing/usage\` 获取真实月度流水并除以 100 换算，网络异常时安全兜底为 0，彻底杜绝 \`ReferenceError: usedCNYNum is not defined\` 运行时报错打断前端轮询。
 
-2. **[完整恢复并强化大模型 Tool Calling 生图/生视频技能]**
-   - **工具定义规范对齐**：完整恢复 \`src/tool.js\`，完全符合 DSH 官方 \`@deepseek-ai/dsh-tools\` 微内核标准，配备严密的 \`output.schema\`、\`output.render\` 渲染投影与 \`isConcurrencySafe\` 并发保护；
-   - **系统提示词动态引导**：通过 \`ctx.systemPrompt.section\` 注入技能认知，解除通用模型“我没有生图能力”的预训练认知偏见，让大模型在聊天中自主调用创作工坊直出高质量作品！
+2. **[总累计调用与套餐已用账目对齐 (继承 v1.5.8)]**
+   - 服务端与客户端账本全链路对齐，保障总累计调用始终不低于当期套餐已用，并追加显示本 Key 单独消耗。
 
-3. **[纯净生态与配置安全]**
+3. **[大模型原生 Tool Calling 生图/生视频技能完备 (继承 v1.5.8)]**
+   - \`src/tool.js\` 100% 严密合规，支持会话直出生图/生视频并自动存入工坊画廊。
+
+4. **[纯净生态与配置安全]**
    - 坚决杜绝霸道篡改用户默认模型配置（\`agent-default-model\` 已永久物理移除）；
    - \`src/sync.js\` 深度 JSON 幂等性比对，无变动 0 写盘，100% 保护第三方插件注释（如 \`# qq-bridge\`）。
 

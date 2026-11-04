@@ -200,6 +200,17 @@
         billingState.isCached = false;
       } else {
         // === 容灾 Fallback 逻辑 (兼容旧接口) ===
+        let usedCNYNum = 0;
+        try {
+          const usageRes = await fetch(BASE_URL + '/dashboard/billing/usage', { headers });
+          if (usageRes.ok) {
+            const usageData = await usageRes.json();
+            if (usageData && usageData.total_usage != null) {
+              usedCNYNum = Number(usageData.total_usage) / 100;
+            }
+          }
+        } catch (_) {}
+
         let tokenUsage = null;
         try {
           const usageTokenRes = await fetch(BASE_URL + '/api/usage/token/', { headers });
