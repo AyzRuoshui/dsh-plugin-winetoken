@@ -69,12 +69,19 @@ function getAllFiles(dir, baseDir = '') {
   let results = [];
   const list = fs.readdirSync(dir);
   for (const file of list) {
+    // 强制安全脱敏过滤白名单/黑名单：严格禁止将内部交接文档、私有凭据或临时产物上传至公开仓库
     if (
       file === 'node_modules' ||
       file === '.git' ||
       file === '.tmp' ||
       file === 'package-lock.json' ||
-      file === '.package-lock.json'
+      file === '.package-lock.json' ||
+      file === 'HANDOVER.md' ||
+      file === 'PLUGIN_HANDOVER.md' ||
+      file === '.gitignore' ||
+      file.endsWith('.bak') ||
+      file.startsWith('.credentials') ||
+      file.startsWith('.env')
     ) continue;
     const fullPath = path.join(dir, file);
     const relPath = path.join(baseDir, file);
@@ -88,6 +95,58 @@ function getAllFiles(dir, baseDir = '') {
   return results;
 }
 
+/**
+ * 强制自动化脱敏门禁审计（发布铁律）
+ */
+function runSecurityAudit(filesToCommit) {
+  console.log('[安全门禁] 正在执行全量待发布文件强制脱敏审计...');
+  const sensitivePatterns = [
+    { name: '敏感凭据模式 (password/secret)', pattern: /(?:password|passwd|secret)\s*[:=]\s*['"][^'"]{4,}['"]/i },
+    { name: '生产环境公网 IP', pattern: /\b(?:152\.32\.|36\.163\.)\d+\.\d+\b/ },
+    { name: '内部 API Key (sk-...)', pattern: /sk-[a-zA-Z0-9]{32,}/ },
+    { name: '受限免费通道模型', pattern: /deepseek[a-zA-Z0-9._-]*-free\b/i },
+    { name: '开发者个人系统绝对路径', pattern: /[C-Z]:\\Users\\[a-zA-Z0-9_.-]+/i },
+    { name: '内部交接文档漏入', pattern: /HANDOVER/i }
+  ];
+
+  let violations = [];
+
+  for (const relPath of filesToCommit) {
+    const normPath = relPath.replace(/\\/g, '/');
+    // 文件名黑名单校验
+    if (/HANDOVER/i.test(normPath) || /\.credentials/i.test(normPath)) {
+      violations.push({ file: relPath, rule: '禁止上传内部交接文档或凭据' });
+      continue;
+    }
+    // 脚本自身定义门禁规则，跳过自审内容
+    if (normPath === 'scripts/publish_to_github.cjs') {
+      continue;
+    }
+
+    const fullPath = path.join(ROOT_DIR, relPath);
+    try {
+      const content = fs.readFileSync(fullPath, 'utf-8');
+      for (const rule of sensitivePatterns) {
+        if (rule.pattern.test(content)) {
+          violations.push({ file: relPath, rule: rule.name });
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (violations.length > 0) {
+    console.error('\n' + '!'.repeat(70));
+    console.error('🚨【发布拦截】触发强制脱敏门禁违规！严禁将敏感数据推送到开源仓库：');
+    violations.forEach(v => {
+      console.error(`  - 文件: ${v.file} 触发规则: [${v.rule}]`);
+    });
+    console.error('!'.repeat(70) + '\n');
+    throw new Error('强制脱敏审查未通过，发布已紧急中止！');
+  }
+
+  console.log('🛡️ [安全门禁] 脱敏审计通过：0 处敏感凭据、0 处密码、0 处红线模型。');
+}
+
 async function publish(token) {
   console.log('='.repeat(60));
   console.log('[GitHub 发布引擎] 开始校验 Token...');
@@ -97,6 +156,9 @@ async function publish(token) {
 
   const filesToCommit = getAllFiles(ROOT_DIR);
   console.log(`[文件扫描] 准备上传 ${filesToCommit.length} 个文件到 GitHub 仓库...`);
+
+  // 发布前硬性执行脱敏审计，任何违规立即抛错中止发布
+  runSecurityAudit(filesToCommit);
 
   const treeItems = [];
   for (const relPath of filesToCommit) {

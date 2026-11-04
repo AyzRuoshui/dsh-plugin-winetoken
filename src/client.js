@@ -191,7 +191,7 @@
 
           billingState.balanceText = '钱包 ¥' + walletBalStr;
           billingState.pillText = 'SUPER · 钱包 ¥' + walletBalStr;
-          billingState.tooltip = `SUPER 会员特权 (8折特惠 · 无限量 deepseek-v4.1-flash-free) · 钱包永久: ¥${walletBalStr} · 总累计调用: ¥${totalUsedCNYStr}`;
+          billingState.tooltip = `SUPER 会员特权 (8折特惠 · 无限量专属免费模型) · 钱包永久: ¥${walletBalStr} · 总累计调用: ¥${totalUsedCNYStr}`;
         } else if (hasSub) {
           const sub = subStatusData.subscription;
           billingState.subPlanTitle = sub.plan_title || 'VIP 订阅套餐';
@@ -870,7 +870,7 @@
                     }
                   }, [
                     h('span', { style: { width: '5px', height: '5px', borderRadius: '50%', background: '#06b6d4', display: 'inline-block' } }),
-                    h('span', {}, '无限量 deepseek-v4.1-flash-free')
+                    h('span', {}, '无限量专属免费特权模型')
                   ]),
                   h('div', {
                     style: {
@@ -2589,36 +2589,52 @@
                       height: '100%',
                       display: 'flex',
                       flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '20px',
-                      boxSizing: 'border-box'
+                      padding: '16px 20px',
+                      boxSizing: 'border-box',
+                      overflow: 'hidden'
                     }
                   }, [
-                    h('img', {
-                      src: activeImage.url,
-                      alt: activeImage.prompt,
+                    // 独立图片舞台容器：自适应占据剩余全部垂直高度，溢出隐藏，保证绝不挤占下方操作栏
+                    h('div', {
                       style: {
-                        maxWidth: '92%',
-                        maxHeight: '68vh',
-                        objectFit: 'contain',
-                        borderRadius: '8px',
-                        boxShadow: theme.isDark ? '0 20px 45px rgba(0, 0, 0, 0.7)' : '0 20px 45px rgba(0, 0, 0, 0.15)',
-                        border: `1px solid ${theme.borderSubtle}`
+                        flex: 1,
+                        minHeight: 0,
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden'
                       }
-                    }),
+                    }, [
+                      h('img', {
+                        src: activeImage.url,
+                        alt: activeImage.prompt,
+                        style: {
+                          maxWidth: '100%',
+                          maxHeight: '100%',
+                          objectFit: 'contain',
+                          borderRadius: '8px',
+                          boxShadow: theme.isDark ? '0 12px 32px rgba(0, 0, 0, 0.65)' : '0 12px 32px rgba(0, 0, 0, 0.12)',
+                          border: `1px solid ${theme.borderSubtle}`
+                        }
+                      })
+                    ]),
                     // 浮动悬停操作栏 (自适应)
                     h('div', {
                       style: {
-                        marginTop: '16px',
+                        flexShrink: 0,
+                        marginTop: '12px',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '10px',
+                        justifyContent: 'center',
+                        flexWrap: 'wrap',
+                        gap: '8px',
                         background: theme.floatingBarBg,
-                        padding: '6px 10px',
+                        padding: '6px 12px',
                         borderRadius: '8px',
                         border: `1px solid ${theme.floatingBarBorder}`,
-                        boxShadow: theme.isDark ? '0 8px 20px rgba(0,0,0,0.5)' : '0 8px 20px rgba(0,0,0,0.1)'
+                        boxShadow: theme.isDark ? '0 8px 20px rgba(0,0,0,0.5)' : '0 8px 20px rgba(0,0,0,0.1)',
+                        zIndex: 2
                       }
                     }, [
                       h('button', {

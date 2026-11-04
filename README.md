@@ -101,7 +101,7 @@ node scripts/safe_install.cjs
 ## 🛠️ 项目结构
 
 ```text
-G:\dsh-plugin-winetoken\
+dsh-plugin-winetoken/
 ├── locale\
 │   ├── zh.json             # 官方规范中文插件介绍
 │   └── en.json             # 官方规范英文插件介绍

@@ -54,7 +54,8 @@ const BASE_DIR = __dirname;
 const CONFIG_PATH = path.join(BASE_DIR, 'config.json');
 
 // DeepSeek Harness 用户配置主路径
-const DSH_HOME = path.join(process.env.USERPROFILE || process.env.HOME || 'C:\\Users\\CodyAllison', '.dsh');
+const os = require('os');
+const DSH_HOME = path.join(process.env.USERPROFILE || process.env.HOME || os.homedir(), '.dsh');
 const CREDENTIALS_FILE = path.join(DSH_HOME, '.credentials.yaml');
 const CORDIS_PATCH_FILE = path.join(DSH_HOME, 'profiles', 'desktop', 'cordis.patch.yml');
 
