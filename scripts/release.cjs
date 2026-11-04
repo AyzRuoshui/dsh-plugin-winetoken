@@ -60,22 +60,24 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 修复创作工坊长图与竖屏遮挡操作栏缺陷，加固自适应舞台与安全体系`;
+  const releaseTitle = `Release ${version} - 重构大模型生图二阶段授权协议，彻底根除失控滥调与批量扣费`;
   const releaseBody = `## 🚀 DeepSeek Harness WineToken 插件 ${version}
 
-### 🎨 创作工坊核心交互与布局缺陷修复
+### 🛡️ 大模型原生 Tool Calling 防暴走与用户资产保护重构
 
-1. **[创作工坊舞台-操作栏解耦与自适应修复]**
-   - 彻底修复 **2:3 竖屏** 与 **9:16 极限长图** 下，图片底边与外发光阴影溢出覆盖底部悬浮操作按钮栏（保存图片、复制提示词、复用参数、图生图等）的严重遮挡问题；
-   - 采用现代化舞台容器模式（\`flex: 1, minHeight: 0\`），告别 \`68vh\` 虚高限高，由容器严格按可用物理空间等比收缩图片。
+1. **[确立生图/生视频“二阶段确认协议”]**
+   - 彻底废除旧版强催大模型立即抢跑调用的侵入式指令，注入严密的《高能多模态工具调用与付费资产保护铁律》；
+   - **第一阶段（构思与征询）**：当用户提出画图/视频意向时，模型被严格禁止直接调用工具，必须先向用户展现画面构思方案（艺术风格、画面主体、光影比例），并征询用户：“AI生图属于付费操作，若您认可上述构思请回复‘确认生成’，我将为您正式制作”；
+   - **第二阶段（单次授权出图）**：只有在用户明确回复“确认生成”、“开始画吧”、“立即出图”等肯定指令时，模型方可执行调用。
 
-2. **[多模态画廊全宽高比极致贴合]**
-   - 无论 16:9 横屏、1:1 方屏、2:3 竖图还是 9:16 长图，均在工作区舞台内部严格居中展示，绝不超出边界；
-   - 悬浮操作栏增加独立层叠上下文与物理保护（\`flexShrink: 0, zIndex: 2\`），并在窄屏/小窗口下自适应居中换行。
+2. **[四重物理防暴走机制 · 彻底根除失控滥调]**
+   - **底层并发封锁**：将生图与生视频工具的 \`isConcurrencySafe\` 强制设为 \`false\`，彻底封禁 DSH 底层调度器的并行调度，从物理上杜绝单轮同时发起多个任务；
+   - **参数硬收敛**：Tool Schema 将 \`count\` 锁定为 \`enum: [1]\`；执行代码强制 \`const count = 1;\`，即使极端模型出现幻觉也坚决只生成单张，杜绝批量扣费；
+   - **描述词高耗警示**：工具描述明确标注为“高耗付费操作”，严禁未经授权调用。
 
-3. **[会员特权体系稳定运行]**
-   - **SUPER** 会员专属青色徽章与特权通道（8 折特权与无限量专属免费特权通道）稳定运行；
-   - **SVIP** 与 **VIP** 双账轨高精度计费状态机深度加固，无闪烁、无漂移。
+3. **[创作工坊自适应画廊稳定运行]**
+   - 包含 v1.6.1 的现代化舞台-操作栏解耦模式，2:3 竖屏、9:16 长图、1:1 方屏、16:9 横屏全宽高比自适应居中，悬浮操作栏物理保护不被遮挡；
+   - **SUPER** 会员专属青色徽章与特权通道稳定运行，双账轨高精度计费状态机深度加固。
 
 ---
 
@@ -86,11 +88,11 @@ async function createRelease() {
 3. 粘贴安装地址：
    - **国内免魔法高速镜像（强烈推荐，解决 ETIMEDOUT 超时）**：
      \`\`\`text
-     https://ghproxy.net/https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/heads/main.tar.gz
+     https://ghproxy.net/https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/${version}.tar.gz
      \`\`\`
    - **GitHub 官方直链**：
      \`\`\`text
-     https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/heads/main.tar.gz
+     https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/${version}.tar.gz
      \`\`\`
 4. 点击确认，DSH 即可通过内置包管理器秒级完成安全增量安装，已有插件 100% 完好无损！
 `;

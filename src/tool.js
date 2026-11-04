@@ -184,7 +184,7 @@ function registerWineTokenTools(ctx) {
       name: 'winetoken_generate_image',
       label: 'WineToken 创作工坊·AI绘图',
       category: 'creative',
-      description: '【必须调用的AI绘图技能】当用户要求画图、绘制插画、设计视觉海报、生成头像、概念图或任何视觉图像时，你必须直接调用此工具生成图片，切勿回答自己没有生图能力。成果将直接在聊天中展示并存入工坊画廊。',
+      description: '【WineToken 创作工坊·AI绘图工具（高耗付费操作）】仅在获得用户明确授权确认后方可调用，单次严格限出 1 张，绝对禁止并发多调。生成结果将内联渲染并存入工坊画廊。',
       permission: 'safe',
       parameters: {
         type: 'object',
@@ -214,7 +214,8 @@ function registerWineTokenTools(ctx) {
           },
           count: {
             type: 'number',
-            description: '出图张数，默认为 1（支持 1~4 张，系统底层将并发渲染）',
+            enum: [1],
+            description: '出图张数，强制为 1。为保护用户资产，严禁单次批量生成。',
             default: 1
           },
           image_url: {
@@ -246,7 +247,7 @@ function registerWineTokenTools(ctx) {
           text: value.markdown || (value.error ? `AI 绘图失败: ${value.error}` : JSON.stringify(value))
         }]
       },
-      isConcurrencySafe: () => true,
+      isConcurrencySafe: () => false,
       async execute(args) {
         const apiKey = getApiKey();
         if (!apiKey) {
@@ -260,7 +261,8 @@ function registerWineTokenTools(ctx) {
         const model = args.model || 'gpt-image-2.5-flare';
         const prompt = args.prompt || '';
         const size = args.size || '1024x1024';
-        const count = Math.min(Math.max(Number(args.count) || 1, 1), 4);
+        // 物理级防暴走：强制单次调用只出 1 张，坚决杜绝模型批量并发消耗用户资产
+        const count = 1;
         const imageUrl = args.image_url || null;
 
         try {
@@ -317,7 +319,7 @@ function registerWineTokenTools(ctx) {
       name: 'winetoken_generate_video',
       label: 'WineToken 创作工坊·AI视频生成',
       category: 'creative',
-      description: '【必须调用的AI视频生成技能】当用户要求生成视频、制作动态影像、运镜动画或电影镜头时，你必须直接调用此工具生成视频，切勿回答自己没有生成视频能力。成果直接在聊天中通过视频播放器预览并存入工坊画廊。',
+      description: '【WineToken 创作工坊·AI视频生成工具（高额付费操作）】仅在获得用户明确授权确认后方可调用，单轮严格限生成 1 个视频，绝对禁止并发多调。成果直接在聊天中通过视频播放器预览并存入工坊画廊。',
       permission: 'safe',
       parameters: {
         type: 'object',
@@ -370,7 +372,7 @@ function registerWineTokenTools(ctx) {
           text: value.markdown || (value.error ? `AI 绘图失败: ${value.error}` : JSON.stringify(value))
         }]
       },
-      isConcurrencySafe: () => true,
+      isConcurrencySafe: () => false,
       async execute(args) {
         const apiKey = getApiKey();
         if (!apiKey) {
@@ -431,13 +433,30 @@ function registerWineTokenTools(ctx) {
       }
     });
 
-    // 3. 向会话注入动态 System Prompt 指令
+    // 3. 向会话注入动态 System Prompt 指令（严格遵循付费资产保护、用户明确授权与防暴走规范）
     if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
       try {
         ctx.systemPrompt.section({
           name: 'tool:winetoken_creative',
           order: 850,
-          text: () => 'You have full capability to generate images and videos via the WineToken Studio tools (winetoken_generate_image and winetoken_generate_video). When a user asks for drawing, pictures, illustrations, logos, or videos, immediately invoke the corresponding tool. Do NOT refuse or claim that you lack image generation features.'
+          text: () => `
+## WineToken 创作工坊·高能多模态工具调用与付费资产保护铁律 (STRICT TOOL USE & ASSET PROTECTION POLICY)
+
+你已接入 WineToken 创作工坊的专业级图像生成 (winetoken_generate_image) 与视频生成 (winetoken_generate_video) 工具。
+⚠️ **最高资产警示**：每次调用生图/生视频工具均会直接扣除用户的真实钱包资产或高价值会员限时配额，属于**不可逆的高耗付费操作**！为坚决杜绝未经允许扣费与模型无节制滥调，你必须严格无条件遵守以下铁律：
+
+### 1. 严格执行二阶段确认协议（未获明确授权，绝对严禁擅自调用）
+- **第一阶段（画面构思与授权征询）**：当用户在对话中提到想画图、构思海报、想要配图或探讨视觉设计时，**严禁直接触发生成工具**！你必须先在回复中为用户规划画面构思（包含艺术风格、画面主体、镜头光影、尺寸比例等），并明确征求用户同意（例如：“生图属于付费操作，若您认可上述构思请回复‘确认生成’，我将为您正式制作”）。
+- **第二阶段（单次授权调用）**：**只有当用户在对话中给出了极其明确的授权指令**（例如明确说：“确认生成”、“开始画吧”、“立即出图”、“同意制作”等肯定句）时，你才可以调用对应工具。
+
+### 2. 严禁批量并发与单次限量铁律（绝对防暴走）
+- **单轮严格限调 1 次**：在任何单次模型回复中，**绝对禁止发起多个并行的工具调用**！严禁一次性触发多次生图或视频调用！
+- **单次最多生成 1 张**：生图工具的 count 参数必须始终为 1。严禁一次批量生成多张！若用户需要多种方案，必须一张生成完毕并经用户再次审阅满意后，逐轮按需生成。
+- **严禁擅自追加衍生作品**：严禁在生成一张后自作主张连续生成多角度或变体画面。
+
+### 3. 直接调用的唯一例外
+- 仅当用户在**最初的提问中明确且强烈地发出了免确认出图指令**（例如：“立刻帮我画一张赛博朋克猫咪壁纸，无需向我确认，马上出图”），你才可直接调用。即使在此例外下，**也必须坚守单轮仅调 1 次、单次仅出 1 张的铁律**！
+`
         });
       } catch (err) {
         console.warn('[WineToken Plugin] 注入 systemPrompt 失败:', err.message);
