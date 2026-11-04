@@ -158,6 +158,7 @@
         // 真实总累计已用金额 (历史所有调用总消耗，彻底取代单月流水)
         const totalUsedCNY = Number(subStatusData.total_used_cny != null ? subStatusData.total_used_cny : (subStatusData.token_used_cny != null ? subStatusData.token_used_cny : subStatusData.wallet_used_cny || 0));
         billingState.totalUsedCNY = totalUsedCNY;
+        billingState.tokenUsedCNY = subStatusData.token_used_cny != null ? Number(subStatusData.token_used_cny) : null;
         const totalUsedCNYStr = formatCNY(totalUsedCNY);
         billingState.usedText = '已用 ¥' + totalUsedCNYStr;
 
@@ -924,7 +925,15 @@
                       color: theme.textSecondary,
                       marginTop: '3px'
                     }
-                  }, '¥ ' + formatCNY(billing.totalUsedCNY != null ? billing.totalUsedCNY : 0))
+                  }, '¥ ' + formatCNY(billing.totalUsedCNY != null ? billing.totalUsedCNY : 0)),
+                  billing.tokenUsedCNY != null && billing.tokenUsedCNY !== billing.totalUsedCNY ? h('div', {
+                    style: {
+                      fontSize: '10px',
+                      color: theme.textMuted,
+                      opacity: 0.8,
+                      marginTop: '2px'
+                    }
+                  }, `(本Key: ¥${formatCNY(billing.tokenUsedCNY)})`) : null
                 ])
               ])
             ]),

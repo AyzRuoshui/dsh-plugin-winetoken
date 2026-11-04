@@ -60,24 +60,22 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 彻底废除默认模型篡改，补全模型同步深度幂等性并移除调试探针日志`;
+  const releaseTitle = `Release ${version} - 根治总累计调用与套餐已用口径矛盾，恢复并强化大模型原生 Tool Calling 技能`;
   const releaseBody = `## 🚀 DeepSeek Harness WineToken 插件 ${version}
 
-### 🛡️ 纯净度与生态友好性重大重构
+### 💎 账目精确度与大模型技能重大升级
 
-1. **[彻底废除默认模型篡改 (零侵入保证)]**
-   - 官方补丁 \`cordis.patch.yml\` 中已彻底移除 \`agent-default-model\` 及所有客户端 UI/主题偏好条目；
-   - 坚决捍卫用户主权，绝不霸道篡改用户的默认模型（如 DeepSeek/Claude）与主题配置，只专注注入 WineToken 自身服务！
+1. **[彻底根治总累计调用与套餐已用数据口径矛盾]**
+   - **服务端账轨精准对齐**：修正服务端 \`/api/subscription/status\` 计算逻辑。在会员订阅期内，业务语义上的“总累计调用”严格对齐并大于等于套餐当期真实消耗（\`max(token_used, sub_amount_used)\`），彻底根除“总累计调用 (¥0.11) 反而低于单个会员套餐已用 (¥0.17)”的账目悖论；
+   - **客户端多维透明外显**：账户中心卡片在展示真实总累计调用的同时，若当前为子密钥调用，智能追加显示 \`(本Key: ¥XX.XX)\`，两套账本分毫不差、清晰透明。
 
-2. **[模型同步深度幂等性 (保护 YAML 注释)]**
-   - \`src/sync.js\` 引入深度 JSON 比对机制：在开机启动与定时同步时，若模型列表与 Provider 配置未发生实际变动，**严格跳过写盘**；
-   - 100% 杜绝无脑重新序列化导致的用户自定义 YAML 注释（如 \`# qq-bridge\` 等第三方插件备注）被洗掉的问题。
+2. **[完整恢复并强化大模型 Tool Calling 生图/生视频技能]**
+   - **工具定义规范对齐**：完整恢复 \`src/tool.js\`，完全符合 DSH 官方 \`@deepseek-ai/dsh-tools\` 微内核标准，配备严密的 \`output.schema\`、\`output.render\` 渲染投影与 \`isConcurrencySafe\` 并发保护；
+   - **系统提示词动态引导**：通过 \`ctx.systemPrompt.section\` 注入技能认知，解除通用模型“我没有生图能力”的预训练认知偏见，让大模型在聊天中自主调用创作工坊直出高质量作品！
 
-3. **[物理移除调试探针日志]**
-   - 彻底移除了 \`src/index.js\` 中的 \`dsh_probe.log\` 本地探针文件写入，绝不向用户个人主目录产生任何垃圾调试文件。
-
-4. **[已用统计防闪烁与 Tool Calling 全链路合规]**
-   - 继承 v1.5.6 的高精度双账轨数据源对齐与 \`output.schema\` 严格断言规范。
+3. **[纯净生态与配置安全]**
+   - 坚决杜绝霸道篡改用户默认模型配置（\`agent-default-model\` 已永久物理移除）；
+   - \`src/sync.js\` 深度 JSON 幂等性比对，无变动 0 写盘，100% 保护第三方插件注释（如 \`# qq-bridge\`）。
 
 ---
 
