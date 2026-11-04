@@ -138,7 +138,7 @@ function runSecurityAudit(filesToCommit) {
 
   if (violations.length > 0) {
     console.error('\n' + '!'.repeat(70));
-    console.error('🚨【发布拦截】触发强制脱敏门禁违规！严禁将敏感数据推送到开源仓库：');
+    console.error('[发布拦截] 触发强制脱敏门禁违规！严禁将敏感数据推送到开源仓库：');
     violations.forEach(v => {
       console.error(`  - 文件: ${v.file} 触发规则: [${v.rule}]`);
     });
@@ -146,7 +146,7 @@ function runSecurityAudit(filesToCommit) {
     throw new Error('强制脱敏审查未通过，发布已紧急中止！');
   }
 
-  console.log('🛡️ [安全门禁] 脱敏审计通过：0 处敏感凭据、0 处密码、0 处红线模型。');
+  console.log('[安全门禁] 脱敏审计通过：0 处敏感凭据、0 处密码、0 处红线模型。');
 }
 
 async function publish(token) {
@@ -205,13 +205,13 @@ async function publish(token) {
   });
 
   console.log('='.repeat(60));
-  console.log(`🎉 [代码提交成功] Commit SHA: ${newCommit.sha}`);
+  console.log(`[代码提交成功] Commit SHA: ${newCommit.sha}`);
   console.log(`   仓库链接: https://github.com/${user.login}/${REPO_NAME}`);
   console.log('='.repeat(60));
 }
 
 const tokenArg = process.env.GITHUB_TOKEN || (process.argv[2]?.startsWith('ghp_') ? process.argv[2] : DEFAULT_TOKEN);
 publish(tokenArg).catch(err => {
-  console.error('\n❌ 发布失败:', err.message);
+  console.error('\n[错误] 发布失败:', err.message);
   process.exit(1);
 });

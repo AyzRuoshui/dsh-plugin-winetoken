@@ -208,10 +208,10 @@
   const BASE_IMAGE_MODELS_FALLBACK = [
     {
       id: 'gpt-image-2.5-flare',
-      name: 'OpenAI GPT-Image 2.5 Flare',
+      name: 'GPT-Image 2.5 Flare',
       tag: '极速',
-      price: 0.08,
-      vipPrice: 0.07,
+      price: 0.30,
+      vipPrice: 0.24,
       singleNOnly: true,
       unit: '张',
       desc: '出图极快，细节丰富，性价比首选',
@@ -223,10 +223,10 @@
     },
     {
       id: 'gpt-image-2.5-sunburst',
-      name: 'OpenAI GPT-Image 2.5 Sunburst',
+      name: 'GPT-Image 2.5 Sunburst',
       tag: '高画质',
-      price: 0.20,
-      vipPrice: 0.18,
+      price: 0.40,
+      vipPrice: 0.32,
       singleNOnly: true,
       unit: '张',
       desc: '排版精细，写真质感与艺术风格',
@@ -238,10 +238,10 @@
     },
     {
       id: 'gemini-imagen-3',
-      name: 'Google DeepMind Imagen-3',
+      name: 'Google Imagen 3',
       tag: '2K写实',
       price: 0.15,
-      vipPrice: 0.13,
+      vipPrice: 0.12,
       singleNOnly: true,
       unit: '张',
       desc: '光影自然真实，语言理解顶尖',
@@ -270,10 +270,10 @@
     },
     {
       id: 'grok-imagine-image-2.0',
-      name: 'xAI Grok Imagine 2.0',
+      name: 'Grok Imagine 2.0 旗舰',
       tag: '光影旗舰',
-      price: 0.15,
-      vipPrice: 0.13,
+      price: 0.50,
+      vipPrice: 0.40,
       singleNOnly: true,
       unit: '张',
       desc: '真实摄影级光影，概念艺术',
@@ -285,10 +285,10 @@
     },
     {
       id: 'gpt-image-2',
-      name: 'OpenAI GPT-Image 2',
+      name: 'GPT-Image 2 (经典高清)',
       tag: '经典专业',
-      price: 0.12,
-      vipPrice: 0.10,
+      price: 0.20,
+      vipPrice: 0.16,
       singleNOnly: false,
       unit: '张',
       desc: '稳定经典生成，仅支持经典正方形尺寸',
@@ -303,7 +303,7 @@
   const BASE_VIDEO_MODELS_FALLBACK = [
     {
       id: 'MiniMax-H3',
-      name: 'MiniMax H3 (海螺视频)',
+      name: 'MiniMax H3',
       tag: '电影感',
       pricePerSecond: 0.15,
       vipPricePerSecond: 0.12,
@@ -327,12 +327,12 @@
     },
     {
       id: 'grok-imagine-video-1.5',
-      name: 'xAI Grok Video 1.5',
+      name: 'Grok Imagine 视频旗舰',
       tag: '物理连贯',
-      pricePerSecond: 0.10,
-      vipPricePerSecond: 0.08,
-      priceText: '原¥0.10/秒 (5秒基准 ¥0.50)',
-      vipPriceText: 'SVIP ¥0.08/秒 (5秒基准 ¥0.40)',
+      pricePerSecond: 0.20,
+      vipPricePerSecond: 0.16,
+      priceText: '原¥0.20/秒 (5秒基准 ¥1.00)',
+      vipPriceText: 'SVIP ¥0.16/秒 (5秒基准 ¥0.80)',
       unit: '秒',
       durations: [
         { val: 5, label: '5 秒', tag: '标配' },
@@ -342,23 +342,6 @@
       resolutions: [
         { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
         { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }
-      ]
-    },
-    {
-      id: 'sensenova-6.8-flash',
-      name: '商汤日日新 4K 动效 (限免试炼)',
-      tag: '限免体验',
-      pricePerSecond: 0.00,
-      vipPricePerSecond: 0.00,
-      priceText: '限免 ¥0.00/秒',
-      vipPriceText: '限免 ¥0.00/秒',
-      unit: '秒',
-      durations: [
-        { val: 5, label: '5 秒', tag: '标配' }
-      ],
-      desc: '超高吞吐动态演绎，官方限免试炼通道',
-      resolutions: [
-        { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' }
       ]
     }
   ];
@@ -380,9 +363,17 @@
         return r;
       });
     }
+    let displayName = raw.name || raw.id;
+    if (raw.id === 'gpt-image-2.5-flare') {
+      displayName = 'GPT-Image 2.5 Flare';
+    } else if (raw.id === 'gpt-image-2.5-sunburst') {
+      displayName = 'GPT-Image 2.5 Sunburst';
+    } else if (raw.id === 'gpt-image-2') {
+      displayName = 'GPT-Image 2 (经典高清)';
+    }
     return {
       id: raw.id,
-      name: raw.name || raw.id,
+      name: displayName,
       tag: raw.badge || raw.tag || '推荐',
       price: raw.cost != null ? Number(raw.cost) : (raw.price != null ? Number(raw.price) : 0),
       vipPrice: raw.vipCost != null ? Number(raw.vipCost) : (raw.vipPrice != null ? Number(raw.vipPrice) : 0),
@@ -399,6 +390,10 @@
 
   function normalizeVideoModel(raw) {
     if (!raw) return null;
+    // 强制剔除非真实视频生成模型的误配项 (如商汤日日新 4K 动效 / sensenova-6.8-flash)
+    if (raw.id === 'sensenova-6.8-flash' || (raw.name && raw.name.includes('商汤日日新 4K 动效'))) {
+      return null;
+    }
     const isHoriz = (s) => s.startsWith('1280') || s.startsWith('1920');
     let resolutions = [];
     if (Array.isArray(raw.resolutions)) {
@@ -424,9 +419,15 @@
     }
     const costSec = raw.costPerSec != null ? Number(raw.costPerSec) : (raw.pricePerSecond != null ? Number(raw.pricePerSecond) : 0);
     const vipCostSec = raw.vipCostPerSec != null ? Number(raw.vipCostPerSec) : (raw.vipPricePerSecond != null ? Number(raw.vipPricePerSecond) : 0);
+    let displayName = raw.name || raw.id;
+    // 彻底剥离 (海螺视频)
+    displayName = displayName.replace(/[\(（]海螺视频[\)）]/g, '').trim();
+    if (raw.id === 'MiniMax-H3') {
+      displayName = 'MiniMax H3';
+    }
     return {
       id: raw.id,
-      name: raw.name || raw.id,
+      name: displayName,
       tag: raw.badge || raw.tag || '推荐',
       pricePerSecond: costSec,
       vipPricePerSecond: vipCostSec,
@@ -4434,7 +4435,7 @@ $owner.Dispose()
                               }
                             }, [
                               h(Icon, { name: 'crown', size: 12 }),
-                              h('span', {}, `SVIP ¥${formatCNY(effectiveSinglePrice)}/张`)
+                              h('span', {}, `${isSvip ? 'SVIP' : 'VIP'} ¥${formatCNY(effectiveSinglePrice)}/张`)
                             ]) : h('span', { style: { fontSize: '11px', color: theme.textSecondary } }, `¥${formatCNY(effectiveSinglePrice)}/张`),
                             isVip && currentModelObj.vipPrice != null && currentModelObj.price > currentModelObj.vipPrice && h('span', {
                               style: {

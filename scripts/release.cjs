@@ -14,7 +14,7 @@ const version = `v${pkg.version}`;
 console.log(`[Release] Preparing GitHub Release for ${version}...`);
 
 if (!GITHUB_TOKEN) {
-  console.error('❌ 缺少 GITHUB_TOKEN');
+  console.error('[错误] 缺少 GITHUB_TOKEN');
   process.exit(1);
 }
 
@@ -60,21 +60,35 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 工坊基底模型全宽卡片重构与漫剧画布模型实时费率展示`;
+  const releaseTitle = `Release ${version} - 全链路真实费率精准对齐、模型全称规范化与视频工坊纯净化`;
   const releaseBody = `## DeepSeek Harness WineToken 插件 ${version}
 
 ### 核心特性与架构升级
 
-本次更新针对创作者在模型选择与费率感知上的实际痛点，全面重构了工坊左侧基底模型卡片排版，并优化了漫剧画布顶栏模型选择器。
+本次更新全面规范了多模态模型命名、彻底校准了各模型标价与底层 New-API 生产数据库实际扣费表达式的一致性，并净化了视频模型列表。
 
-#### 1. 工坊基底模型卡片全宽流式重构 (Single Column Fluid Cards)
-- **彻底消除截断与重叠**：废除狭窄双列网格布局，升级为单列全宽响应式卡片流；
-- **全称与特性一览无余**：完整展示各模型完整全称（如 \`Flare 2.5 闪电绘图\`、\`商汤 SenseNova U1.5 Lite\`、\`MiniMax H3 (海螺视频)\` 等），绝不再出现两三个字加省略号（\`...\`）的尴尬截断，彻底解决模型名称挤压嵌入隔壁卡片的排版缺陷；
-- **自适应高亮折后费率**：卡片右侧直接高亮呈现当前会员身份的生效价格（如 SVIP/VIP 专属折扣价、限免 ¥0.00 标示），并展示模型特性简述，方便创作者快速比对性能与成本。
+#### 1. 全链路模型费率 100% 对齐 New-API 真实扣费
+- **纠正历史低标误差**：彻底纠正此前客户端与 Manifest 中的标价偏差，严格对齐底层生产数据库扣费表达式；
+- **生图模型费率对齐**：
+  - GPT-Image 2.5 Flare：基准 ¥0.30/张 (VIP ¥0.27, SVIP/SUPER ¥0.24)；
+  - GPT-Image 2.5 Sunburst：基准 ¥0.40/张 (VIP ¥0.36, SVIP/SUPER ¥0.32)；
+  - GPT-Image 2 (经典高清)：基准 ¥0.20/张 (VIP ¥0.18, SVIP/SUPER ¥0.16)；
+  - Google Imagen 3：基准 ¥0.15/张 (VIP ¥0.14, SVIP/SUPER ¥0.12)；
+  - Grok Imagine 2.0 旗舰：基准 ¥0.50/张 (VIP ¥0.45, SVIP/SUPER ¥0.40)；
+  - 商汤 SenseNova U1.5 Lite：官方限免 ¥0.00；
+- **视频模型费率对齐**：
+  - MiniMax H3：基准 ¥0.15/秒 (5秒 ¥0.75，VIP ¥0.70，SVIP/SUPER ¥0.60)；
+  - Grok Imagine 视频旗舰：基准 ¥0.20/秒 (5秒 ¥1.00，VIP ¥0.90，SVIP/SUPER ¥0.80)。
 
-#### 2. 漫剧画布顶栏模型选择器费率对齐与防遮挡优化
-- **实时拼接生效价格**：分镜生成模型下拉菜单中，为每款模型完整展示全称、Tag 标签与当前会员真实费率（如 \`Flare 2.5 闪电绘图 [超快极速] — SVIP ¥0.07/张\`，\`商汤 SenseNova U1.5 Lite [限免4K] — 限免 ¥0.00\`）；
-- **自适应视口宽度与间距优化**：扩展选择器容器可用宽度并优化内边距，消除收起态选中文本被右侧原生小箭头遮挡截断的问题，选型体验清晰流畅。
+#### 2. 模型名称规范化与视频工坊纯净化
+- **还原 GPT-Image 家族全称**：规范为 \`GPT-Image 2.5 Flare\`、\`GPT-Image 2.5 Sunburst\`、\`GPT-Image 2 (经典高清)\`，杜绝前缀被随意省略；
+- **剔除误配纯文本模型**：从视频模型清单与客户端兜底中彻底剔除商汤纯文本大模型（sensenova-6.8-flash）；
+- **去除冗余后缀**：视频模型规范为 \`MiniMax H3\`，彻底移除 \`(海螺视频)\` 冗余后缀；
+- **多级容灾与动态清洗**：\`normalizeImageModel\` 与 \`normalizeVideoModel\` 强化数据清洗，杜绝老旧本地存储脏数据回流。
+
+#### 3. 工坊单列全宽响应式卡片与漫剧画布费率展示
+- 工坊基底模型卡片采用单列全宽流式排版，模型全称、特性说明与会员实时生效费率一目了然，彻底消除名称截断与重叠；
+- 漫剧画布顶栏模型选择器实时拼接当前会员折扣单价与限免标签，选型成本清晰透明。
 
 ---
 
@@ -103,9 +117,9 @@ async function createRelease() {
       draft: false,
       prerelease: false
     });
-    console.log(`✅ [发布成功] Release: ${data.html_url}`);
+    console.log(`[发布成功] Release: ${data.html_url}`);
   } catch (e) {
-    console.error('❌ 发布失败:', e.message);
+    console.error('[发布失败]', e.message);
   }
 }
 

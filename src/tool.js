@@ -323,7 +323,7 @@ function registerWineTokenTools(ctx) {
           model: {
             type: 'string',
             enum: ['MiniMax-H3', 'grok-imagine-video-1.5'],
-            description: '视频基底模型：MiniMax-H3 (海螺电影感/支持4~15秒)，grok-imagine-video-1.5 (物理真实/连贯运镜)',
+            description: '视频基底模型：MiniMax-H3 (电影感/支持4~15秒)，grok-imagine-video-1.5 (物理真实/连贯运镜)',
             default: 'MiniMax-H3'
           },
           duration: {
