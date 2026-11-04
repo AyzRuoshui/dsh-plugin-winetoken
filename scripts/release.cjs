@@ -60,23 +60,23 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 完美对齐 DSH 大模型 Tools 规范与 Cordis 依赖注入，彻底打通灵宝等模型原生生图/生视频技能`;
+  const releaseTitle = `Release ${version} - 根除用量统计数值漂移闪烁，对齐 cordis.patch.yml 规范与大模型生图调用闭环`;
   const releaseBody = `## 🚀 DeepSeek Harness WineToken 插件 ${version}
 
-### 🎨 核心重磅更新：彻底打通大模型原生创作工坊技能调用 (Tool Calling)
+### 🛠️ 关键修复与体验优化
 
-1. **[完全对齐 DSH Tools 官方底层规范 (output.schema)]**
-   - 官方底层 \`@deepseek-ai/dsh-tools\` 强制执行 \`assertSupportedJsonSchema(output.schema)\` 硬断言校验；
-   - 本次更新为 \`winetoken_generate_image\`（AI 绘图）与 \`winetoken_generate_video\`（AI 视频生成）补全了标准 JSON Schema 输出规范与 \`isConcurrencySafe\` 并发标记，工具注册 100% 顺畅通过底层校验！
+1. **[彻底消除用量统计数据闪烁与漂移 (0.13 -> 0.11)]**
+   - 根因定位：原先在数据更新时，先拉取粗粒度的单月总流水将已用赋值为 0.13，随后高精度双账轨接口返回真实的周期实际消耗 0.11，导致用户肉眼可见“一闪变化”；
+   - 彻底废除提前赋值逻辑，统一以 Tokyo VPS 高精度双账轨接口（\`/api/subscription/status\`）为唯一真实来源，100% 消除视觉闪烁漂移。
 
-2. **[Cordis 插件依赖注入 (inject: ['tools', 'systemPrompt'])]**
-   - 严格遵循 Cordis 容器标准，在模块导出声明静态依赖，确保 \`ctx.tools\` 与 \`ctx.systemPrompt\` 准备就绪后再行注入，100% 杜绝时序竞态问题。
+2. **[对齐 Cordis 补丁规范与 Tool Calling 全链路畅通]**
+   - 补全 \`- insert:\` 容器规范，确保插件 Host 侧可靠启动；
+   - 严格对齐 \`@deepseek-ai/dsh-tools\` 底层 \`output.schema\` 校验规范与 \`isConcurrencySafe\` 标记；
+   - 注入动态系统提示词，引导大模型主动调用生图与生视频技能。
 
-3. **[注入会话级动态 System Prompt 认知引导]**
-   - 通过 \`ctx.systemPrompt.section\` 注入专属技能指令，彻底消除大模型（如王者荣耀灵宝、DeepSeek、GLM 等）预训练自认“我是文本模型无法生图”的认知惯性，引导大模型在用户提出绘画、设计、头像或视频需求时 100% 积极触发创作工坊！
-
-4. **[端到端闭环渲染与持久化沉淀]**
-   - 大模型调用创作工坊生成的图片与视频，直接在对话流中以内联高保真卡片/HTML5 播放器渲染，并自动沉淀至左侧「创作工坊」历史库。
+3. **[后台自更新引擎升级 (updater.js)]**
+   - 补齐 \`src/tool.js\` 与 \`src/history.js\` 到核心文件清单；
+   - 引入国内免魔法高速镜像（\`ghproxy.net\`），国内网络秒级无感自更新。
 
 ---
 

@@ -10,6 +10,9 @@ const inject = ['tools', 'systemPrompt'];
  * 纯原生生命周期随 DSH 容器存亡，开机静默同步最新模型
  */
 function apply(ctx) {
+  try {
+    require('fs').appendFileSync(require('path').join(require('os').homedir(), 'dsh_probe.log'), `[apply called] at ${new Date().toISOString()}\n`);
+  } catch (_) {}
   console.log('[WineToken Plugin] Host plugin loaded inside DeepSeek Harness Cordis container.');
 
   // 1. 注入大模型创作工坊原生 Skill (AI 绘图与视频生成 Tool Calling)

@@ -149,12 +149,8 @@
         }
       } catch (_) {}
 
-      const usedCNYNum = (usageData?.total_usage || 0) / 100;
-      const usedCNYStr = formatCNY(usedCNYNum);
-      billingState.usedText = '已用 ¥' + usedCNYStr;
-
       if (subStatusData && subStatusData.ok) {
-        // === 命中高精度双账轨数据源 ===
+        // === 命中高精度双账轨数据源 (唯一精准真相源，杜绝数据闪烁漂移) ===
         const walletCNY = Number(subStatusData.wallet_balance_cny || 0);
         billingState.walletBalanceCNY = walletCNY;
         const walletBalStr = formatCNY(walletCNY);
