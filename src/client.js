@@ -22,14 +22,138 @@
   const BASE_URL = "https://www.winetoken.asia";
   const CACHE_KEY = "WINETOKEN_BILLING_CACHE_V3";
 
-  function getKey() {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem('WINETOKEN_API_KEY');
-        if (stored && stored.trim()) return stored.trim();
+  /**
+   * WineToken 跨进程凭据同步中枢 (WineTokenCredentialBridge)
+   * 双向打通渲染进程 localStorage 与 DSH 宿主微内核 ~/.dsh/.credentials.yaml
+   * 实现一处填写，官方对话模型与工坊生图全链路即时自动生效 (100ms 热重载)
+   */
+  const WineTokenCredentialBridge = {
+    getCredentialsPath() {
+      try {
+        const path = require('path');
+        const os = require('os');
+        return path.join(os.homedir(), '.dsh', '.credentials.yaml');
+      } catch (_) {
+        return '';
       }
-    } catch (_) {}
-    return DEFAULT_KEY;
+    },
+
+    // 双轨读取：优先 localStorage，兜底 .credentials.yaml 与 process.env，自动反向回写对齐
+    readKey() {
+      let key = '';
+      // 1. 优先读取渲染进程 localStorage
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const local = localStorage.getItem('WINETOKEN_API_KEY');
+          if (local && local.trim()) key = local.trim();
+        }
+      } catch (_) {}
+
+      // 2. 若 localStorage 为空，回退读取宿主 ~/.dsh/.credentials.yaml
+      if (!key) {
+        try {
+          const fs = require('fs');
+          const credPath = this.getCredentialsPath();
+          if (credPath && fs.existsSync(credPath)) {
+            const content = fs.readFileSync(credPath, 'utf8');
+            const m = content.match(/(?:^|\n)\s*WINETOKEN_API_KEY:\s*([^\r\n#]+)/);
+            if (m && m[1]) {
+              const fileKey = m[1].trim().replace(/^['"]|['"]$/g, '');
+              if (fileKey) {
+                key = fileKey;
+                // 自动反向同步至 localStorage，保障工坊生图即时可用
+                try {
+                  localStorage.setItem('WINETOKEN_API_KEY', key);
+                } catch (_) {}
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 3. 环境变量兜底
+      if (!key && typeof process !== 'undefined' && process.env && process.env.WINETOKEN_API_KEY) {
+        key = process.env.WINETOKEN_API_KEY.trim();
+      }
+      return key;
+    },
+
+    // 全链路即时同步写入 (安全处理 YAML 各种边界，防止 duplicate refs 破坏 DSH 核心)
+    saveKey(key) {
+      const trimmed = (key || '').trim();
+      if (!trimmed) return false;
+
+      // 1. 写入渲染进程 localStorage (创作工坊与漫剧画布 0 秒生效)
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('WINETOKEN_API_KEY', trimmed);
+        }
+      } catch (_) {}
+
+      // 2. 写入当前进程环境变量
+      if (typeof process !== 'undefined' && process.env) {
+        process.env.WINETOKEN_API_KEY = trimmed;
+      }
+
+      // 3. 写入磁盘 ~/.dsh/.credentials.yaml (触发 DSH 官方凭据监视器 100ms 重载模型)
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const credPath = this.getCredentialsPath();
+        if (credPath) {
+          const dir = path.dirname(credPath);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+          let content = fs.existsSync(credPath) ? fs.readFileSync(credPath, 'utf8') : '';
+          if (!content || !content.trim()) {
+            content = `version: 1\nrecords: {}\nrefs:\n  WINETOKEN_API_KEY: ${trimmed}\n`;
+          } else {
+            const keyRegex = /(^|\n)([ \t]*WINETOKEN_API_KEY:\s*)([^\r\n#]*)/m;
+            const emptyRefsRegex = /(^|\n)([ \t]*refs:\s*\{\s*\})/m;
+            const refsBlockRegex = /(^|\n)([ \t]*refs:\s*(?:\r?\n|$))/m;
+
+            if (keyRegex.test(content)) {
+              content = content.replace(keyRegex, `$1  WINETOKEN_API_KEY: ${trimmed}`);
+            } else if (emptyRefsRegex.test(content)) {
+              content = content.replace(emptyRefsRegex, `$1refs:\n  WINETOKEN_API_KEY: ${trimmed}`);
+            } else if (refsBlockRegex.test(content)) {
+              content = content.replace(refsBlockRegex, `$1refs:\n  WINETOKEN_API_KEY: ${trimmed}\n`);
+            } else {
+              content = content.trimEnd() + `\nrefs:\n  WINETOKEN_API_KEY: ${trimmed}\n`;
+            }
+          }
+          fs.writeFileSync(credPath, content, { encoding: 'utf8', mode: 0o600 });
+        }
+      } catch (e) {
+        console.warn('[WineToken] 写入 .credentials.yaml 失败:', e.message);
+      }
+      return true;
+    },
+
+    // 清除凭据
+    clearKey() {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem('WINETOKEN_API_KEY');
+        }
+      } catch (_) {}
+      if (typeof process !== 'undefined' && process.env) {
+        delete process.env.WINETOKEN_API_KEY;
+      }
+      try {
+        const fs = require('fs');
+        const credPath = this.getCredentialsPath();
+        if (credPath && fs.existsSync(credPath)) {
+          let content = fs.readFileSync(credPath, 'utf8');
+          content = content.replace(/(^|\n)[ \t]*WINETOKEN_API_KEY:[^\r\n]*/g, '');
+          fs.writeFileSync(credPath, content, { encoding: 'utf8', mode: 0o600 });
+        }
+      } catch (_) {}
+    }
+  };
+
+  function getKey() {
+    return WineTokenCredentialBridge.readKey();
   }
 
   function formatCNY(val) {
@@ -411,10 +535,21 @@
             const nextVid = (json.videoModels || []).map(normalizeVideoModel).filter(Boolean);
             const nextChat = Array.isArray(json.chatModels) ? json.chatModels : [];
 
-            if (nextImg.length > 0 && nextVid.length > 0) {
+            if (nextImg.length > 0 || nextVid.length > 0) {
+              // 智能并集补齐：以本地 fallback 为基底，线上最新数据覆盖，保证基础限免模型与视频模型永不丢失
+              const mergeWithFallback = (onlineList, fallbackList) => {
+                const map = new Map();
+                (fallbackList || []).forEach(m => map.set(m.id, m));
+                (onlineList || []).forEach(m => map.set(m.id, { ...map.get(m.id), ...m }));
+                return Array.from(map.values());
+              };
+
+              const mergedImg = mergeWithFallback(nextImg, BASE_IMAGE_MODELS_FALLBACK);
+              const mergedVid = mergeWithFallback(nextVid, BASE_VIDEO_MODELS_FALLBACK);
+
               this._data = {
-                imageModels: nextImg,
-                videoModels: nextVid,
+                imageModels: mergedImg,
+                videoModels: mergedVid,
                 chatModels: nextChat,
                 updatedAt: json.updatedAt || Date.now()
               };
@@ -708,7 +843,8 @@ $owner.Dispose()
     }
   };
 
-  const initialCache = loadBillingCache();
+  const initialKey = getKey();
+  const initialCache = initialKey ? loadBillingCache() : null;
 
   let billingState = initialCache ? {
     balanceText: initialCache.balanceText || '余额 --',
@@ -731,9 +867,9 @@ $owner.Dispose()
     isFetching: false,
     isCached: true
   } : {
-    balanceText: '余额 --',
-    usedText: '已用 ¥0.00',
-    pillText: '余额 --',
+    balanceText: initialKey ? '余额 --' : '未配置 Key',
+    usedText: initialKey ? '已用 ¥0.00' : '点击配置',
+    pillText: initialKey ? '余额 --' : '未配置 Key',
     hasSubscription: false,
     isSuper: false,
     userGroup: '',
@@ -747,7 +883,7 @@ $owner.Dispose()
     subPlanTitle: '',
     subGroup: '',
     subEndTime: 0,
-    tooltip: '点击管理 WineToken 账户与密钥',
+    tooltip: initialKey ? '点击管理 WineToken 账户与密钥' : '未配置 API Key，点击快速填入',
     isFetching: false,
     isCached: false
   };
@@ -761,7 +897,29 @@ $owner.Dispose()
 
   async function updateBilling() {
     const key = getKey();
-    if (!key || billingState.isFetching) return;
+    if (!key) {
+      billingState.balanceText = '未配置 Key';
+      billingState.usedText = '点击配置';
+      billingState.pillText = '未配置 Key';
+      billingState.hasSubscription = false;
+      billingState.isSuper = false;
+      billingState.userGroup = '';
+      billingState.walletBalanceCNY = 0;
+      billingState.totalUsedCNY = 0;
+      billingState.subRemainAmountCNY = 0;
+      billingState.subAmountTotalCNY = 0;
+      billingState.subAmountUsedCNY = 0;
+      billingState.subUsedPercent = 0;
+      billingState.remainDays = 0;
+      billingState.subPlanTitle = '';
+      billingState.subGroup = '';
+      billingState.subEndTime = 0;
+      billingState.tooltip = '未配置 API Key，点击快速填入';
+      billingState.isFetching = false;
+      notify();
+      return;
+    }
+    if (billingState.isFetching) return;
     billingState.isFetching = true;
 
     // 异步同步拉取最新模型清单 (SWR 增量热更新)
@@ -1321,7 +1479,7 @@ $owner.Dispose()
           const theme = useTheme();
           const [currentKey, setCurrentKey] = React.useState(getKey());
           const [keyInput, setKeyInput] = React.useState('');
-          const [showKeyInput, setShowKeyInput] = React.useState(false);
+          const [showKeyInput, setShowKeyInput] = React.useState(!currentKey);
           const [statusTip, setStatusTip] = React.useState('');
           const [copyTip, setCopyTip] = React.useState(false);
           const [billing, setBilling] = React.useState({ ...billingState });
@@ -1370,24 +1528,27 @@ $owner.Dispose()
               setStatusTip('请输入有效的 API Key');
               return;
             }
-            localStorage.setItem('WINETOKEN_API_KEY', trimmed);
+            WineTokenCredentialBridge.saveKey(trimmed);
             setCurrentKey(trimmed);
             setKeyInput('');
             setShowKeyInput(false);
-            setStatusTip('正在连接并验证新 Key...');
+            setStatusTip('正在连接并同步全局凭据...');
             await updateBilling();
-            setStatusTip('连接成功，已生效！');
+            try {
+              WineTokenManifestManager.fetchManifest(true);
+            } catch (_) {}
+            setStatusTip('已保存！官方模型与生图工坊已全链路就绪');
             setTimeout(() => setStatusTip(''), 3000);
           };
 
           const handleResetKey = async () => {
-            localStorage.removeItem('WINETOKEN_API_KEY');
+            WineTokenCredentialBridge.clearKey();
             setCurrentKey(DEFAULT_KEY);
             setKeyInput('');
-            setShowKeyInput(false);
-            setStatusTip('已恢复默认预设 Key，正在刷新...');
+            setShowKeyInput(true);
+            setStatusTip('已清空凭据，正在刷新...');
             await updateBilling();
-            setStatusTip('已恢复默认！');
+            setStatusTip('已恢复未配置状态！');
             setTimeout(() => setStatusTip(''), 3000);
           };
 
@@ -1800,9 +1961,21 @@ $owner.Dispose()
                   whiteSpace: 'nowrap'
                 }
               }, maskedKey) : h('div', {}, [
+                !currentKey && h('div', {
+                  style: {
+                    fontSize: '11px',
+                    color: theme.isDark ? '#38bdf8' : '#0284c7',
+                    background: theme.isDark ? 'rgba(56, 189, 248, 0.1)' : 'rgba(2, 132, 199, 0.08)',
+                    border: `1px solid ${theme.isDark ? 'rgba(56, 189, 248, 0.2)' : 'rgba(2, 132, 199, 0.2)'}`,
+                    padding: '6px 8px',
+                    borderRadius: '4px',
+                    marginBottom: '8px',
+                    lineHeight: 1.4
+                  }
+                }, '欢迎使用 WineToken！配置 API Key 后，DSH 官方模型与生图工坊将全链路自动同步激活。'),
                 h('input', {
                   type: 'text',
-                  placeholder: '粘贴新的 sk-... 密钥',
+                  placeholder: currentKey ? '粘贴新的 sk-... 密钥' : '请粘贴您的 WineToken sk-... 密钥',
                   value: keyInput,
                   onChange: (e) => setKeyInput(e.target.value),
                   style: {
@@ -1820,7 +1993,7 @@ $owner.Dispose()
                   }
                 }),
                 h('div', { style: { display: 'flex', gap: '6px', justifyContent: 'flex-end' } }, [
-                  h('button', {
+                  currentKey && h('button', {
                     type: 'button',
                     style: {
                       background: 'transparent',
@@ -1832,7 +2005,7 @@ $owner.Dispose()
                       cursor: 'pointer'
                     },
                     onClick: handleResetKey
-                  }, '恢复默认'),
+                  }, '清空凭据'),
                   h('button', {
                     type: 'button',
                     style: {
@@ -1844,7 +2017,14 @@ $owner.Dispose()
                       padding: '4px 8px',
                       cursor: 'pointer'
                     },
-                    onClick: () => { setShowKeyInput(false); setKeyInput(''); }
+                    onClick: () => {
+                      if (!currentKey) {
+                        onClose();
+                      } else {
+                        setShowKeyInput(false);
+                        setKeyInput('');
+                      }
+                    }
                   }, '取消'),
                   h('button', {
                     type: 'button',
@@ -2297,6 +2477,21 @@ $owner.Dispose()
           const isSpacePressedRef = React.useRef(false);
           const [zoomDisplay, setZoomDisplay] = React.useState(100);
 
+          // 漫剧画布生图模型状态与原图全屏预览灯箱
+          const [canvasModel, setCanvasModel] = React.useState(WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite');
+          const [availableImageModels, setAvailableImageModels] = React.useState(WineTokenManifestManager.getImageModels());
+          const [lightboxUrl, setLightboxUrl] = React.useState(null);
+
+          // 监听 Manifest SWR 热更新事件
+          React.useEffect(() => {
+            const unsub = WineTokenManifestManager.subscribe((models) => {
+              if (models && models.imageModels && models.imageModels.length > 0) {
+                setAvailableImageModels(models.imageModels);
+              }
+            });
+            return unsub;
+          }, []);
+
           // 角色资产库
           const [characters, setCharacters] = React.useState([
             {
@@ -2460,14 +2655,23 @@ $owner.Dispose()
             setCharacters(prev => [...prev, newChar]);
           };
 
-          // 添加新分镜卡
-          const handleAddPanel = (aspectRatio = '2:3', shot = 'CU', shotLabel = '特写') => {
+          // 删除角色卡 (自动将依赖该角色的分镜安全回退至主角，杜绝空悬报错)
+          const handleDeleteCharacter = (charId) => {
+            if (characters.length <= 1) return;
+            const fallbackCharId = characters.find(c => c.id !== charId)?.id || characters[0].id;
+            setCharacters(prev => prev.filter(c => c.id !== charId));
+            setPanels(prev => prev.map(p => p.characterId === charId ? { ...p, characterId: fallbackCharId } : p));
+          };
+
+          // 添加新分镜卡 (支持指定归属角色，未指定则取第一个角色)
+          const handleAddPanel = (aspectRatio = '2:3', shot = 'CU', shotLabel = '特写', targetCharId = null) => {
             const nextNum = panels.length + 1;
             const lastPanel = panels[panels.length - 1];
             const newX = lastPanel ? lastPanel.x + lastPanel.width + 40 : 360;
             const newY = lastPanel ? lastPanel.y : 60;
             const w = aspectRatio === '16:9' ? 360 : 280;
             const h = aspectRatio === '16:9' ? 240 : 420;
+            const assignedCharId = targetCharId || characters[0]?.id || '';
 
             const newP = {
               id: `shot_${Date.now()}`,
@@ -2481,7 +2685,7 @@ $owner.Dispose()
               shotLabel: shotLabel,
               prompt: `镜头 #${nextNum}，人物画面，专业漫剧光影，构图严谨`,
               dialogue: '',
-              characterId: characters[0]?.id || '',
+              characterId: assignedCharId,
               imageUrl: '',
               isGenerating: false,
               stagingCandidateUrl: null
@@ -2593,9 +2797,9 @@ $owner.Dispose()
               const apiKey = getKey();
               if (!apiKey) throw new Error('未检测到 API Key，请先点击顶栏钥匙图标输入');
 
-              const freeModelId = WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
+              const chosenModel = canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
               const payload = {
-                model: freeModelId,
+                model: chosenModel,
                 prompt: fullPrompt,
                 size: reqSize,
                 n: 1
@@ -2836,6 +3040,45 @@ $owner.Dispose()
                 }
               }, [h(Icon, { name: 'canvas', size: 13 }), h('span', {}, '四格模版')]),
 
+              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 4px' } }),
+
+              // 漫剧画布自主生图模型选择器 (同步 Manifest 动态矩阵)
+              h('div', {
+                style: {
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '3px 8px',
+                  borderRadius: '5px',
+                  backgroundColor: theme.bgInput,
+                  border: `1px solid ${theme.borderSubtle}`
+                }
+              }, [
+                h(Icon, { name: 'palette', size: 12, style: { opacity: 0.7 } }),
+                h('span', { style: { fontSize: '11px', color: theme.textMuted } }, '模型:'),
+                h('select', {
+                  value: canvasModel,
+                  onChange: (e) => setCanvasModel(e.target.value),
+                  title: '选择漫剧分镜生成模型',
+                  style: {
+                    background: 'transparent',
+                    border: 'none',
+                    color: theme.textPrimary,
+                    fontSize: '11.5px',
+                    fontWeight: 500,
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }
+                }, availableImageModels.map(m => {
+                  const isFree = m.price === 0 || (m.tag && m.tag.includes('限免'));
+                  return h('option', {
+                    key: m.id,
+                    value: m.id,
+                    style: { background: theme.bgSidebar, color: theme.textPrimary }
+                  }, `${m.name} [${m.tag || '生图'}]${isFree ? ' (限免)' : ''}`);
+                }))
+              ]),
+
               h('button', {
                 type: 'button',
                 onClick: handleExportStrip,
@@ -2917,7 +3160,7 @@ $owner.Dispose()
                 willChange: 'transform'
               }
             }, [
-              // 3.1 贝塞尔拓扑流光连线层
+              // 3.1 贝塞尔拓扑流光连线层 (智能精确定位对应角色的锚点位置)
               h('svg', {
                 style: {
                   position: 'absolute',
@@ -2930,8 +3173,11 @@ $owner.Dispose()
               }, panels.map(p => {
                 const char = characters.find(c => c.id === p.characterId);
                 if (!char) return null;
-                const startX = 260; // 角色卡右锚点
-                const startY = 140;
+                const charIndex = characters.findIndex(c => c.id === p.characterId);
+                const safeCharIndex = charIndex >= 0 ? charIndex : 0;
+                const startX = 260; // 角色卡右锚点 (left: 40 + width: 220 = 260)
+                // 角色卡高度约 230px，间距 gap: 16px，纵向中心锚点精确定位
+                const startY = 60 + safeCharIndex * 246 + 65;
                 const endX = p.x;
                 const endY = p.y + 30;
                 const ctrlX1 = startX + (endX - startX) * 0.5;
@@ -2990,20 +3236,49 @@ $owner.Dispose()
                         color: theme.textPrimary,
                         fontSize: '13px',
                         fontWeight: 600,
-                        width: '120px'
+                        width: '95px'
                       }
                     })
                   ]),
-                  h('span', {
-                    style: {
-                      fontSize: '10px',
-                      color: '#06b6d4',
-                      padding: '1px 5px',
-                      borderRadius: '3px',
-                      backgroundColor: 'rgba(6, 182, 212, 0.1)',
-                      border: '1px solid rgba(6, 182, 212, 0.25)'
-                    }
-                  }, '角色锚点')
+                  h('div', { style: { display: 'flex', alignItems: 'center', gap: '4px' } }, [
+                    // 为该角色快捷添加专属分镜
+                    h('button', {
+                      type: 'button',
+                      onClick: () => handleAddPanel('2:3', 'CU', '特写', c.id),
+                      title: `为【${c.name}】添加专属分镜`,
+                      style: {
+                        background: 'transparent',
+                        border: '1px solid rgba(6, 182, 212, 0.4)',
+                        color: '#06b6d4',
+                        borderRadius: '3px',
+                        padding: '1px 5px',
+                        fontSize: '10px',
+                        cursor: 'pointer',
+                        fontWeight: '500'
+                      }
+                    }, '+添分镜'),
+                    // 删除角色 (仅当角色总数大于 1 时允许删除，防止无角色)
+                    characters.length > 1 && h('button', {
+                      type: 'button',
+                      onClick: () => {
+                        if (confirm(`确认删除角色【${c.name}】？该角色的已有分镜将自动移交给主角。`)) {
+                          handleDeleteCharacter(c.id);
+                        }
+                      },
+                      title: `删除【${c.name}】`,
+                      style: {
+                        background: 'transparent',
+                        border: `1px solid ${theme.borderSubtle}`,
+                        color: theme.textMuted,
+                        borderRadius: '3px',
+                        padding: '1px 5px',
+                        fontSize: '10px',
+                        cursor: 'pointer'
+                      },
+                      onMouseEnter: (e) => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.borderColor = '#ef4444'; },
+                      onMouseLeave: (e) => { e.currentTarget.style.color = theme.textMuted; e.currentTarget.style.borderColor = theme.borderSubtle; }
+                    }, '删除')
+                  ])
                 ]),
 
                 h('div', {
@@ -3131,26 +3406,41 @@ $owner.Dispose()
                       backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'
                     }
                   }, [
-                    h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, [
+                    h('div', { style: { display: 'flex', alignItems: 'center', gap: '5px' } }, [
                       h('span', { style: { fontSize: '12px', fontWeight: 700, color: theme.textPrimary } }, `#${p.num}`),
                       h('span', {
                         style: {
                           fontSize: '10px',
                           color: '#06b6d4',
                           border: '1px solid rgba(6, 182, 212, 0.3)',
-                          padding: '1px 5px',
+                          padding: '1px 4px',
                           borderRadius: '3px'
                         }
                       }, p.shotLabel),
-                      char && h('span', {
+                      // 动态角色切换下拉菜单 (解耦角色绑定死锁)
+                      h('select', {
+                        value: p.characterId,
+                        onChange: (e) => {
+                          const newCharId = e.target.value;
+                          setPanels(prev => prev.map(x => x.id === p.id ? { ...x, characterId: newCharId } : x));
+                        },
+                        title: '切换该分镜所属角色 (实时继承外貌DNA与拓扑连线)',
                         style: {
-                          fontSize: '10px',
-                          color: theme.textSecondary,
+                          fontSize: '10.5px',
+                          color: theme.textPrimary,
                           backgroundColor: theme.isDark ? '#27272a' : '#f4f4f5',
-                          padding: '1px 5px',
-                          borderRadius: '3px'
+                          border: `1px solid ${theme.borderSubtle}`,
+                          padding: '1px 4px',
+                          borderRadius: '3px',
+                          cursor: 'pointer',
+                          outline: 'none',
+                          maxWidth: '92px'
                         }
-                      }, char.name)
+                      }, characters.map(c => h('option', {
+                        key: c.id,
+                        value: c.id,
+                        style: { background: theme.bgSidebar, color: theme.textPrimary }
+                      }, c.name)))
                     ]),
                     h('button', {
                       type: 'button',
@@ -3161,7 +3451,7 @@ $owner.Dispose()
                     }, '删除')
                   ]),
 
-                  // 画面展示区 (支持 InvokeAI 幽灵暂存层)
+                  // 画面展示区 (支持 InvokeAI 幽灵暂存层 + 亚像素高清渲染)
                   h('div', {
                     style: {
                       width: '100%',
@@ -3177,11 +3467,17 @@ $owner.Dispose()
                     displayUrl
                       ? h('img', {
                           src: displayUrl,
+                          title: '双击查看 100% 原始高清大图 (无损点对点细节)',
+                          onDoubleClick: () => setLightboxUrl(displayUrl),
                           style: {
                             width: '100%',
                             height: '100%',
                             objectFit: 'cover',
-                            filter: isCandidate ? 'brightness(0.95)' : 'none'
+                            filter: isCandidate ? 'brightness(0.95)' : 'none',
+                            imageRendering: '-webkit-optimize-contrast',
+                            transform: 'translateZ(0)',
+                            backfaceVisibility: 'hidden',
+                            cursor: 'zoom-in'
                           }
                         })
                       : h('div', {
@@ -3320,6 +3616,70 @@ $owner.Dispose()
                   ])
                 ]);
               }))
+            ]),
+
+            // 4. 全屏高清无损原图灯箱 (Lightbox - 消除缩放插值模糊，点对点呈现 4K/原图细节)
+            lightboxUrl && h('div', {
+              style: {
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                backdropFilter: 'blur(12px)',
+                zIndex: 9999999,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px',
+                boxSizing: 'border-box',
+                cursor: 'zoom-out'
+              },
+              onClick: () => setLightboxUrl(null)
+            }, [
+              h('div', {
+                style: {
+                  position: 'absolute',
+                  top: '16px',
+                  right: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  zIndex: 2
+                },
+                onClick: (e) => e.stopPropagation()
+              }, [
+                h('span', { style: { color: 'rgba(255, 255, 255, 0.7)', fontSize: '12px' } }, '1:1 点对点高清原图 (单击任意空白处关闭)'),
+                h('button', {
+                  type: 'button',
+                  onClick: () => setLightboxUrl(null),
+                  style: {
+                    background: 'rgba(255, 255, 255, 0.12)',
+                    border: '1px solid rgba(255, 255, 255, 0.25)',
+                    color: '#ffffff',
+                    borderRadius: '6px',
+                    padding: '5px 12px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    fontWeight: '500'
+                  }
+                }, '关闭预览')
+              ]),
+              h('img', {
+                src: lightboxUrl,
+                style: {
+                  maxWidth: '92vw',
+                  maxHeight: '88vh',
+                  objectFit: 'contain',
+                  borderRadius: '8px',
+                  boxShadow: '0 24px 70px rgba(0, 0, 0, 0.85)',
+                  imageRendering: '-webkit-optimize-contrast',
+                  transform: 'translateZ(0)'
+                },
+                onClick: (e) => e.stopPropagation()
+              })
             ])
           ]);
         }
@@ -3331,7 +3691,13 @@ $owner.Dispose()
           const theme = useTheme();
           const [mode, setMode] = React.useState('image'); // 'image' | 'video' | 'canvas'
           const [showTutorial, setShowTutorial] = React.useState(false);
-          const [selectedModel, setSelectedModel] = React.useState('gpt-image-2.5-flare');
+          const [selectedImageModel, setSelectedImageModel] = React.useState('gpt-image-2.5-flare');
+          const [selectedVideoModel, setSelectedVideoModel] = React.useState('grok-imagine-video-1.5');
+          const selectedModel = mode === 'image' ? selectedImageModel : selectedVideoModel;
+          const setSelectedModel = (mId) => {
+            if (mode === 'image') setSelectedImageModel(mId);
+            else if (mode === 'video') setSelectedVideoModel(mId);
+          };
           const [prompt, setPrompt] = React.useState('');
           const [size, setSize] = React.useState('1024x1024');
           const [count, setCount] = React.useState(1);
@@ -3863,7 +4229,7 @@ $owner.Dispose()
                     boxShadow: mode === 'image' ? (theme.isDark ? '0 1px 3px rgba(0,0,0,0.4)' : '0 1px 3px rgba(0,0,0,0.1)') : 'none',
                     transition: 'all 0.15s ease'
                   },
-                  onClick: () => { setMode('image'); setSelectedModel('gpt-image-2.5-flare'); }
+                  onClick: () => setMode('image')
                 }, [
                   h(Icon, { name: 'camera', size: 14 }),
                   h('span', {}, '图像工坊')
@@ -3885,7 +4251,7 @@ $owner.Dispose()
                     boxShadow: mode === 'video' ? (theme.isDark ? '0 1px 3px rgba(0,0,0,0.4)' : '0 1px 3px rgba(0,0,0,0.1)') : 'none',
                     transition: 'all 0.15s ease'
                   },
-                  onClick: () => { setMode('video'); setSelectedModel('MiniMax-H3'); }
+                  onClick: () => setMode('video')
                 }, [
                   h(Icon, { name: 'video', size: 14 }),
                   h('span', {}, '视频工坊')
@@ -4084,26 +4450,20 @@ $owner.Dispose()
                       )
                     ])
                   ]),
-                  h('select', {
-                    value: selectedModel,
-                    onChange: (e) => setSelectedModel(e.target.value),
+                  h('div', {
                     style: {
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '7px',
-                      background: theme.bgInput,
-                      border: `1px solid ${theme.borderStrong}`,
-                      color: theme.textPrimary,
-                      fontSize: '12.5px',
-                      outline: 'none',
-                      cursor: 'pointer'
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, 1fr)',
+                      gap: '8px',
+                      marginBottom: '8px'
                     }
                   }, currentModels.map(m => {
+                    const isSelected = selectedModel === m.id;
                     let priceDisplay = '';
                     if (mode === 'image') {
                       const effP = getModelEffectivePrice(m);
                       if (effP != null) {
-                        if (effP === 0) priceDisplay = '免费';
+                        if (effP === 0) priceDisplay = '限免';
                         else if (isVip && m.vipPrice != null) priceDisplay = `${isSvip ? 'SVIP' : 'VIP'} ¥${formatCNY(effP)}/张`;
                         else priceDisplay = `¥${formatCNY(effP)}/张`;
                       } else {
@@ -4117,9 +4477,56 @@ $owner.Dispose()
                         : (m.pricePerSecond || 0.15);
                       priceDisplay = isVip ? `${isSvip ? 'SVIP' : 'VIP'} ¥${formatCNY(secP)}/秒` : `¥${formatCNY(secP)}/秒`;
                     }
-                    return h('option', { key: m.id, value: m.id, style: { background: theme.bgSidebar, color: theme.textPrimary } },
-                      `${m.name} [${m.tag}] — ${priceDisplay}`
-                    );
+
+                    return h('div', {
+                      key: m.id,
+                      onClick: () => setSelectedModel(m.id),
+                      style: {
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        border: isSelected
+                          ? (theme.isDark ? '1.5px solid #38bdf8' : '1.5px solid #0284c7')
+                          : `1px solid ${theme.borderSubtle}`,
+                        backgroundColor: isSelected
+                          ? (theme.isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(2, 132, 199, 0.08)')
+                          : theme.bgInput,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        transition: 'all 0.15s ease'
+                      }
+                    }, [
+                      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' } }, [
+                        h('span', {
+                          style: {
+                            fontSize: '11.5px',
+                            fontWeight: isSelected ? '700' : '600',
+                            color: isSelected ? (theme.isDark ? '#38bdf8' : '#0284c7') : theme.textPrimary,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }
+                        }, m.name),
+                        m.tag && h('span', {
+                          style: {
+                            fontSize: '9px',
+                            padding: '1px 4px',
+                            borderRadius: '3px',
+                            backgroundColor: isSelected ? 'rgba(6, 182, 212, 0.2)' : (theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'),
+                            color: isSelected ? '#06b6d4' : theme.textMuted,
+                            flexShrink: 0
+                          }
+                        }, m.tag)
+                      ]),
+                      h('span', {
+                        style: {
+                          fontSize: '10.5px',
+                          color: isSelected ? theme.textPrimary : theme.textMuted,
+                          fontFamily: 'monospace'
+                        }
+                      }, priceDisplay)
+                    ]);
                   })),
                   h('p', { style: { fontSize: '11px', color: theme.textMuted, marginTop: '6px', lineHeight: '1.4' } },
                     currentModelObj.desc || ''
@@ -4720,7 +5127,10 @@ $owner.Dispose()
                               objectFit: 'contain',
                               borderRadius: '8px',
                               boxShadow: theme.isDark ? '0 12px 32px rgba(0, 0, 0, 0.65)' : '0 12px 32px rgba(0, 0, 0, 0.12)',
-                              border: `1px solid ${theme.borderSubtle}`
+                              border: `1px solid ${theme.borderSubtle}`,
+                              imageRendering: '-webkit-optimize-contrast',
+                              transform: 'translateZ(0)',
+                              backfaceVisibility: 'hidden'
                             }
                           })
                     ]),
@@ -5234,6 +5644,26 @@ $owner.Dispose()
             return () => listeners.delete(listener);
           }, []);
 
+          // 冷启动新用户友好引导：未配置 Key 时延时 800ms 平滑弹出配置卡片 (单会话防打扰)
+          React.useEffect(() => {
+            const currentKey = WineTokenCredentialBridge.readKey();
+            if (!currentKey) {
+              let hasSeen = false;
+              try {
+                hasSeen = !!sessionStorage.getItem('WINETOKEN_ONBOARDING_SEEN');
+              } catch (_) {}
+              if (!hasSeen) {
+                try {
+                  sessionStorage.setItem('WINETOKEN_ONBOARDING_SEEN', '1');
+                } catch (_) {}
+                const timer = setTimeout(() => {
+                  setShowPopover(true);
+                }, 800);
+                return () => clearTimeout(timer);
+              }
+            }
+          }, []);
+
           let progressBar = null;
           if (state.hasSubscription) {
             const pct = state.subUsedPercent;
@@ -5304,12 +5734,23 @@ $owner.Dispose()
                 h('span', { style: { color: '#06b6d4', fontWeight: '700', letterSpacing: '0.4px' } }, 'SUPER'),
                 h('span', { style: { opacity: 0.35, margin: '0 3px' } }, '·'),
                 h('span', { style: { fontWeight: '500' } }, '钱包 ¥' + formatCNY(state.walletBalanceCNY))
+              ]) : (state.pillText === '未配置 Key' ? h('span', {
+                style: {
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontWeight: '500',
+                  color: theme.isDark ? '#38bdf8' : '#0284c7'
+                }
+              }, [
+                h(Icon, { name: 'keyIcon', size: 12 }),
+                h('span', {}, '未配置 Key')
               ]) : h('span', {
                 style: {
                   fontWeight: '500',
                   letterSpacing: '-0.1px'
                 }
-              }, state.pillText),
+              }, state.pillText)),
               (!state.hasSubscription && !state.isSuper) && h('span', {
                 style: {
                   opacity: 0.35,

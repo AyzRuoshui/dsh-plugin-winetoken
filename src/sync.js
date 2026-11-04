@@ -7,7 +7,17 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
-const YAML = require('yaml');
+let YAML = null;
+try {
+  YAML = require('yaml');
+} catch (_) {
+  try {
+    const yamlFallback = path.join(DSH_HOME, 'plugins', 'winetoken-sync', 'node_modules', 'yaml');
+    if (fs.existsSync(yamlFallback)) {
+      YAML = require(yamlFallback);
+    }
+  } catch (_) {}
+}
 const { parseModelList } = require('./parser');
 
 /**
@@ -115,28 +125,55 @@ function updateCredentials(apiKey, envKeyName = 'WINETOKEN_API_KEY') {
     fs.mkdirSync(DSH_HOME, { recursive: true });
   }
 
-  let credsDoc = { version: 1, refs: {}, records: {} };
+  const trimmed = (apiKey || '').trim();
+  if (!trimmed) return;
 
-  if (fs.existsSync(CREDENTIALS_FILE)) {
+  if (YAML) {
     try {
-      const content = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
-      const parsed = YAML.parse(content);
-      if (parsed && typeof parsed === 'object') {
-        credsDoc = parsed;
-        if (!credsDoc.refs) credsDoc.refs = {};
+      let credsDoc = { version: 1, refs: {}, records: {} };
+      if (fs.existsSync(CREDENTIALS_FILE)) {
+        const content = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
+        const parsed = YAML.parse(content);
+        if (parsed && typeof parsed === 'object') {
+          credsDoc = parsed;
+          if (!credsDoc.refs) credsDoc.refs = {};
+        }
       }
+      credsDoc.refs[envKeyName] = trimmed;
+      const newYaml = YAML.stringify(credsDoc, { indent: 2 });
+      fs.writeFileSync(CREDENTIALS_FILE, newYaml, { encoding: 'utf-8', mode: 0o600 });
+      console.log(`[凭证更新] 已成功注入 ${envKeyName} 到 ~/.dsh/.credentials.yaml`);
+      return;
     } catch (e) {
-      console.warn('读取 .credentials.yaml 失败，将重新初始化:', e.message);
+      console.warn('YAML 解析凭证失败，回退至原生安全正则写入:', e.message);
     }
   }
 
-  // 注入或更新密钥
-  credsDoc.refs[envKeyName] = apiKey.trim();
+  // 原生安全正则写入兜底 (零外部依赖，100% 防崩溃)
+  try {
+    let content = fs.existsSync(CREDENTIALS_FILE) ? fs.readFileSync(CREDENTIALS_FILE, 'utf8') : '';
+    if (!content || !content.trim()) {
+      content = `version: 1\nrecords: {}\nrefs:\n  ${envKeyName}: ${trimmed}\n`;
+    } else {
+      const keyRegex = new RegExp(`(^|\\n)([ \\t]*${envKeyName}:\\s*)([^\\r\\n#]*)`, 'm');
+      const emptyRefsRegex = /(^|\n)([ \t]*refs:\s*\{\s*\})/m;
+      const refsBlockRegex = /(^|\n)([ \t]*refs:\s*(?:\r?\n|$))/m;
 
-  // 写回 YAML
-  const newYaml = YAML.stringify(credsDoc, { indent: 2 });
-  fs.writeFileSync(CREDENTIALS_FILE, newYaml, 'utf-8');
-  console.log(`[凭证更新] 已成功注入 ${envKeyName} 到 ~/.dsh/.credentials.yaml`);
+      if (keyRegex.test(content)) {
+        content = content.replace(keyRegex, `$1  ${envKeyName}: ${trimmed}`);
+      } else if (emptyRefsRegex.test(content)) {
+        content = content.replace(emptyRefsRegex, `$1refs:\n  ${envKeyName}: ${trimmed}`);
+      } else if (refsBlockRegex.test(content)) {
+        content = content.replace(refsBlockRegex, `$1refs:\n  ${envKeyName}: ${trimmed}\n`);
+      } else {
+        content = content.trimEnd() + `\nrefs:\n  ${envKeyName}: ${trimmed}\n`;
+      }
+    }
+    fs.writeFileSync(CREDENTIALS_FILE, content, { encoding: 'utf8', mode: 0o600 });
+    console.log(`[凭证更新] 原生引擎已注入 ${envKeyName} 到 ~/.dsh/.credentials.yaml`);
+  } catch (e) {
+    console.warn('[WineToken] 写入 .credentials.yaml 失败:', e.message);
+  }
 }
 
 /**
