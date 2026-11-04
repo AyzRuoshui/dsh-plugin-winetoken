@@ -14,8 +14,9 @@
   - 严格遵循 Harness 官方 Bundle 规范（`dsh.bundle.patch` 与 `dsh.client`）；
   - 配备完整的国际化元数据（`locale/zh.json`、`locale/en.json`）与官方矢量图标；
   - **原生陈列于左侧边栏「插件」中心**，支持在界面中查看详情、启用与管理。
-- **左侧导航栏原生内置「创作工坊 (Studio)」**：
+- **左侧导航栏原生内置「创作工坊 (Studio)」与大模型原生 Tool Calling 技能**：
   - 无缝接入主导航栏（紧跟在「自动化任务」下方），拥有独立全功能创作空间；
+  - **原生大模型工具调用 (Tool Calling)**：大模型（如王者荣耀灵宝、DeepSeek-V3、Claude 等）在对话中可直接调用工坊生图与生视频技能，内联高保真渲染，成果自动沉淀至工坊画廊；
   - 直调 WineToken 平台原生生图（GPT-Image 2.5 Flare/Sunburst、Imagen-3、SenseNova U1.5 Lite、Grok 2.0 等）与生视频（MiniMax-H3、Grok Video 1.5）模型；
   - 支持常用画幅比例（1:1、16:9、9:16）切换与纯人民币（¥）实时生成费用预估；
   - 支持一键导出下载成果至本地与本地历史作品展台。
@@ -46,7 +47,11 @@
 2. 点击左侧边栏的 **「插件」** 图标；
 3. 点击右上角的 **「+ 添加插件」**，在下拉菜单中选择 **「安装第三方插件」**；
 4. 在弹出框中粘贴安装地址：
-   - **普通电脑首选 (免 Git 极速归档包)**：
+   - **国内免魔法高速镜像（强烈推荐 · 秒级下载）**：
+     ```text
+     https://ghproxy.net/https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/heads/main.tar.gz
+     ```
+   - **GitHub 官方直链 (免 Git 极速归档包)**：
      ```text
      https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/heads/main.tar.gz
      ```
