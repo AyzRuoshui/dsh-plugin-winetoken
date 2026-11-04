@@ -3042,24 +3042,26 @@ $owner.Dispose()
 
               h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 4px' } }),
 
-              // 漫剧画布自主生图模型选择器 (同步 Manifest 动态矩阵)
+              // 漫剧画布自主生图模型选择器 (同步 Manifest 动态矩阵与实时生效会员价格)
               h('div', {
                 style: {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  padding: '3px 8px',
-                  borderRadius: '5px',
+                  padding: '3px 10px',
+                  borderRadius: '6px',
                   backgroundColor: theme.bgInput,
-                  border: `1px solid ${theme.borderSubtle}`
+                  border: `1px solid ${theme.borderSubtle}`,
+                  maxWidth: '460px',
+                  flexShrink: 0
                 }
               }, [
-                h(Icon, { name: 'palette', size: 12, style: { opacity: 0.7 } }),
-                h('span', { style: { fontSize: '11px', color: theme.textMuted } }, '模型:'),
+                h(Icon, { name: 'palette', size: 12, style: { opacity: 0.7, flexShrink: 0 } }),
+                h('span', { style: { fontSize: '11px', color: theme.textMuted, whiteSpace: 'nowrap', flexShrink: 0 } }, '模型:'),
                 h('select', {
                   value: canvasModel,
                   onChange: (e) => setCanvasModel(e.target.value),
-                  title: '选择漫剧分镜生成模型',
+                  title: '选择漫剧分镜生成模型与生效费率',
                   style: {
                     background: 'transparent',
                     border: 'none',
@@ -3067,15 +3069,35 @@ $owner.Dispose()
                     fontSize: '11.5px',
                     fontWeight: 500,
                     outline: 'none',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    maxWidth: '380px',
+                    paddingRight: '6px'
                   }
                 }, availableImageModels.map(m => {
                   const isFree = m.price === 0 || (m.tag && m.tag.includes('限免'));
+                  let priceText = '';
+                  if (isFree) {
+                    priceText = '限免 ¥0.00';
+                  } else if (isSvip && m.vipPrice != null) {
+                    priceText = `SVIP ¥${formatCNY(m.vipPrice)}/张`;
+                  } else if (isVip) {
+                    const vipP = m.vipPrice != null ? m.vipPrice : (m.price != null ? Number((m.price * 0.9).toFixed(2)) : null);
+                    priceText = vipP != null ? `VIP ¥${formatCNY(vipP)}/张` : (m.vipPriceText || '');
+                  } else if (m.price != null) {
+                    priceText = `¥${formatCNY(m.price)}/张`;
+                  } else {
+                    priceText = m.priceText || '';
+                  }
+
+                  const tagPart = m.tag ? ` [${m.tag}]` : '';
+                  const pricePart = priceText ? ` — ${priceText}` : '';
+                  const fullLabel = `${m.name}${tagPart}${pricePart}`;
+
                   return h('option', {
                     key: m.id,
                     value: m.id,
                     style: { background: theme.bgSidebar, color: theme.textPrimary }
-                  }, `${m.name} [${m.tag || '生图'}]${isFree ? ' (限免)' : ''}`);
+                  }, fullLabel);
                 }))
               ]),
 
@@ -4452,18 +4474,20 @@ $owner.Dispose()
                   ]),
                   h('div', {
                     style: {
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(2, 1fr)',
-                      gap: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '7px',
                       marginBottom: '8px'
                     }
                   }, currentModels.map(m => {
                     const isSelected = selectedModel === m.id;
                     let priceDisplay = '';
+                    let isItemFree = false;
                     if (mode === 'image') {
                       const effP = getModelEffectivePrice(m);
+                      isItemFree = effP === 0 || (m.tag && m.tag.includes('限免'));
                       if (effP != null) {
-                        if (effP === 0) priceDisplay = '限免';
+                        if (effP === 0) priceDisplay = '限免 ¥0.00';
                         else if (isVip && m.vipPrice != null) priceDisplay = `${isSvip ? 'SVIP' : 'VIP'} ¥${formatCNY(effP)}/张`;
                         else priceDisplay = `¥${formatCNY(effP)}/张`;
                       } else {
@@ -4475,62 +4499,107 @@ $owner.Dispose()
                             ? m.vipPricePerSecond
                             : Number(((m.pricePerSecond || 0.15) * discountRatio).toFixed(3)))
                         : (m.pricePerSecond || 0.15);
-                      priceDisplay = isVip ? `${isSvip ? 'SVIP' : 'VIP'} ¥${formatCNY(secP)}/秒` : `¥${formatCNY(secP)}/秒`;
+                      isItemFree = secP === 0 || (m.tag && m.tag.includes('限免'));
+                      priceDisplay = isItemFree
+                        ? '限免 ¥0.00'
+                        : (isVip ? `${isSvip ? 'SVIP' : 'VIP'} ¥${formatCNY(secP)}/秒` : `¥${formatCNY(secP)}/秒`);
                     }
 
                     return h('div', {
                       key: m.id,
                       onClick: () => setSelectedModel(m.id),
                       style: {
-                        padding: '8px 10px',
+                        padding: '9px 12px',
                         borderRadius: '8px',
                         border: isSelected
                           ? (theme.isDark ? '1.5px solid #38bdf8' : '1.5px solid #0284c7')
                           : `1px solid ${theme.borderSubtle}`,
                         backgroundColor: isSelected
-                          ? (theme.isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(2, 132, 199, 0.08)')
+                          ? (theme.isDark ? 'rgba(56, 189, 248, 0.10)' : 'rgba(2, 132, 199, 0.06)')
                           : theme.bgInput,
                         cursor: 'pointer',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '4px',
-                        transition: 'all 0.15s ease'
+                        transition: 'all 0.15s ease',
+                        boxShadow: isSelected
+                          ? (theme.isDark ? '0 0 10px rgba(56, 189, 248, 0.12)' : '0 2px 8px rgba(2, 132, 199, 0.08)')
+                          : 'none'
                       }
                     }, [
-                      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' } }, [
-                        h('span', {
+                      // 首行：左侧完整全称 + Tag徽章；右侧生效价格
+                      h('div', {
+                        style: {
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px'
+                        }
+                      }, [
+                        h('div', {
                           style: {
-                            fontSize: '11.5px',
-                            fontWeight: isSelected ? '700' : '600',
-                            color: isSelected ? (theme.isDark ? '#38bdf8' : '#0284c7') : theme.textPrimary,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            minWidth: 0,
+                            flex: 1
                           }
-                        }, m.name),
-                        m.tag && h('span', {
+                        }, [
+                          h('span', {
+                            style: {
+                              fontSize: '12px',
+                              fontWeight: isSelected ? '700' : '600',
+                              color: isSelected ? (theme.isDark ? '#38bdf8' : '#0284c7') : theme.textPrimary,
+                              whiteSpace: 'nowrap'
+                            }
+                          }, m.name),
+                          m.tag && h('span', {
+                            style: {
+                              fontSize: '9.5px',
+                              fontWeight: 500,
+                              padding: '1.5px 5.5px',
+                              borderRadius: '4px',
+                              backgroundColor: isSelected
+                                ? 'rgba(6, 182, 212, 0.2)'
+                                : (theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'),
+                              color: isSelected ? '#06b6d4' : theme.textMuted,
+                              flexShrink: 0
+                            }
+                          }, m.tag)
+                        ]),
+                        h('div', {
                           style: {
-                            fontSize: '9px',
-                            padding: '1px 4px',
-                            borderRadius: '3px',
-                            backgroundColor: isSelected ? 'rgba(6, 182, 212, 0.2)' : (theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'),
-                            color: isSelected ? '#06b6d4' : theme.textMuted,
-                            flexShrink: 0
+                            flexShrink: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
                           }
-                        }, m.tag)
+                        }, [
+                          h('span', {
+                            style: {
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              color: isSelected
+                                ? (theme.isDark ? '#38bdf8' : '#0284c7')
+                                : (isItemFree ? '#22c55e' : (isVip ? (theme.isDark ? '#38bdf8' : '#0284c7') : theme.textPrimary)),
+                              fontFamily: 'monospace'
+                            }
+                          }, priceDisplay)
+                        ])
                       ]),
-                      h('span', {
+                      // 次行：模型特性说明 (清晰呈现模型特点，杜绝盲选)
+                      m.desc && h('div', {
                         style: {
                           fontSize: '10.5px',
-                          color: isSelected ? theme.textPrimary : theme.textMuted,
-                          fontFamily: 'monospace'
+                          color: isSelected ? (theme.isDark ? '#cbd5e1' : '#475569') : theme.textMuted,
+                          lineHeight: '1.35',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
                         }
-                      }, priceDisplay)
+                      }, m.desc)
                     ]);
-                  })),
-                  h('p', { style: { fontSize: '11px', color: theme.textMuted, marginTop: '6px', lineHeight: '1.4' } },
-                    currentModelObj.desc || ''
-                  )
+                  }))
                 ]),
 
                 // 2. 多参考图槽位管理组件 (支持 1~5 张参考图、命名别名、拖拽与精准光标插入)
