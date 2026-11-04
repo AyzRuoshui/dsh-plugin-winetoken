@@ -1,5 +1,6 @@
-- id: winetoken-plugin
-  name: "@winetoken/dsh-plugin-winetoken"
+- insert:
+    - id: winetoken-plugin
+      name: "@winetoken/dsh-plugin-winetoken"
 - id: agent-default-model
   name: "@deepseek-ai/dsh-agent-default-model"
   config:
