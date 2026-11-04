@@ -293,7 +293,7 @@ function registerWineTokenTools(ctx) {
 
           // 构造 Markdown 高保真内联渲染输出
           const markdownImages = validUrls.map((u, idx) => `![生成画面 ${idx + 1}](${u})`).join('\n\n');
-          const markdownDisplay = `${markdownImages}\n\n*🎨 基底模型: **${model}** | 分辨率: **${size}** | 已自动持久化存入 WineToken 创作工坊画廊*`;
+          const markdownDisplay = `${markdownImages}\n\n*基底模型: **${model}** | 分辨率: **${size}** | 已自动同步至 WineToken 创作工坊展台，可在创作工坊中以本地文件直接打开或定位*`;
 
           return {
             success: true,
@@ -412,7 +412,7 @@ function registerWineTokenTools(ctx) {
           });
 
           // 构造 HTML5 原生播放器控件 Markdown 输出
-          const markdownDisplay = `<video src="${videoUrl}" controls width="100%" style="max-height:480px;border-radius:8px;outline:none;background:#000;"></video>\n\n*🎬 基底模型: **${model}** (${duration}秒) | 已自动持久化存入 WineToken 创作工坊画廊*`;
+          const markdownDisplay = `<video src="${videoUrl}" controls width="100%" style="max-height:480px;border-radius:8px;outline:none;background:#000;"></video>\n\n*基底模型: **${model}** (${duration}秒) | 已自动同步至 WineToken 创作工坊展台，可在创作工坊中以本地文件直接打开或定位*`;
 
           return {
             success: true,

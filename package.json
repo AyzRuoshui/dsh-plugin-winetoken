@@ -1,6 +1,6 @@
 {
   "name": "@winetoken/dsh-plugin-winetoken",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "WineToken 全平台推理模型自动同步与账户资产/用量状态监控。",
   "author": "AyzRuoshui",
   "license": "MIT",

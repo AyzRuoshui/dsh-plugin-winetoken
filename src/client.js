@@ -75,6 +75,262 @@
     } catch (_) {}
   }
 
+  // 本地媒体文件与目录系统管理引擎 (基于 Electron 44 + Node.js 24 原生支持，支持自定义另存为路径与文件夹定位)
+  const WineTokenFileUtil = {
+    // 获取本地专属保存目录：~/Pictures/WineToken（作为兜底目录）
+    getSaveDir() {
+      try {
+        const path = require('path');
+        const os = require('os');
+        const fs = require('fs');
+        const dir = path.join(os.homedir(), 'Pictures', 'WineToken');
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        return dir;
+      } catch (_) {
+        return null;
+      }
+    },
+
+    // 获取并记忆用户上次保存的目录
+    getLastSaveDir() {
+      try {
+        const saved = localStorage.getItem('WINETOKEN_LAST_SAVE_DIR');
+        const fs = require('fs');
+        if (saved && fs.existsSync(saved)) {
+          return saved;
+        }
+      } catch (_) {}
+      return this.getSaveDir();
+    },
+
+    // 记录用户最新选择的保存目录
+    setLastSaveDir(dirPath) {
+      if (!dirPath) return;
+      try {
+        localStorage.setItem('WINETOKEN_LAST_SAVE_DIR', dirPath);
+      } catch (_) {}
+    },
+
+    // 检查本地物理文件是否存在
+    fileExists(filePath) {
+      if (!filePath) return false;
+      try {
+        const fs = require('fs');
+        return fs.existsSync(filePath);
+      } catch (_) {
+        return false;
+      }
+    },
+
+    // 格式化推断扩展名
+    inferExtension(url, type) {
+      if (type === 'video') return '.mp4';
+      if (typeof url === 'string') {
+        if (url.includes('.mp4')) return '.mp4';
+        if (url.includes('.jpg') || url.includes('.jpeg')) return '.jpg';
+        if (url.includes('.webp')) return '.webp';
+        if (url.includes('.gif')) return '.gif';
+      }
+      return '.png';
+    },
+
+    /**
+     * 调起 Windows 原生另存为文件对话框，让用户自由挑选存放路径与盘符
+     * @param {Object} options
+     * @param {string} [options.title] 对话框标题
+     * @param {string} [options.defaultName] 预设文件名
+     * @param {string} [options.type] 'image' | 'video'
+     * @param {string} [options.ext] 默认扩展名（如 '.png' 或 '.mp4'）
+     * @param {string} [options.filters] WinForms 过滤器
+     * @returns {Promise<string|null>} 用户选中的完整绝对物理路径；取消则返回 null
+     */
+    async promptSaveLocation(options = {}) {
+      const type = options.type || 'image';
+      const defaultExt = (options.ext || (type === 'video' ? '.mp4' : '.png')).replace(/^\./, '');
+      const defaultName = options.defaultName || `WineToken_${Date.now()}.${defaultExt}`;
+      const title = options.title || (type === 'video' ? '另存为视频' : '另存为图片');
+      const initialDir = options.initialDir || this.getLastSaveDir() || '';
+
+      // 构建 WinForms 过滤器
+      let filter = options.filters;
+      if (!filter) {
+        if (type === 'video') {
+          filter = 'MP4 视频 (*.mp4)|*.mp4|所有文件 (*.*)|*.*';
+        } else {
+          filter = 'PNG 图片 (*.png)|*.png|JPEG 图片 (*.jpg;*.jpeg)|*.jpg;*.jpeg|WEBP 图片 (*.webp)|*.webp|所有文件 (*.*)|*.*';
+        }
+      }
+
+      try {
+        const cp = require('child_process');
+        const path = require('path');
+        const config = {
+          title,
+          fileName: defaultName,
+          initialDir,
+          filter,
+          defaultExt
+        };
+
+        const configB64 = Buffer.from(JSON.stringify(config), 'utf8').toString('base64');
+        const psScript = `
+Add-Type -AssemblyName System.Windows.Forms
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.StartPosition = "Manual"
+$owner.Location = New-Object System.Drawing.Point(-32000, -32000)
+$owner.Show()
+$owner.Activate()
+
+$cfgJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("${configB64}"))
+$cfg = ConvertFrom-Json $cfgJson
+
+$d = New-Object System.Windows.Forms.SaveFileDialog
+$d.Title = $cfg.title
+if ($cfg.fileName) { $d.FileName = $cfg.fileName }
+if ($cfg.initialDir) { $d.InitialDirectory = $cfg.initialDir }
+if ($cfg.filter) { $d.Filter = $cfg.filter }
+if ($cfg.defaultExt) { $d.DefaultExt = $cfg.defaultExt }
+$d.AddExtension = $true
+$d.OverwritePrompt = $true
+
+$res = $d.ShowDialog($owner)
+if ($res -eq [System.Windows.Forms.DialogResult]::OK -and $d.FileName) {
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($d.FileName)
+  Write-Output ([Convert]::ToBase64String($bytes))
+}
+$owner.Dispose()
+`;
+
+        const scriptB64 = Buffer.from(psScript, 'utf16le').toString('base64');
+        const chosenPath = await new Promise((resolve) => {
+          const proc = cp.spawn('powershell.exe', ['-STA', '-NoProfile', '-NonInteractive', '-EncodedCommand', scriptB64], {
+            windowsHide: true
+          });
+          let stdout = '';
+          proc.stdout.setEncoding('utf8');
+          proc.stdout.on('data', (d) => { stdout += d; });
+          proc.on('close', () => {
+            const raw = stdout.trim();
+            if (!raw) return resolve(null);
+            try {
+              const decoded = Buffer.from(raw, 'base64').toString('utf8');
+              resolve(decoded);
+            } catch (_) {
+              resolve(null);
+            }
+          });
+          proc.on('error', () => resolve(null));
+        });
+
+        if (chosenPath) {
+          this.setLastSaveDir(path.dirname(chosenPath));
+          return chosenPath;
+        }
+        return null;
+      } catch (err) {
+        console.warn('[WineToken] 调起原生另存为对话框异常:', err);
+        return null;
+      }
+    },
+
+    /**
+     * 将媒体数据直接流式写入用户指定的物理绝对路径
+     */
+    async writeMediaToFile(url, targetPath) {
+      if (!targetPath) throw new Error('未指定目标物理保存路径');
+      const fs = require('fs');
+
+      // 1. Base64 DataURL (瞬间解码写入)
+      if (typeof url === 'string' && url.startsWith('data:')) {
+        const base64Data = url.replace(/^data:[^;]+;base64,/, '');
+        await fs.promises.writeFile(targetPath, Buffer.from(base64Data, 'base64'));
+        return targetPath;
+      }
+
+      // 2. HTTP / HTTPS 远程资源
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`下载网络媒体失败: HTTP ${res.status}`);
+      const arrayBuf = await res.arrayBuffer();
+      await fs.promises.writeFile(targetPath, Buffer.from(arrayBuf));
+      return targetPath;
+    },
+
+    // 快捷保存至本地存储目录老接口 (作为无感静默缓存使用)
+    async saveMedia(url, customName = null, type = 'image') {
+      const path = require('path');
+      const dir = this.getSaveDir();
+      if (!dir) throw new Error('无法初始化本地媒体存储目录 (Pictures/WineToken)');
+
+      const ext = this.inferExtension(url, type);
+      const safeName = customName ? customName.replace(/[\\/:*?"<>|]/g, '_') : `WineToken_${Date.now()}`;
+      const fileName = safeName.endsWith(ext) ? safeName : `${safeName}${ext}`;
+      const fullPath = path.join(dir, fileName);
+
+      return await this.writeMediaToFile(url, fullPath);
+    },
+
+    // 以本地文件形式直接打开文件 (调起系统默认图片/视频查看器)
+    openFile(filePath) {
+      if (!filePath) return false;
+      try {
+        const electron = require('electron');
+        if (electron && electron.shell && electron.shell.openPath) {
+          electron.shell.openPath(filePath);
+          return true;
+        }
+      } catch (_) {}
+      try {
+        const cp = require('child_process');
+        cp.execFile('cmd.exe', ['/c', 'start', '""', filePath]);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    },
+
+    // 在系统文件资源管理器中定位并高亮显示该文件
+    revealFile(filePath) {
+      if (!filePath) return false;
+      try {
+        const electron = require('electron');
+        if (electron && electron.shell && electron.shell.showItemInFolder) {
+          electron.shell.showItemInFolder(filePath);
+          return true;
+        }
+      } catch (_) {}
+      try {
+        const cp = require('child_process');
+        cp.execFile('explorer.exe', [`/select,${filePath}`]);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    },
+
+    // 打开存储根目录
+    openFolder() {
+      const dir = this.getLastSaveDir() || this.getSaveDir();
+      if (!dir) return false;
+      try {
+        const electron = require('electron');
+        if (electron && electron.shell && electron.shell.openPath) {
+          electron.shell.openPath(dir);
+          return true;
+        }
+      } catch (_) {}
+      try {
+        const cp = require('child_process');
+        cp.execFile('explorer.exe', [dir]);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  };
+
   const initialCache = loadBillingCache();
 
   let billingState = initialCache ? {
@@ -650,6 +906,13 @@
               h('path', { key: 'p1', d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }),
               h('polyline', { key: 'pl', points: '7 10 12 15 17 10' }),
               h('line', { key: 'l1', x1: '12', y1: '15', x2: '12', y2: '3' })
+            ],
+            folder: [
+              h('path', { key: 'p1', d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' })
+            ],
+            file: [
+              h('path', { key: 'p1', d: 'M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z' }),
+              h('polyline', { key: 'pl', points: '13 2 13 9 20 9' })
             ]
           };
 
@@ -2081,10 +2344,22 @@
             }
 
             const dataUrl = canvas.toDataURL('image/png');
-            const a = document.createElement('a');
-            a.download = `winetoken-comic-strip-${Date.now()}.png`;
-            a.href = dataUrl;
-            a.click();
+            try {
+              const defaultName = `winetoken-comic-strip-${Date.now()}.png`;
+              const targetPath = await WineTokenFileUtil.promptSaveLocation({
+                title: '导出漫剧条漫长图',
+                defaultName,
+                type: 'image',
+                ext: '.png'
+              });
+
+              if (!targetPath) return; // 用户点击取消，静默退出
+
+              const fullPath = await WineTokenFileUtil.writeMediaToFile(dataUrl, targetPath);
+              WineTokenFileUtil.revealFile(fullPath);
+            } catch (err) {
+              alert('导出漫剧长图失败: ' + err.message);
+            }
           };
 
           return h('div', {
@@ -2689,6 +2964,8 @@
           const [activeImage, setActiveImage] = React.useState(null);
           const [copyFeedback, setCopyFeedback] = React.useState(false);
           const [showStudioPopover, setShowStudioPopover] = React.useState(false);
+          const [savingId, setSavingId] = React.useState(null);
+          const [fileToast, setFileToast] = React.useState('');
           const fileInputRef = React.useRef(null);
 
           const [history, setHistory] = React.useState(() => {
@@ -3126,15 +3403,99 @@
             }
           };
 
-          // 快捷下载
-          const downloadMedia = (url, name) => {
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = name || `winetoken_${Date.now()}.png`;
-            a.target = '_blank';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+          // 以系统原生默认应用直接打开本地媒体文件 (如果尚未下载，自动秒级保存至本地后直接以文件形式打开)
+          const handleOpenMediaFile = async (item) => {
+            if (!item || !item.url) return;
+            try {
+              if (item.localPath && WineTokenFileUtil.fileExists(item.localPath)) {
+                WineTokenFileUtil.openFile(item.localPath);
+                return;
+              }
+              setFileToast('正在以本地文件形式打开...');
+              const ext = WineTokenFileUtil.inferExtension(item.url, item.type);
+              const fileName = `WineToken_${Date.now()}${ext}`;
+              const localPath = await WineTokenFileUtil.saveMedia(item.url, fileName, item.type);
+              item.localPath = localPath;
+              setHistory(prev => {
+                const next = prev.map(x => (x.id === item.id || x.url === item.url) ? { ...x, localPath } : x);
+                try {
+                  localStorage.setItem('WINETOKEN_STUDIO_HISTORY', JSON.stringify(next));
+                  const fs = require('fs');
+                  const path = require('path');
+                  const os = require('os');
+                  const historyFile = path.join(os.homedir(), '.dsh', 'storages', 'winetoken_studio_history.json');
+                  fs.writeFileSync(historyFile, JSON.stringify(next.slice(0, 60), null, 2), 'utf8');
+                } catch (_) {}
+                return next;
+              });
+              WineTokenFileUtil.openFile(localPath);
+              setFileToast('已在系统默认应用中打开');
+              setTimeout(() => setFileToast(''), 3000);
+            } catch (err) {
+              alert('以文件形式打开失败: ' + err.message);
+              setFileToast('');
+            }
+          };
+
+          // 保存媒体到本地用户指定路径，并在资源管理器中直接定位选中该文件 (支持用户自由选择盘符与目录)
+          const handleSaveMediaToLocal = async (item) => {
+            if (!item || !item.url) return;
+            try {
+              if (item.localPath && WineTokenFileUtil.fileExists(item.localPath)) {
+                WineTokenFileUtil.revealFile(item.localPath);
+                setFileToast('已在文件夹中高亮定位文件');
+                setTimeout(() => setFileToast(''), 3000);
+                return;
+              }
+
+              const ext = WineTokenFileUtil.inferExtension(item.url, item.type);
+              const defaultName = `WineToken_${Date.now()}${ext}`;
+
+              // 弹出 Windows 原生另存为对话框，用户自由挑选存放路径、盘符与文件名
+              const targetPath = await WineTokenFileUtil.promptSaveLocation({
+                title: item.type === 'video' ? '另存为视频' : '另存为图片',
+                defaultName,
+                type: item.type || 'image',
+                ext
+              });
+
+              if (!targetPath) {
+                // 用户点击取消，静默退出
+                return;
+              }
+
+              setSavingId(item.id || item.url);
+              setFileToast('正在写入本地磁盘...');
+
+              const localPath = await WineTokenFileUtil.writeMediaToFile(item.url, targetPath);
+              item.localPath = localPath;
+              setHistory(prev => {
+                const next = prev.map(x => (x.id === item.id || x.url === item.url) ? { ...x, localPath } : x);
+                try {
+                  localStorage.setItem('WINETOKEN_STUDIO_HISTORY', JSON.stringify(next));
+                  const fs = require('fs');
+                  const path = require('path');
+                  const os = require('os');
+                  const historyFile = path.join(os.homedir(), '.dsh', 'storages', 'winetoken_studio_history.json');
+                  fs.writeFileSync(historyFile, JSON.stringify(next.slice(0, 60), null, 2), 'utf8');
+                } catch (_) {}
+                return next;
+              });
+              setFileToast('保存成功，已在文件夹中高亮定位');
+              setTimeout(() => setFileToast(''), 3000);
+              WineTokenFileUtil.revealFile(localPath);
+            } catch (err) {
+              alert('保存到本地失败: ' + err.message);
+              setFileToast('');
+            } finally {
+              setSavingId(null);
+            }
+          };
+
+          // 打开媒体保存根目录 Pictures/WineToken
+          const handleOpenSaveFolder = () => {
+            const ok = WineTokenFileUtil.openFolder();
+            if (!ok) alert('无法打开本地存储目录');
           };
 
           // 复制 Prompt 并反馈
@@ -4058,7 +4419,7 @@
                       overflow: 'hidden'
                     }
                   }, [
-                    // 独立图片舞台容器：自适应占据剩余全部垂直高度，溢出隐藏，保证绝不挤占下方操作栏
+                    // 独立媒体舞台容器：自适应占据剩余全部垂直高度，支持视频/图像多模态，点击直接在系统原生应用中打开
                     h('div', {
                       style: {
                         flex: 1,
@@ -4067,21 +4428,38 @@
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        overflow: 'hidden'
-                      }
+                        overflow: 'hidden',
+                        cursor: 'pointer'
+                      },
+                      title: '点击直接以本地文件形式在系统默认应用中打开查看',
+                      onClick: () => handleOpenMediaFile(activeImage)
                     }, [
-                      h('img', {
-                        src: activeImage.url,
-                        alt: activeImage.prompt,
-                        style: {
-                          maxWidth: '100%',
-                          maxHeight: '100%',
-                          objectFit: 'contain',
-                          borderRadius: '8px',
-                          boxShadow: theme.isDark ? '0 12px 32px rgba(0, 0, 0, 0.65)' : '0 12px 32px rgba(0, 0, 0, 0.12)',
-                          border: `1px solid ${theme.borderSubtle}`
-                        }
-                      })
+                      (activeImage.type === 'video' || (typeof activeImage.url === 'string' && activeImage.url.includes('.mp4')))
+                        ? h('video', {
+                            src: activeImage.url,
+                            controls: true,
+                            autoPlay: true,
+                            loop: true,
+                            style: {
+                              maxWidth: '100%',
+                              maxHeight: '100%',
+                              borderRadius: '8px',
+                              boxShadow: theme.isDark ? '0 12px 32px rgba(0, 0, 0, 0.65)' : '0 12px 32px rgba(0, 0, 0, 0.12)',
+                              border: `1px solid ${theme.borderSubtle}`
+                            }
+                          })
+                        : h('img', {
+                            src: activeImage.url,
+                            alt: activeImage.prompt,
+                            style: {
+                              maxWidth: '100%',
+                              maxHeight: '100%',
+                              objectFit: 'contain',
+                              borderRadius: '8px',
+                              boxShadow: theme.isDark ? '0 12px 32px rgba(0, 0, 0, 0.65)' : '0 12px 32px rgba(0, 0, 0, 0.12)',
+                              border: `1px solid ${theme.borderSubtle}`
+                            }
+                          })
                     ]),
                     // 浮动悬停操作栏 (自适应)
                     h('div', {
@@ -4098,12 +4476,15 @@
                         borderRadius: '8px',
                         border: `1px solid ${theme.floatingBarBorder}`,
                         boxShadow: theme.isDark ? '0 8px 20px rgba(0,0,0,0.5)' : '0 8px 20px rgba(0,0,0,0.1)',
-                        zIndex: 2
+                        zIndex: 2,
+                        position: 'relative'
                       }
                     }, [
+                      // 1. 以本地文件直接打开
                       h('button', {
                         type: 'button',
-                        onClick: () => downloadMedia(activeImage.url),
+                        onClick: () => handleOpenMediaFile(activeImage),
+                        title: '在系统默认应用（照片/媒体播放器）中以本地文件形式打开',
                         style: {
                           padding: '5px 12px',
                           borderRadius: '5px',
@@ -4118,9 +4499,79 @@
                           gap: '6px'
                         }
                       }, [
-                        h(Icon, { name: 'download', size: 13 }),
-                        h('span', {}, '保存原图')
+                        h(Icon, { name: 'externalLink', size: 13 }),
+                        h('span', {}, '以文件打开')
                       ]),
+
+                      // 2. 保存到本地 / 在文件夹中定位
+                      h('button', {
+                        type: 'button',
+                        disabled: savingId === (activeImage.id || activeImage.url),
+                        onClick: () => handleSaveMediaToLocal(activeImage),
+                        title: (activeImage.localPath && WineTokenFileUtil.fileExists(activeImage.localPath))
+                          ? '文件已保存，点击直接在文件资源管理器中高亮定位'
+                          : '选择路径保存至本地（可自由指定盘符与文件名）',
+                        style: {
+                          padding: '5px 12px',
+                          borderRadius: '5px',
+                          background: theme.chipNormalBg,
+                          border: `1px solid ${theme.borderStrong}`,
+                          color: theme.textPrimary,
+                          fontSize: '12px',
+                          cursor: (savingId === (activeImage.id || activeImage.url)) ? 'wait' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }
+                      }, [
+                        h(Icon, {
+                          name: (activeImage.localPath && WineTokenFileUtil.fileExists(activeImage.localPath)) ? 'folder' : 'download',
+                          size: 13
+                        }),
+                        h('span', {}, (savingId === (activeImage.id || activeImage.url))
+                          ? '正在保存...'
+                          : ((activeImage.localPath && WineTokenFileUtil.fileExists(activeImage.localPath))
+                            ? '定位文件'
+                            : (activeImage.type === 'video' ? '保存视频' : '保存原图')))
+                      ]),
+
+                      // 3. 打开存储根目录
+                      h('button', {
+                        type: 'button',
+                        onClick: handleOpenSaveFolder,
+                        title: '打开本地媒体保存文件夹 Pictures/WineToken',
+                        style: {
+                          padding: '5px 10px',
+                          borderRadius: '5px',
+                          background: theme.chipNormalBg,
+                          border: `1px solid ${theme.borderStrong}`,
+                          color: theme.textSecondary,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px'
+                        }
+                      }, [
+                        h(Icon, { name: 'folder', size: 13 }),
+                        h('span', {}, '存储目录')
+                      ]),
+
+                      // 4. 操作状态 Toast 提示气泡
+                      fileToast && h('div', {
+                        style: {
+                          position: 'absolute',
+                          top: '-36px',
+                          background: theme.isDark ? '#1f2937' : '#111827',
+                          color: '#ffffff',
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                          pointerEvents: 'none',
+                          zIndex: 10
+                        }
+                      }, fileToast),
                       h('button', {
                         type: 'button',
                         onClick: () => copyPromptText(activeImage.prompt),
@@ -4446,6 +4897,8 @@
                     return h('div', {
                       key: idx,
                       onClick: () => setActiveImage(item),
+                      onDoubleClick: () => handleOpenMediaFile(item),
+                      title: `${item.prompt || ''}\n(单击选中展台，双击直接以文件打开)`,
                       style: {
                         width: '74px',
                         height: '74px',
@@ -4459,11 +4912,27 @@
                         position: 'relative'
                       }
                     }, [
-                      h('img', {
-                        src: item.url,
-                        alt: item.prompt,
-                        style: { width: '100%', height: '100%', objectFit: 'cover' }
-                      }),
+                      (item.type === 'video' || (typeof item.url === 'string' && item.url.includes('.mp4')))
+                        ? h('div', {
+                            style: {
+                              width: '100%',
+                              height: '100%',
+                              background: theme.isDark ? '#111827' : '#f3f4f6',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: theme.textSecondary
+                            }
+                          }, [
+                            h(Icon, { name: 'video', size: 22 }),
+                            h('span', { style: { fontSize: '9px', marginTop: '2px', fontWeight: '500' } }, '视频')
+                          ])
+                        : h('img', {
+                            src: item.url,
+                            alt: item.prompt,
+                            style: { width: '100%', height: '100%', objectFit: 'cover' }
+                          }),
                       item.hasRef && h('div', {
                         style: {
                           position: 'absolute',
