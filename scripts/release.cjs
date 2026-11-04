@@ -60,10 +60,10 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 上线 SUPER 专属青色特权系统、免流模型展台与全平台八折特惠`;
+  const releaseTitle = `Release ${version} - 上线 SUPER 专属青色特权系统、免费模型展台与全平台八折特惠`;
   const releaseBody = `## 🚀 DeepSeek Harness WineToken 插件 ${version}
 
-### 💎 上线 SUPER 专属青色特权系统与无限免流模型
+### 💎 上线 SUPER 专属青色特权系统与无限免费模型
 
 1. **[SUPER 专属青色特权标识体系]**
    - 底部状态栏胶囊与创作工坊顶栏为 **SUPER** 分组用户引入专属青色（Cyan）高贵微光徽章与 Crown 图标；
@@ -74,8 +74,8 @@ async function createRelease() {
    - 顶栏直接连接并呈现「钱包永久保底余额」与「总累计真实调用」。
 
 3. **[双重核心特权展台全量落地]**
-   - **特权一**：**无限量 \`deepseek-v4.1-flash-free\`**（专属免流绿色通道，0 Quota 消耗免费畅享）；
-   - **特权二**：**全平台所有模型享 8 折特权（与 SVIP 同级 0.8x）**；
+   - **特权一**：**无限量 \`deepseek-v4.1-flash-free\` (免费模型)**（专属绿色通道，0 Quota 消耗免费畅享）；
+   - **特权二**：**全平台所有模型享 8 折特权 (0.8x)**；
    - 服务端 New-API 计费网关双向锁定 \`GroupRatio\`，创作工坊动态定价精准对齐 8 折。
 
 4. **[零闪烁缓存与持久化]**

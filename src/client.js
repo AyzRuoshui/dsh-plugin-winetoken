@@ -870,7 +870,7 @@
                     }
                   }, [
                     h('span', { style: { width: '5px', height: '5px', borderRadius: '50%', background: '#06b6d4', display: 'inline-block' } }),
-                    h('span', {}, '无限量 deepseek-v4.1-flash-free (免流模型)')
+                    h('span', {}, '无限量 deepseek-v4.1-flash-free (免费模型)')
                   ]),
                   h('div', {
                     style: {
@@ -882,7 +882,7 @@
                     }
                   }, [
                     h('span', { style: { width: '5px', height: '5px', borderRadius: '50%', background: '#06b6d4', opacity: 0.6, display: 'inline-block' } }),
-                    h('span', {}, '全平台模型享 8 折特权 (与 SVIP 同级)')
+                    h('span', {}, '全平台模型享 8 折特权')
                   ])
                 ])
               ]) :
