@@ -60,23 +60,24 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 根除用量统计数值漂移闪烁，对齐 cordis.patch.yml 规范与大模型生图调用闭环`;
+  const releaseTitle = `Release ${version} - 彻底废除默认模型篡改，补全模型同步深度幂等性并移除调试探针日志`;
   const releaseBody = `## 🚀 DeepSeek Harness WineToken 插件 ${version}
 
-### 🛠️ 关键修复与体验优化
+### 🛡️ 纯净度与生态友好性重大重构
 
-1. **[彻底消除用量统计数据闪烁与漂移 (0.13 -> 0.11)]**
-   - 根因定位：原先在数据更新时，先拉取粗粒度的单月总流水将已用赋值为 0.13，随后高精度双账轨接口返回真实的周期实际消耗 0.11，导致用户肉眼可见“一闪变化”；
-   - 彻底废除提前赋值逻辑，统一以 Tokyo VPS 高精度双账轨接口（\`/api/subscription/status\`）为唯一真实来源，100% 消除视觉闪烁漂移。
+1. **[彻底废除默认模型篡改 (零侵入保证)]**
+   - 官方补丁 \`cordis.patch.yml\` 中已彻底移除 \`agent-default-model\` 及所有客户端 UI/主题偏好条目；
+   - 坚决捍卫用户主权，绝不霸道篡改用户的默认模型（如 DeepSeek/Claude）与主题配置，只专注注入 WineToken 自身服务！
 
-2. **[对齐 Cordis 补丁规范与 Tool Calling 全链路畅通]**
-   - 补全 \`- insert:\` 容器规范，确保插件 Host 侧可靠启动；
-   - 严格对齐 \`@deepseek-ai/dsh-tools\` 底层 \`output.schema\` 校验规范与 \`isConcurrencySafe\` 标记；
-   - 注入动态系统提示词，引导大模型主动调用生图与生视频技能。
+2. **[模型同步深度幂等性 (保护 YAML 注释)]**
+   - \`src/sync.js\` 引入深度 JSON 比对机制：在开机启动与定时同步时，若模型列表与 Provider 配置未发生实际变动，**严格跳过写盘**；
+   - 100% 杜绝无脑重新序列化导致的用户自定义 YAML 注释（如 \`# qq-bridge\` 等第三方插件备注）被洗掉的问题。
 
-3. **[后台自更新引擎升级 (updater.js)]**
-   - 补齐 \`src/tool.js\` 与 \`src/history.js\` 到核心文件清单；
-   - 引入国内免魔法高速镜像（\`ghproxy.net\`），国内网络秒级无感自更新。
+3. **[物理移除调试探针日志]**
+   - 彻底移除了 \`src/index.js\` 中的 \`dsh_probe.log\` 本地探针文件写入，绝不向用户个人主目录产生任何垃圾调试文件。
+
+4. **[已用统计防闪烁与 Tool Calling 全链路合规]**
+   - 继承 v1.5.6 的高精度双账轨数据源对齐与 \`output.schema\` 严格断言规范。
 
 ---
 

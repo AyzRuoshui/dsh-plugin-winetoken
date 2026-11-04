@@ -38,6 +38,11 @@ function requestGithub(token, endpoint, method = 'GET', data = null, retries = 3
           } catch (e) {
             resolve(body);
           }
+        } else if (res.statusCode >= 500 && retries > 0) {
+          console.log(`    ⚠️ GitHub 服务器 5xx 波动 (${endpoint})，1.5 秒后自动重试 (剩余 ${retries} 次)...`);
+          setTimeout(() => {
+            requestGithub(token, endpoint, method, data, retries - 1).then(resolve).catch(reject);
+          }, 1500);
         } else {
           reject(new Error(`GitHub API [${method} ${endpoint}] 返回 HTTP ${res.statusCode}: ${body}`));
         }

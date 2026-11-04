@@ -177,8 +177,7 @@ function updateCordisPatch(providerConfig) {
   if (!llmPatch.config) llmPatch.config = {};
   if (!llmPatch.config.providers) llmPatch.config.providers = {};
 
-  // 将我们的 Provider 注入
-  llmPatch.config.providers[providerConfig.id] = {
+  const targetProvider = {
     displayName: providerConfig.displayName,
     api: 'openai-completions',
     baseURL: providerConfig.baseURL,
@@ -187,6 +186,17 @@ function updateCordisPatch(providerConfig) {
     defaultMaxTokens: 65536,
     models: providerConfig.models
   };
+
+  const currentProvider = llmPatch.config.providers[providerConfig.id];
+
+  // 严格幂等性检查：如果配置与模型列表完全一致，绝对不重新序列化写盘，100% 保护用户自定义注释
+  if (currentProvider && JSON.stringify(currentProvider) === JSON.stringify(targetProvider)) {
+    console.log(`[模型同步] Provider [${providerConfig.id}] 模型与配置未变更，保持只读跳过写盘 (保护 YAML 用户注释)。`);
+    return;
+  }
+
+  // 将我们的 Provider 注入
+  llmPatch.config.providers[providerConfig.id] = targetProvider;
 
   // 写回 cordis.patch.yml
   const newYaml = YAML.stringify(patches, { indent: 2 });
