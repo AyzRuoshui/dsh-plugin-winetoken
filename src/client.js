@@ -75,6 +75,383 @@
     } catch (_) {}
   }
 
+  // =========================================================================
+  // 动态模型清单管理器 (WineTokenManifestManager)
+  // 三级防御机制: Level 1 静态内存基底 -> Level 2 本地持久化缓存 -> Level 3 SWR 线上动态热同步
+  // =========================================================================
+  const MANIFEST_CACHE_KEY = "WINETOKEN_MANIFEST_CACHE_V1";
+
+  const BASE_IMAGE_MODELS_FALLBACK = [
+    {
+      id: 'gpt-image-2.5-flare',
+      name: 'OpenAI GPT-Image 2.5 Flare',
+      tag: '极速',
+      price: 0.08,
+      vipPrice: 0.07,
+      singleNOnly: true,
+      unit: '张',
+      desc: '出图极快，细节丰富，性价比首选',
+      resolutions: [
+        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
+        { label: '16:9 横屏', icon: 'ratio16_9', val: '1792x1024' },
+        { label: '9:16 竖屏', icon: 'ratio9_16', val: '1024x1792' }
+      ]
+    },
+    {
+      id: 'gpt-image-2.5-sunburst',
+      name: 'OpenAI GPT-Image 2.5 Sunburst',
+      tag: '高画质',
+      price: 0.20,
+      vipPrice: 0.18,
+      singleNOnly: true,
+      unit: '张',
+      desc: '排版精细，写真质感与艺术风格',
+      resolutions: [
+        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
+        { label: '16:9 横屏', icon: 'ratio16_9', val: '1792x1024' },
+        { label: '9:16 竖屏', icon: 'ratio9_16', val: '1024x1792' }
+      ]
+    },
+    {
+      id: 'gemini-imagen-3',
+      name: 'Google DeepMind Imagen-3',
+      tag: '2K写实',
+      price: 0.15,
+      vipPrice: 0.13,
+      singleNOnly: true,
+      unit: '张',
+      desc: '光影自然真实，语言理解顶尖',
+      resolutions: [
+        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
+        { label: '16:9 高清', icon: 'ratio16_9', val: '1280x720' },
+        { label: '9:16 竖屏', icon: 'ratio9_16', val: '720x1280' },
+        { label: '宽幅 1792', icon: 'ratio16_9', val: '1792x1024' }
+      ]
+    },
+    {
+      id: 'sensenova-u1.5-lite',
+      name: '商汤 SenseNova U1.5 Lite',
+      tag: '限免4K',
+      price: 0.00,
+      vipPrice: 0.00,
+      singleNOnly: true,
+      unit: '张',
+      desc: '4K超清直出，中英文字排版',
+      resolutions: [
+        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
+        { label: '3:2 横屏', icon: 'ratio16_9', val: '1536x1024' },
+        { label: '2:3 竖屏', icon: 'ratio9_16', val: '1024x1536' },
+        { label: '2K 超清', icon: 'ratio1_1', val: '2048x2048' }
+      ]
+    },
+    {
+      id: 'grok-imagine-image-2.0',
+      name: 'xAI Grok Imagine 2.0',
+      tag: '光影旗舰',
+      price: 0.15,
+      vipPrice: 0.13,
+      singleNOnly: true,
+      unit: '张',
+      desc: '真实摄影级光影，概念艺术',
+      resolutions: [
+        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
+        { label: '16:9 横屏', icon: 'ratio16_9', val: '1280x720' },
+        { label: '9:16 竖屏', icon: 'ratio9_16', val: '720x1280' }
+      ]
+    },
+    {
+      id: 'gpt-image-2',
+      name: 'OpenAI GPT-Image 2',
+      tag: '经典专业',
+      price: 0.12,
+      vipPrice: 0.10,
+      singleNOnly: false,
+      unit: '张',
+      desc: '稳定经典生成，仅支持经典正方形尺寸',
+      resolutions: [
+        { label: '1024 大图', icon: 'ratio1_1', val: '1024x1024' },
+        { label: '512 标准', icon: 'ratio1_1', val: '512x512' },
+        { label: '256 小图', icon: 'ratio1_1', val: '256x256' }
+      ]
+    }
+  ];
+
+  const BASE_VIDEO_MODELS_FALLBACK = [
+    {
+      id: 'MiniMax-H3',
+      name: 'MiniMax H3 (海螺视频)',
+      tag: '电影感',
+      pricePerSecond: 0.15,
+      vipPricePerSecond: 0.12,
+      priceText: '原¥0.15/秒 (5秒基准 ¥0.75)',
+      vipPriceText: 'SVIP ¥0.12/秒 (5秒基准 ¥0.60)',
+      unit: '秒',
+      durations: [
+        { val: 4, label: '4 秒', tag: '轻量' },
+        { val: 5, label: '5 秒', tag: '标配' },
+        { val: 6, label: '6 秒', tag: '延展' },
+        { val: 10, label: '10 秒', tag: '长片' },
+        { val: 15, label: '15 秒', tag: '旗舰' }
+      ],
+      desc: '768P/1080P 电影级光影，原生支持 4~15 秒超长生成时长，支持上传首帧参考图驱动动态',
+      resolutions: [
+        { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
+        { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' },
+        { label: '1080P 全高清', icon: 'ratio16_9', val: '1920x1080' },
+        { label: '1080P 竖屏', icon: 'ratio9_16', val: '1080x1920' }
+      ]
+    },
+    {
+      id: 'grok-imagine-video-1.5',
+      name: 'xAI Grok Video 1.5',
+      tag: '物理连贯',
+      pricePerSecond: 0.10,
+      vipPricePerSecond: 0.08,
+      priceText: '原¥0.10/秒 (5秒基准 ¥0.50)',
+      vipPriceText: 'SVIP ¥0.08/秒 (5秒基准 ¥0.40)',
+      unit: '秒',
+      durations: [
+        { val: 5, label: '5 秒', tag: '标配' },
+        { val: 10, label: '10 秒', tag: '长片' }
+      ],
+      desc: '顶尖自然光影渲染与物理一致性模拟，运镜张力十足',
+      resolutions: [
+        { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
+        { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }
+      ]
+    },
+    {
+      id: 'sensenova-6.8-flash',
+      name: '商汤日日新 4K 动效 (限免试炼)',
+      tag: '限免体验',
+      pricePerSecond: 0.00,
+      vipPricePerSecond: 0.00,
+      priceText: '限免 ¥0.00/秒',
+      vipPriceText: '限免 ¥0.00/秒',
+      unit: '秒',
+      durations: [
+        { val: 5, label: '5 秒', tag: '标配' }
+      ],
+      desc: '超高吞吐动态演绎，官方限免试炼通道',
+      resolutions: [
+        { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' }
+      ]
+    }
+  ];
+
+  function normalizeImageModel(raw) {
+    if (!raw) return null;
+    const isSquare = (s) => s.startsWith('1024x1024') || s.startsWith('512x512') || s.startsWith('2048x2048');
+    const isHoriz = (s) => s.startsWith('1792') || s.startsWith('1280') || s.startsWith('1536') || s.startsWith('1344x768');
+    let resolutions = [];
+    if (Array.isArray(raw.resolutions)) {
+      resolutions = raw.resolutions.map(r => {
+        if (typeof r === 'string') {
+          return {
+            label: r,
+            icon: isSquare(r) ? 'ratio1_1' : (isHoriz(r) ? 'ratio16_9' : 'ratio9_16'),
+            val: r
+          };
+        }
+        return r;
+      });
+    }
+    return {
+      id: raw.id,
+      name: raw.name || raw.id,
+      tag: raw.badge || raw.tag || '推荐',
+      price: raw.cost != null ? Number(raw.cost) : (raw.price != null ? Number(raw.price) : 0),
+      vipPrice: raw.vipCost != null ? Number(raw.vipCost) : (raw.vipPrice != null ? Number(raw.vipPrice) : 0),
+      singleNOnly: raw.singleNOnly !== undefined ? Boolean(raw.singleNOnly) : (raw.single_n_only !== undefined ? Boolean(raw.single_n_only) : false),
+      unit: '张',
+      desc: raw.desc || '',
+      resolutions: resolutions.length > 0 ? resolutions : [
+        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
+        { label: '16:9 横屏', icon: 'ratio16_9', val: '1792x1024' },
+        { label: '9:16 竖屏', icon: 'ratio9_16', val: '1024x1792' }
+      ]
+    };
+  }
+
+  function normalizeVideoModel(raw) {
+    if (!raw) return null;
+    const isHoriz = (s) => s.startsWith('1280') || s.startsWith('1920');
+    let resolutions = [];
+    if (Array.isArray(raw.resolutions)) {
+      resolutions = raw.resolutions.map(r => {
+        if (typeof r === 'string') {
+          return {
+            label: r,
+            icon: isHoriz(r) ? 'ratio16_9' : 'ratio9_16',
+            val: r
+          };
+        }
+        return r;
+      });
+    }
+    let durations = [];
+    if (Array.isArray(raw.durations)) {
+      durations = raw.durations.map(d => {
+        if (typeof d === 'number') {
+          return { val: d, label: `${d} 秒`, tag: d <= 5 ? '标配' : (d <= 10 ? '长片' : '旗舰') };
+        }
+        return d;
+      });
+    }
+    const costSec = raw.costPerSec != null ? Number(raw.costPerSec) : (raw.pricePerSecond != null ? Number(raw.pricePerSecond) : 0);
+    const vipCostSec = raw.vipCostPerSec != null ? Number(raw.vipCostPerSec) : (raw.vipPricePerSecond != null ? Number(raw.vipPricePerSecond) : 0);
+    return {
+      id: raw.id,
+      name: raw.name || raw.id,
+      tag: raw.badge || raw.tag || '推荐',
+      pricePerSecond: costSec,
+      vipPricePerSecond: vipCostSec,
+      priceText: raw.priceText || (costSec === 0 ? '限免 ¥0.00/秒' : `原¥${costSec.toFixed(2)}/秒`),
+      vipPriceText: raw.vipPriceText || (vipCostSec === 0 ? '限免 ¥0.00/秒' : `VIP ¥${vipCostSec.toFixed(2)}/秒`),
+      unit: '秒',
+      durations: durations.length > 0 ? durations : [{ val: 5, label: '5 秒', tag: '标配' }],
+      desc: raw.desc || '',
+      resolutions: resolutions.length > 0 ? resolutions : [
+        { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
+        { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }
+      ]
+    };
+  }
+
+  const WineTokenManifestManager = {
+    _listeners: new Set(),
+    _data: null,
+    _isFetching: false,
+
+    init() {
+      let cached = null;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem(MANIFEST_CACHE_KEY);
+          if (raw) cached = JSON.parse(raw);
+        }
+      } catch (_) {}
+
+      if (!cached) {
+        try {
+          const fs = require('fs');
+          const path = require('path');
+          const os = require('os');
+          const diskFile = path.join(os.homedir(), '.dsh', 'storages', 'winetoken_manifest.json');
+          if (fs.existsSync(diskFile)) {
+            cached = JSON.parse(fs.readFileSync(diskFile, 'utf8'));
+          }
+        } catch (_) {}
+      }
+
+      if (cached && Array.isArray(cached.imageModels) && Array.isArray(cached.videoModels)) {
+        this._data = {
+          imageModels: cached.imageModels.map(normalizeImageModel).filter(Boolean),
+          videoModels: cached.videoModels.map(normalizeVideoModel).filter(Boolean),
+          chatModels: Array.isArray(cached.chatModels) ? cached.chatModels : [],
+          updatedAt: cached.updatedAt || 0
+        };
+      } else {
+        this._data = {
+          imageModels: BASE_IMAGE_MODELS_FALLBACK,
+          videoModels: BASE_VIDEO_MODELS_FALLBACK,
+          chatModels: [],
+          updatedAt: 0
+        };
+      }
+    },
+
+    getSnapshot() {
+      if (!this._data) this.init();
+      return this._data;
+    },
+
+    getImageModels() {
+      return this.getSnapshot().imageModels;
+    },
+
+    getVideoModels() {
+      return this.getSnapshot().videoModels;
+    },
+
+    getChatModels() {
+      return this.getSnapshot().chatModels;
+    },
+
+    getFreeImageModel() {
+      const imgs = this.getImageModels();
+      const free = imgs.find(m => m.price === 0 || (m.tag && m.tag.includes('限免')));
+      return free ? free.id : (imgs[0]?.id || 'sensenova-u1.5-lite');
+    },
+
+    subscribe(listener) {
+      this._listeners.add(listener);
+      return () => this._listeners.delete(listener);
+    },
+
+    _notify() {
+      for (const fn of this._listeners) {
+        try { fn(this._data); } catch (_) {}
+      }
+    },
+
+    async fetchManifest(force = false) {
+      if (this._isFetching) return;
+      this._isFetching = true;
+      try {
+        const key = getKey();
+        const headers = key ? { Authorization: 'Bearer ' + key } : {};
+        const res = await fetch(BASE_URL + '/api/subscription/models/manifest', {
+          headers
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.ok) {
+            const nextImg = (json.imageModels || []).map(normalizeImageModel).filter(Boolean);
+            const nextVid = (json.videoModels || []).map(normalizeVideoModel).filter(Boolean);
+            const nextChat = Array.isArray(json.chatModels) ? json.chatModels : [];
+
+            if (nextImg.length > 0 && nextVid.length > 0) {
+              this._data = {
+                imageModels: nextImg,
+                videoModels: nextVid,
+                chatModels: nextChat,
+                updatedAt: json.updatedAt || Date.now()
+              };
+
+              try {
+                if (typeof localStorage !== 'undefined') {
+                  localStorage.setItem(MANIFEST_CACHE_KEY, JSON.stringify(this._data));
+                }
+              } catch (_) {}
+
+              try {
+                const fs = require('fs');
+                const path = require('path');
+                const os = require('os');
+                const storagesDir = path.join(os.homedir(), '.dsh', 'storages');
+                if (!fs.existsSync(storagesDir)) fs.mkdirSync(storagesDir, { recursive: true });
+                const diskFile = path.join(storagesDir, 'winetoken_manifest.json');
+                fs.writeFileSync(diskFile, JSON.stringify(this._data, null, 2), 'utf8');
+              } catch (_) {}
+
+              this._notify();
+            }
+          }
+        }
+      } catch (err) {
+        // 静默容错，保留现有缓存
+      } finally {
+        this._isFetching = false;
+      }
+    }
+  };
+
+  WineTokenManifestManager.init();
+  if (typeof window !== 'undefined') {
+    window.WineTokenManifestManager = WineTokenManifestManager;
+  }
+
   // 本地媒体文件与目录系统管理引擎 (基于 Electron 44 + Node.js 24 原生支持，支持自定义另存为路径与文件夹定位)
   const WineTokenFileUtil = {
     // 获取本地专属保存目录：~/Pictures/WineToken（作为兜底目录）
@@ -386,6 +763,11 @@ $owner.Dispose()
     const key = getKey();
     if (!key || billingState.isFetching) return;
     billingState.isFetching = true;
+
+    // 异步同步拉取最新模型清单 (SWR 增量热更新)
+    try {
+      WineTokenManifestManager.fetchManifest();
+    } catch (_) {}
 
     try {
       const headers = { Authorization: 'Bearer ' + key };
@@ -2211,8 +2593,9 @@ $owner.Dispose()
               const apiKey = getKey();
               if (!apiKey) throw new Error('未检测到 API Key，请先点击顶栏钥匙图标输入');
 
+              const freeModelId = WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
               const payload = {
-                model: 'sensenova-u1.5-lite',
+                model: freeModelId,
                 prompt: fullPrompt,
                 size: reqSize,
                 n: 1
@@ -2222,7 +2605,7 @@ $owner.Dispose()
                 payload.image_url = char.avatar;
               }
 
-              // 优先使用限免 4K 模型 sensenova-u1.5-lite
+              // 优先使用当前激活的限免 4K 模型
               const res = await fetch(`${BASE_URL}/v1/images/generations`, {
                 method: 'POST',
                 headers: {
@@ -3018,156 +3401,36 @@ $owner.Dispose()
             return Number((m.price * discountRatio).toFixed(3));
           };
 
-          // 生图模型列表 (100% 对齐线上生产数据库 billing_setting.billing_expr 真实账本)
-          const IMAGE_MODELS = [
-            {
-              id: 'gpt-image-2.5-flare',
-              name: 'OpenAI GPT-Image 2.5 Flare',
-              tag: '极速',
-              price: 0.30,
-              vipPrice: 0.24, // SVIP 8折: 0.24元 (120k Quota) | VIP 9折: 0.27元
-              singleNOnly: false,
-              unit: '张',
-              desc: '出图极快，细节丰富，性价比首选',
-              resolutions: [
-                { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-                { label: '16:9 横屏', icon: 'ratio16_9', val: '1792x1024' },
-                { label: '9:16 竖屏', icon: 'ratio9_16', val: '1024x1792' }
-              ]
-            },
-            {
-              id: 'gpt-image-2.5-sunburst',
-              name: 'OpenAI GPT-Image 2.5 Sunburst',
-              tag: '高画质',
-              price: 0.40,
-              vipPrice: 0.32, // SVIP 8折: 0.32元 (160k Quota) | VIP 9折: 0.36元
-              singleNOnly: false,
-              unit: '张',
-              desc: '排版精细，写真质感与艺术风格',
-              resolutions: [
-                { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-                { label: '16:9 横屏', icon: 'ratio16_9', val: '1792x1024' },
-                { label: '9:16 竖屏', icon: 'ratio9_16', val: '1024x1792' }
-              ]
-            },
-            {
-              id: 'gemini-imagen-3',
-              name: 'Google DeepMind Imagen-3',
-              tag: '2K写实',
-              price: 0.15,
-              vipPrice: 0.12, // SVIP 8折: 0.12元 (60k Quota) | VIP 9折: 0.135元
-              singleNOnly: true,
-              unit: '张',
-              desc: '光影自然真实，语言理解顶尖',
-              resolutions: [
-                { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-                { label: '16:9 高清', icon: 'ratio16_9', val: '1280x720' },
-                { label: '9:16 竖屏', icon: 'ratio9_16', val: '720x1280' },
-                { label: '宽幅 1792', icon: 'ratio16_9', val: '1792x1024' }
-              ]
-            },
-            {
-              id: 'sensenova-u1.5-lite',
-              name: '商汤 SenseNova U1.5 Lite',
-              tag: '限免4K',
-              price: 0.00,
-              vipPrice: 0.00,
-              singleNOnly: true, // 明确单次上限 1 张，选多张时自动并发拆包
-              unit: '张',
-              desc: '4K超清直出，中英文字排版',
-              resolutions: [
-                { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-                { label: '3:2 横屏', icon: 'ratio16_9', val: '1536x1024' },
-                { label: '2:3 竖屏', icon: 'ratio9_16', val: '1024x1536' },
-                { label: '2K 超清', icon: 'ratio1_1', val: '2048x2048' }
-              ]
-            },
-            {
-              id: 'grok-imagine-image-2.0',
-              name: 'xAI Grok Imagine 2.0',
-              tag: '光影旗舰',
-              price: 0.50,
-              vipPrice: 0.40, // SVIP 8折: 0.40元 (200k Quota) | VIP 9折: 0.45元
-              singleNOnly: false,
-              unit: '张',
-              desc: '真实摄影级光影，概念艺术',
-              resolutions: [
-                { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-                { label: '16:9 横屏', icon: 'ratio16_9', val: '1280x720' },
-                { label: '9:16 竖屏', icon: 'ratio9_16', val: '720x1280' }
-              ]
-            },
-            {
-              id: 'gpt-image-2',
-              name: 'OpenAI GPT-Image 2',
-              tag: '经典DALL-E 2',
-              price: 0.20, // 彻底修正此前误标的 0.30，线上真实原价仅 0.20元！
-              vipPrice: 0.16, // SVIP 8折: 0.16元 (80k Quota) | VIP 9折: 0.18元
-              singleNOnly: false,
-              unit: '张',
-              desc: '稳定经典生成，仅支持经典正方形尺寸',
-              resolutions: [
-                { label: '1024 大图', icon: 'ratio1_1', val: '1024x1024' },
-                { label: '512 标准', icon: 'ratio1_1', val: '512x512' },
-                { label: '256 小图', icon: 'ratio1_1', val: '256x256' }
-              ]
-            }
-          ];
+          // 生图与视频模型列表 (优先消费 WineTokenManifestManager 动态数据，断网时使用本地持久化缓存与静态兜底)
+          const [manifestSnapshot, setManifestSnapshot] = React.useState(() => WineTokenManifestManager.getSnapshot());
+          React.useEffect(() => {
+            const unsub = WineTokenManifestManager.subscribe(next => setManifestSnapshot(next));
+            return unsub;
+          }, []);
 
-          // 视频模型列表与独立专属规格 (100% 对齐线上生产数据库 billing_setting.billing_expr 真实规则)
-          const VIDEO_MODELS = [
-            {
-              id: 'MiniMax-H3',
-              name: 'MiniMax H3 (海螺视频)',
-              tag: '电影感',
-              pricePerSecond: 0.15, // 后端规则: tier("base", u("seconds") * 0.15)
-              vipPricePerSecond: 0.12, // SVIP 8折: 0.12元/秒 (5秒基准刚好为 300k Quota = ¥0.60)
-              priceText: '原¥0.15/秒 (5秒基准 ¥0.75)',
-              vipPriceText: 'SVIP ¥0.12/秒 (5秒基准 ¥0.60)',
-              unit: '秒',
-              durations: [
-                { val: 4, label: '4 秒', tag: '轻量' },
-                { val: 5, label: '5 秒', tag: '标配' },
-                { val: 6, label: '6 秒', tag: '延展' },
-                { val: 10, label: '10 秒', tag: '长片' },
-                { val: 15, label: '15 秒', tag: '旗舰' }
-              ],
-              desc: '768P/1080P 电影级光影，原生支持 4~15 秒超长生成时长，支持上传首帧参考图驱动动态',
-              resolutions: [
-                { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
-                { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' },
-                { label: '1080P 全高清', icon: 'ratio16_9', val: '1920x1080' },
-                { label: '1080P 竖屏', icon: 'ratio9_16', val: '1080x1920' }
-              ]
-            },
-            {
-              id: 'grok-imagine-video-1.5',
-              name: 'xAI Grok Video 1.5',
-              tag: '物理连贯',
-              pricePerSecond: 0.20, // 后端规则: tier("base", u("seconds") * 0.2)
-              vipPricePerSecond: 0.16, // SVIP 8折: 0.16元/秒 (5秒基准 ¥0.80) | VIP 9折: 0.18元/秒
-              priceText: '原¥0.20/秒 (5秒基准 ¥1.00)',
-              vipPriceText: 'SVIP ¥0.16/秒 (5秒基准 ¥0.80)',
-              unit: '秒',
-              durations: [
-                { val: 5, label: '5 秒', tag: '标配' },
-                { val: 10, label: '10 秒', tag: '长片' }
-              ],
-              desc: '物理规律连贯无频闪，支持 5秒 / 10秒 时长选择，支持首帧参考图生视频',
-              resolutions: [
-                { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
-                { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' },
-                { label: '1080P 全高清', icon: 'ratio16_9', val: '1920x1080' },
-                { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' }
-              ]
-            }
-          ];
+          const IMAGE_MODELS = manifestSnapshot.imageModels;
+          const VIDEO_MODELS = manifestSnapshot.videoModels;
+
+          try {
+            window.IMAGE_MODELS = IMAGE_MODELS;
+            window.VIDEO_MODELS = VIDEO_MODELS;
+          } catch (_) {}
 
           // 当前模型与可用分辨率/时长联动
           const currentModels = mode === 'image' ? IMAGE_MODELS : VIDEO_MODELS;
           const currentModelObj = currentModels.find(m => m.id === selectedModel) || currentModels[0];
           const availableResolutions = currentModelObj.resolutions || [];
           const availableDurations = currentModelObj.durations || [{ val: 5, label: '5 秒' }];
+
+          // 当可用模型列表变化或模式切换时，自动纠偏当前选中的模型
+          React.useEffect(() => {
+            if (currentModels && currentModels.length > 0) {
+              const exists = currentModels.some(m => m.id === selectedModel);
+              if (!exists) {
+                setSelectedModel(currentModels[0].id);
+              }
+            }
+          }, [currentModels, selectedModel]);
 
           // 当切换模型或模式时，自动确保选中的分辨率在当前模型支持列表内
           React.useEffect(() => {

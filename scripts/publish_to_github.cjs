@@ -78,6 +78,8 @@ function getAllFiles(dir, baseDir = '') {
       file === '.package-lock.json' ||
       file === 'HANDOVER.md' ||
       file === 'PLUGIN_HANDOVER.md' ||
+      file === 'AGENT.md' ||
+      file === 'agent.md' ||
       file === '.gitignore' ||
       file.endsWith('.bak') ||
       file.startsWith('.credentials') ||
@@ -106,7 +108,7 @@ function runSecurityAudit(filesToCommit) {
     { name: '内部 API Key (sk-...)', pattern: /sk-[a-zA-Z0-9]{32,}/ },
     { name: '受限免费通道模型', pattern: /deepseek[a-zA-Z0-9._-]*-free\b/i },
     { name: '开发者个人系统绝对路径', pattern: /[C-Z]:\\Users\\[a-zA-Z0-9_.-]+/i },
-    { name: '内部交接文档漏入', pattern: /HANDOVER/i }
+    { name: '内部交接文档漏入', pattern: /(?:HANDOVER|AGENT\.md)/i }
   ];
 
   let violations = [];
@@ -114,7 +116,7 @@ function runSecurityAudit(filesToCommit) {
   for (const relPath of filesToCommit) {
     const normPath = relPath.replace(/\\/g, '/');
     // 文件名黑名单校验
-    if (/HANDOVER/i.test(normPath) || /\.credentials/i.test(normPath)) {
+    if (/HANDOVER/i.test(normPath) || /AGENT\.md/i.test(normPath) || /\.credentials/i.test(normPath)) {
       violations.push({ file: relPath, rule: '禁止上传内部交接文档或凭据' });
       continue;
     }

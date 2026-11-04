@@ -195,15 +195,7 @@ function registerWineTokenTools(ctx) {
           },
           model: {
             type: 'string',
-            enum: [
-              'gpt-image-2.5-flare',
-              'gpt-image-2.5-sunburst',
-              'sensenova-u1.5-lite',
-              'grok-imagine-image-2.0',
-              'gemini-imagen-3',
-              'gpt-image-2'
-            ],
-            description: '生图基底模型：gpt-image-2.5-flare (极速高性价比/默认), gpt-image-2.5-sunburst (高画质), sensenova-u1.5-lite (4K排版/限免), grok-imagine-image-2.0 (真实摄影光影), gemini-imagen-3 (写实自然)',
+            description: '生图基底模型：gpt-image-2.5-flare (极速高性价比/默认), gpt-image-2.5-sunburst (高画质), sensenova-u1.5-lite (4K排版/限免), grok-imagine-image-2.0 (真实摄影光影), gemini-imagen-3 (写实自然) 或工坊当前支持的其它模型',
             default: 'gpt-image-2.5-flare'
           },
           size: {

@@ -36,9 +36,53 @@ function apply(ctx) {
     return;
   }
 
-  // 延后 2 秒在后台静默检查模型
+  // 延后 2 秒在后台静默检查模型 (优先对接 Manifest 热更新中枢，断网自动回退)
   setTimeout(async () => {
     try {
+      const { syncWithHarness } = require('./sync.js');
+      const fs = require('fs');
+
+      // 1. 优先尝试拉取高精度 Manifest (包含精准 tags、上下文、视觉/推理标记与 Super 隔离)
+      try {
+        const mfRes = await fetch('https://www.winetoken.asia/api/subscription/models/manifest', {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined
+        });
+        if (mfRes.ok) {
+          const mfData = await mfRes.json();
+          if (mfData && mfData.ok && Array.isArray(mfData.chatModels) && mfData.chatModels.length > 0) {
+            // 写入本地持久化缓存 ~/.dsh/storages/winetoken_manifest.json
+            try {
+              const storagesDir = join(homedir(), '.dsh', 'storages');
+              if (!existsSync(storagesDir)) fs.mkdirSync(storagesDir, { recursive: true });
+              fs.writeFileSync(join(storagesDir, 'winetoken_manifest.json'), JSON.stringify(mfData, null, 2), 'utf8');
+            } catch (_) {}
+
+            // 将 chatModels 映射为 DSH 标准 Provider 模型列表
+            const models = mfData.chatModels.map(m => {
+              const item = {
+                id: m.id,
+                name: m.name || m.id,
+                contextWindow: m.contextWindow || 65536,
+                maxTokens: m.maxTokens || 8192,
+                input: m.vision ? ['text', 'image'] : ['text']
+              };
+              if (m.reasoning) {
+                item.reasoningEfforts = { low: 'low', medium: 'medium', high: 'high', max: 'max' };
+              }
+              return item;
+            });
+
+            syncWithHarness(models, { quiet: true, apiKey });
+            console.log(`[WineToken Plugin] Manifest dynamic sync: ${models.length} chat models active.`);
+            return;
+          }
+        }
+      } catch (mfErr) {
+        // Manifest 接口若遇超时，平滑回退至 v1/models
+      }
+
+      // 2. 回退机制：通过 /v1/models 检查
       const res = await fetch('https://www.winetoken.asia/v1/models', {
         headers: { Authorization: `Bearer ${apiKey}` }
       });
@@ -48,11 +92,9 @@ function apply(ctx) {
       if (!data.data || !Array.isArray(data.data)) return;
 
       const { parseModels } = require('./parser.js');
-      const { syncWithHarness } = require('./sync.js');
-
       const models = parseModels(data.data);
       if (models && models.length > 0) {
-        syncWithHarness(models, { quiet: true });
+        syncWithHarness(models, { quiet: true, apiKey });
         console.log(`[WineToken Plugin] Startup model verification: ${models.length} reasoning models active.`);
       }
     } catch (err) {
