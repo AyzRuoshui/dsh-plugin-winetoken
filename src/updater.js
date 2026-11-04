@@ -14,9 +14,14 @@ const CORE_FILES = [
   'locale/en.json',
   'src/index.js',
   'src/client.js',
+  'src/tool.js',
+  'src/history.js',
   'src/updater.js',
   'src/parser.js',
   'src/sync.js',
+  'src/daemon.js',
+  'src/plugin.js',
+  'src/winetoken-native.js',
   'README.md'
 ];
 
@@ -69,16 +74,31 @@ async function checkAndUpdate(options = {}) {
     const localPkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
     const currentVersion = localPkg.version || '0.0.0';
 
-    // 1. 获取最新版本信息 (GitHub Releases API 优先，CDN 备用)
+    // 1. 获取最新版本信息 (GitHub Releases API 优先，国内镜像 CDN 备用)
     let latestTag = null;
-    const ghRelease = await fetchJSON(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`);
-    if (ghRelease && ghRelease.tag_name) {
-      latestTag = ghRelease.tag_name;
-    } else {
-      const cdnPkg = await fetchJSON(`https://fastly.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/package.json`);
-      if (cdnPkg && cdnPkg.version) {
-        latestTag = `v${cdnPkg.version}`;
+    try {
+      const ghRelease = await fetchJSON(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`);
+      if (ghRelease && ghRelease.tag_name) {
+        latestTag = ghRelease.tag_name;
       }
+    } catch (_) {}
+
+    if (!latestTag) {
+      try {
+        const ghproxyPkg = await fetchJSON(`https://ghproxy.net/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/package.json`);
+        if (ghproxyPkg && ghproxyPkg.version) {
+          latestTag = `v${ghproxyPkg.version}`;
+        }
+      } catch (_) {}
+    }
+
+    if (!latestTag) {
+      try {
+        const cdnPkg = await fetchJSON(`https://fastly.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/package.json`);
+        if (cdnPkg && cdnPkg.version) {
+          latestTag = `v${cdnPkg.version}`;
+        }
+      } catch (_) {}
     }
 
     if (!latestTag) {
@@ -94,15 +114,17 @@ async function checkAndUpdate(options = {}) {
 
     console.log(`[WineToken Updater] New version detected: ${latestTag} (current: v${currentVersion}). Starting background update...`);
 
-    // 2. 依次下载核心文件到临时备份区
+    // 2. 依次下载核心文件到临时备份区 (增加国内高速免魔法镜像)
     const tempDir = path.join(PLUGIN_ROOT, '.tmp_update_' + Date.now());
     fs.mkdirSync(tempDir, { recursive: true });
 
     const downloadSuccess = [];
     for (const relFile of CORE_FILES) {
+      const encodedRelFile = relFile.replace(/\\/g, '/');
       const urls = [
-        `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${relFile.replace(/\\/g, '/')}`,
-        `https://fastly.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/${relFile.replace(/\\/g, '/')}`
+        `https://ghproxy.net/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${encodedRelFile}`,
+        `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${encodedRelFile}`,
+        `https://fastly.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/${encodedRelFile}`
       ];
 
       let content = null;
