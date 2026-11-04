@@ -56,6 +56,8 @@
           usedText: state.usedText,
           pillText: state.pillText,
           hasSubscription: state.hasSubscription,
+          isSuper: Boolean(state.isSuper),
+          userGroup: state.userGroup || '',
           walletBalanceCNY: state.walletBalanceCNY,
           totalUsedCNY: state.totalUsedCNY,
           subRemainAmountCNY: state.subRemainAmountCNY,
@@ -80,6 +82,8 @@
     usedText: initialCache.usedText || '已用 ¥0.00',
     pillText: initialCache.pillText || initialCache.balanceText || '余额 --',
     hasSubscription: Boolean(initialCache.hasSubscription),
+    isSuper: Boolean(initialCache.isSuper),
+    userGroup: initialCache.userGroup || '',
     walletBalanceCNY: Number(initialCache.walletBalanceCNY || 0),
     totalUsedCNY: Number(initialCache.totalUsedCNY || 0),
     subRemainAmountCNY: Number(initialCache.subRemainAmountCNY || 0),
@@ -98,6 +102,8 @@
     usedText: '已用 ¥0.00',
     pillText: '余额 --',
     hasSubscription: false,
+    isSuper: false,
+    userGroup: '',
     walletBalanceCNY: 0,
     totalUsedCNY: 0,
     subRemainAmountCNY: 0,
@@ -162,10 +168,31 @@
         const totalUsedCNYStr = formatCNY(totalUsedCNY);
         billingState.usedText = '已用 ¥' + totalUsedCNYStr;
 
-        const hasSub = Boolean(subStatusData.subscribed && subStatusData.subscription);
+        const uGroup = (subStatusData.user && subStatusData.user.group || '').toLowerCase();
+        const tGroup = (subStatusData.token && subStatusData.token.group || '').toLowerCase();
+        const sGroup = (subStatusData.subscription && subStatusData.subscription.upgrade_group || '').toLowerCase();
+        const isSuper = Boolean(subStatusData.is_super || uGroup === 'super' || tGroup === 'super' || sGroup === 'super');
+        billingState.isSuper = isSuper;
+        billingState.userGroup = isSuper ? 'super' : (sGroup || uGroup || tGroup || 'default');
+
+        const hasSub = Boolean(subStatusData.subscribed && subStatusData.subscription && !isSuper);
         billingState.hasSubscription = hasSub;
 
-        if (hasSub) {
+        if (isSuper) {
+          // === SUPER 会员专属特权分支 (特权分组，无额度限制，无需展示套餐额度与进度条) ===
+          billingState.subPlanTitle = 'SUPER 会员特权';
+          billingState.subGroup = 'super';
+          billingState.subAmountTotalCNY = 0;
+          billingState.subAmountUsedCNY = 0;
+          billingState.subRemainAmountCNY = 0;
+          billingState.subUsedPercent = 0;
+          billingState.remainDays = 0;
+          billingState.subEndTime = 0;
+
+          billingState.balanceText = '钱包 ¥' + walletBalStr;
+          billingState.pillText = 'SUPER · 钱包 ¥' + walletBalStr;
+          billingState.tooltip = `SUPER 会员特权 (8折特惠 · 无限量 deepseek-v4.1-flash-free) · 钱包永久: ¥${walletBalStr} · 总累计调用: ¥${totalUsedCNYStr}`;
+        } else if (hasSub) {
           const sub = subStatusData.subscription;
           billingState.subPlanTitle = sub.plan_title || 'VIP 订阅套餐';
           billingState.subGroup = (sub.upgrade_group || 'vip').toLowerCase();
@@ -768,13 +795,98 @@
             h('div', {
               style: {
                 background: theme.bgCardSubtle,
-                border: `1px solid ${theme.borderSubtle}`,
+                border: `1px solid ${billing.isSuper ? (theme.isDark ? 'rgba(6, 182, 212, 0.35)' : 'rgba(8, 145, 178, 0.3)') : theme.borderSubtle}`,
                 borderRadius: '8px',
                 padding: '12px',
-                marginBottom: '12px'
+                marginBottom: '12px',
+                boxShadow: billing.isSuper ? (theme.isDark ? '0 0 16px rgba(6, 182, 212, 0.08)' : '0 0 12px rgba(8, 145, 178, 0.06)') : 'none'
               }
             }, [
-              // 分区 1：若拥有活跃周期订阅，呈现专属限时额度与到期自动失效说明
+              // 分区 1A：若是 SUPER 会员，呈现专属青色特权卡片 (无额度限制，展示无限量免流与8折)
+              billing.isSuper ? h('div', {
+                style: {
+                  marginBottom: '10px'
+                }
+              }, [
+                h('div', {
+                  style: {
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '8px'
+                  }
+                }, [
+                  h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, [
+                    h(Icon, { name: 'crown', size: 14, style: { color: theme.isDark ? '#06b6d4' : '#0891b2' } }),
+                    h('span', {
+                      style: {
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        color: theme.isDark ? '#06b6d4' : '#0891b2',
+                        letterSpacing: '0.4px'
+                      }
+                    }, 'SUPER 会员特权'),
+                    h('span', {
+                      style: {
+                        fontSize: '9px',
+                        color: theme.isDark ? '#22d3ee' : '#0e7490',
+                        background: theme.isDark ? 'rgba(6, 182, 212, 0.15)' : 'rgba(8, 145, 178, 0.1)',
+                        border: `1px solid ${theme.isDark ? 'rgba(6, 182, 212, 0.35)' : 'rgba(8, 145, 178, 0.3)'}`,
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        fontWeight: '600'
+                      }
+                    }, '8折特惠')
+                  ]),
+                  h('div', {
+                    style: {
+                      fontSize: '10px',
+                      color: theme.isDark ? '#06b6d4' : '#0891b2',
+                      opacity: 0.9,
+                      fontWeight: '500'
+                    }
+                  }, '专属特权通道')
+                ]),
+                // SUPER 核心权益展台 (亮眼青色微光卡片)
+                h('div', {
+                  style: {
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    background: theme.isDark ? 'rgba(6, 182, 212, 0.08)' : 'rgba(8, 145, 178, 0.05)',
+                    border: `1px solid ${theme.isDark ? 'rgba(6, 182, 212, 0.22)' : 'rgba(8, 145, 178, 0.18)'}`
+                  }
+                }, [
+                  h('div', {
+                    style: {
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: theme.isDark ? '#22d3ee' : '#0891b2'
+                    }
+                  }, [
+                    h('span', { style: { width: '5px', height: '5px', borderRadius: '50%', background: '#06b6d4', display: 'inline-block' } }),
+                    h('span', {}, '无限量 deepseek-v4.1-flash-free (免流模型)')
+                  ]),
+                  h('div', {
+                    style: {
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '10.5px',
+                      color: theme.textSecondary
+                    }
+                  }, [
+                    h('span', { style: { width: '5px', height: '5px', borderRadius: '50%', background: '#06b6d4', opacity: 0.6, display: 'inline-block' } }),
+                    h('span', {}, '全平台模型享 8 折特权 (与 SVIP 同级)')
+                  ])
+                ])
+              ]) :
+              // 分区 1B：若拥有活跃周期订阅，呈现专属限时额度与到期自动失效说明
               billing.hasSubscription ? h('div', {
                 style: {
                   marginBottom: '10px'
@@ -877,8 +989,8 @@
               // 分区 2：钱包永久保底余额
               h('div', {
                 style: {
-                  paddingTop: billing.hasSubscription ? '10px' : '0',
-                  borderTop: billing.hasSubscription ? `1px dashed ${theme.borderSubtle}` : 'none',
+                  paddingTop: (billing.isSuper || billing.hasSubscription) ? '10px' : '0',
+                  borderTop: (billing.isSuper || billing.hasSubscription) ? `1px dashed ${theme.borderSubtle}` : 'none',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center'
@@ -1205,10 +1317,11 @@
             return () => listeners.delete(listener);
           }, []);
 
-          // 判断用户当前是否拥有 VIP / SVIP 会员特权 (SVIP 8折，VIP 9折，100% 对齐数据库 GroupRatio)
-          const isVip = Boolean(billing.hasSubscription);
-          const isSvip = isVip && (billing.subGroup === 'svip' || !billing.subGroup); // 默认高级订阅按 SVIP 8折
-          const discountRatio = isVip ? (billing.subGroup === 'vip' ? 0.9 : 0.8) : 1.0;
+          // 判断用户当前是否拥有 VIP / SVIP / SUPER 会员特权 (SUPER/SVIP 8折，VIP 9折，100% 对齐数据库 GroupRatio)
+          const isSuper = Boolean(billing.isSuper || billing.userGroup === 'super' || billing.subGroup === 'super');
+          const isVip = Boolean(billing.hasSubscription) || isSuper;
+          const isSvip = isSuper || (isVip && (billing.subGroup === 'svip' || !billing.subGroup)); // Super 和 SVIP 享受同等 8 折特惠
+          const discountRatio = (isSuper || isSvip) ? 0.8 : (billing.subGroup === 'vip' ? 0.9 : 1.0);
 
           // 价格解析引擎：根据用户是否有 VIP/SVIP 动态输出对应真实价格
           const getModelEffectivePrice = (m) => {
@@ -1768,7 +1881,7 @@
                       setShowStudioPopover(v => !v);
                     }
                   }, [
-                    h(Icon, { name: billing.hasSubscription ? 'crown' : 'wallet', size: 13, style: { opacity: 0.8, color: billing.hasSubscription ? (theme.isDark ? '#f59e0b' : '#d97706') : 'inherit' } }),
+                    h(Icon, { name: (billing.isSuper || billing.hasSubscription) ? 'crown' : 'wallet', size: 13, style: { opacity: 0.9, color: billing.isSuper ? (theme.isDark ? '#06b6d4' : '#0891b2') : (billing.hasSubscription ? (theme.isDark ? '#f59e0b' : '#d97706') : 'inherit') } }),
                     h('span', { style: { color: theme.textPrimary, fontWeight: '500' } }, billing.pillText)
                   ]),
                   showStudioPopover && h(WineTokenAccountPopover, {
@@ -2960,25 +3073,38 @@
                 setShowPopover((prev) => !prev);
               }
             }, [
-              h('span', {
+              state.isSuper ? h('span', {
+                style: {
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontWeight: '600',
+                  letterSpacing: '-0.1px'
+                }
+              }, [
+                h(Icon, { name: 'crown', size: 12, style: { color: '#06b6d4' } }),
+                h('span', { style: { color: '#06b6d4', fontWeight: '700', letterSpacing: '0.4px' } }, 'SUPER'),
+                h('span', { style: { opacity: 0.35, margin: '0 3px' } }, '·'),
+                h('span', { style: { fontWeight: '500' } }, '钱包 ¥' + formatCNY(state.walletBalanceCNY))
+              ]) : h('span', {
                 style: {
                   fontWeight: '500',
                   letterSpacing: '-0.1px'
                 }
               }, state.pillText),
-              !state.hasSubscription && h('span', {
+              (!state.hasSubscription && !state.isSuper) && h('span', {
                 style: {
                   opacity: 0.35,
                   margin: '0 4px'
                 }
               }, '·'),
-              !state.hasSubscription && h('span', {
+              (!state.hasSubscription && !state.isSuper) && h('span', {
                 style: {
                   fontWeight: '500',
                   letterSpacing: '-0.1px'
                 }
               }, state.usedText),
-              progressBar
+              (!state.isSuper) && progressBar
             ]),
             showPopover && h(WineTokenAccountPopover, {
               onClose: () => setShowPopover(false)

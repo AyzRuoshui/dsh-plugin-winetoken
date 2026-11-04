@@ -60,24 +60,26 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 修复容灾 fallback 分支中 usedCNYNum 未定义的运行时异常`;
+  const releaseTitle = `Release ${version} - 上线 SUPER 专属青色特权系统、免流模型展台与全平台八折特惠`;
   const releaseBody = `## 🚀 DeepSeek Harness WineToken 插件 ${version}
 
-### 🐞 关键运行时异常修复与健壮性加固
+### 💎 上线 SUPER 专属青色特权系统与无限免流模型
 
-1. **[修复容灾 Fallback 分支中 usedCNYNum 未定义崩溃]**
-   - 采纳第三方 AI 助手审查指认：在主双账轨状态接口遇网络抖动进入容灾降级分支（旧接口兼容链路）时，补齐了 \`usedCNYNum\` 变量的安全声明与初始化；
-   - 优先拉取 \`/dashboard/billing/usage\` 获取真实月度流水并除以 100 换算，网络异常时安全兜底为 0，彻底杜绝 \`ReferenceError: usedCNYNum is not defined\` 运行时报错打断前端轮询。
+1. **[SUPER 专属青色特权标识体系]**
+   - 底部状态栏胶囊与创作工坊顶栏为 **SUPER** 分组用户引入专属青色（Cyan）高贵微光徽章与 Crown 图标；
+   - 账户中心卡片升级为青色特权展台，精准彰显用户尊贵身份。
 
-2. **[总累计调用与套餐已用账目对齐 (继承 v1.5.8)]**
-   - 服务端与客户端账本全链路对齐，保障总累计调用始终不低于当期套餐已用，并追加显示本 Key 单独消耗。
+2. **[无额度特权设计 · 告别套餐余额包袱]**
+   - 彻底遵循特权分组逻辑：SUPER 用户无固定配额额度限制，账户中心与底栏 100% 隐藏普通套餐余额、配额与进度条；
+   - 顶栏直接连接并呈现「钱包永久保底余额」与「总累计真实调用」。
 
-3. **[大模型原生 Tool Calling 生图/生视频技能完备 (继承 v1.5.8)]**
-   - \`src/tool.js\` 100% 严密合规，支持会话直出生图/生视频并自动存入工坊画廊。
+3. **[双重核心特权展台全量落地]**
+   - **特权一**：**无限量 \`deepseek-v4.1-flash-free\`**（专属免流绿色通道，0 Quota 消耗免费畅享）；
+   - **特权二**：**全平台所有模型享 8 折特权（与 SVIP 同级 0.8x）**；
+   - 服务端 New-API 计费网关双向锁定 \`GroupRatio\`，创作工坊动态定价精准对齐 8 折。
 
-4. **[纯净生态与配置安全]**
-   - 坚决杜绝霸道篡改用户默认模型配置（\`agent-default-model\` 已永久物理移除）；
-   - \`src/sync.js\` 深度 JSON 幂等性比对，无变动 0 写盘，100% 保护第三方插件注释（如 \`# qq-bridge\`）。
+4. **[零闪烁缓存与持久化]**
+   - 本地状态持久化全面适配 \`isSuper\` 标识，客户端冷启动 0 秒恢复青色特权状态，杜绝界面初次加载闪烁。
 
 ---
 
