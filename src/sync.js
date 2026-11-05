@@ -5,8 +5,17 @@
  */
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const https = require('https');
 const http = require('http');
+
+// DeepSeek Harness 用户配置主路径 (提升至最顶层声明，彻底消除 TDZ 暂存死区崩溃风险)
+const DSH_HOME = path.join(process.env.USERPROFILE || process.env.HOME || os.homedir(), '.dsh');
+const CREDENTIALS_FILE = path.join(DSH_HOME, '.credentials.yaml');
+const CORDIS_PATCH_FILE = path.join(DSH_HOME, 'profiles', 'desktop', 'cordis.patch.yml');
+const BASE_DIR = __dirname;
+const CONFIG_PATH = path.join(BASE_DIR, 'config.json');
+
 let YAML = null;
 try {
   YAML = require('yaml');
@@ -60,14 +69,6 @@ function fetchModels(baseUrl, apiKey) {
   });
 }
 
-const BASE_DIR = __dirname;
-const CONFIG_PATH = path.join(BASE_DIR, 'config.json');
-
-// DeepSeek Harness 用户配置主路径
-const os = require('os');
-const DSH_HOME = path.join(process.env.USERPROFILE || process.env.HOME || os.homedir(), '.dsh');
-const CREDENTIALS_FILE = path.join(DSH_HOME, '.credentials.yaml');
-const CORDIS_PATCH_FILE = path.join(DSH_HOME, 'profiles', 'desktop', 'cordis.patch.yml');
 
 /**
  * 读取或初始化插件配置
@@ -128,6 +129,12 @@ function updateCredentials(apiKey, envKeyName = 'WINETOKEN_API_KEY') {
   const trimmed = (apiKey || '').trim();
   if (!trimmed) return;
 
+  // 凭据格式强校验，彻底阻断换行符注入 YAML 隐患 (SEC-05)
+  if (!/^[a-zA-Z0-9_\-\.]{10,128}$/.test(trimmed)) {
+    console.warn('[WineToken Sync] API Key 格式非法，拒绝写入凭据');
+    return false;
+  }
+
   if (YAML) {
     try {
       let credsDoc = { version: 1, refs: {}, records: {} };
@@ -180,6 +187,12 @@ function updateCredentials(apiKey, envKeyName = 'WINETOKEN_API_KEY') {
  * 更新 ~/.dsh/profiles/desktop/cordis.patch.yml
  */
 function updateCordisPatch(providerConfig) {
+  // YAML 模块空指针安全守卫 (ARCH-02)
+  if (!YAML || typeof YAML.parse !== 'function' || typeof YAML.stringify !== 'function') {
+    console.warn('[WineToken Sync] yaml 模块不可用，跳过补丁写盘');
+    return false;
+  }
+
   const desktopProfileDir = path.dirname(CORDIS_PATCH_FILE);
   if (!fs.existsSync(desktopProfileDir)) {
     fs.mkdirSync(desktopProfileDir, { recursive: true });
@@ -251,8 +264,8 @@ async function runSync() {
 
   const cfg = loadConfig();
   if (!cfg.apiKey || !cfg.apiKey.trim()) {
-    console.error('错误: 未配置 apiKey！请在 config.json 填写，或使用 --key 参数指定。');
-    process.exit(1);
+    console.warn('[WineToken Sync] 未配置 apiKey，已安全跳过同步流程 (杜绝误杀宿主进程 ARCH-03)');
+    return { success: false, reason: 'MISSING_API_KEY' };
   }
 
   // 保存最新的参数

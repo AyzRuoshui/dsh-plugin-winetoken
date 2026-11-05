@@ -13,11 +13,25 @@ function apply(ctx) {
   console.log('[WineToken Plugin] Host plugin loaded inside DeepSeek Harness Cordis container.');
 
   // 1. 注入大模型创作工坊原生 Skill (AI 绘图与视频生成 Tool Calling)
+  let unregTools = null;
   try {
     const { registerWineTokenTools } = require('./tool.js');
-    registerWineTokenTools(ctx);
+    unregTools = registerWineTokenTools(ctx);
   } catch (err) {
     console.warn('[WineToken Plugin] 注册 Tools 失败:', err.message);
+  }
+
+  // 资源与生命周期注销登记 (CORDIS-01, CORDIS-02)
+  const timers = [];
+  if (ctx && typeof ctx.on === 'function') {
+    ctx.on('dispose', () => {
+      console.log('[WineToken Plugin] Cordis 容器卸载/重载，执行资源与定时器安全注销');
+      timers.forEach(t => clearTimeout(t));
+      timers.length = 0;
+      if (typeof unregTools === 'function') {
+        unregTools();
+      }
+    });
   }
 
   // 2. 读取 API Key
@@ -37,7 +51,7 @@ function apply(ctx) {
   }
 
   // 延后 2 秒在后台静默检查模型 (优先对接 Manifest 热更新中枢，断网自动回退)
-  setTimeout(async () => {
+  const modelTimer = setTimeout(async () => {
     try {
       const { syncWithHarness } = require('./sync.js');
       const fs = require('fs');
@@ -101,22 +115,16 @@ function apply(ctx) {
       console.warn('[WineToken Plugin] Background model check skipped:', err.message);
     }
   }, 2000);
+  timers.push(modelTimer);
 
-  // 延后 5 秒在后台静默检查插件更新 (方案 A：完全无感自更新)
-  setTimeout(() => {
+  // 延后 5 秒在后台安全核验官方版本 (仅提示升级，绝不静默覆盖代码，彻底消除 SEC-01 风险)
+  const updateTimer = setTimeout(() => {
     try {
       const { checkAndUpdate } = require('./updater.js');
       checkAndUpdate({ quiet: true });
     } catch (_) {}
   }, 5000);
-
-  // 运行期间每 4 小时静默轮询一次更新
-  setInterval(() => {
-    try {
-      const { checkAndUpdate } = require('./updater.js');
-      checkAndUpdate({ quiet: true });
-    } catch (_) {}
-  }, 4 * 3600 * 1000);
+  timers.push(updateTimer);
 }
 
 module.exports = { name, inject, apply };

@@ -1,7 +1,7 @@
 {
   "name": "@winetoken/dsh-plugin-winetoken",
-  "version": "1.7.5",
-  "description": "WineToken 全平台推理模型自动同步与账户资产/用量状态监控。",
+  "version": "2.0.0",
+  "description": "WineToken 全平台推理模型自动同步、双账轨资产监控与现代化 AI 漫剧画布创作工坊。",
   "author": "AyzRuoshui",
   "license": "MIT",
   "main": "./src/index.js",
@@ -32,6 +32,10 @@
   },
   "scripts": {
     "sync": "node src/sync.js",
+    "test": "node --test tests/**/*.test.js",
     "release": "node scripts/release.cjs"
+  },
+  "dependencies": {
+    "yaml": "^2.4.0"
   }
 }

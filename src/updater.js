@@ -1,3 +1,8 @@
+// -*- coding: utf-8 -*-
+/**
+ * WineToken 版本安全检查器 (Safe Version Checker)
+ * 彻底消除供应链任意代码覆写风险 (SEC-01)，仅通过官方接口核验版本并提供升级提示，绝不静默覆盖本地磁盘代码
+ */
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -6,48 +11,36 @@ const REPO_OWNER = 'AyzRuoshui';
 const REPO_NAME = 'dsh-plugin-winetoken';
 const PLUGIN_ROOT = path.resolve(__dirname, '..');
 
-const CORE_FILES = [
-  'package.json',
-  'cordis.patch.yml',
-  'icon.svg',
-  'locale/zh.json',
-  'locale/en.json',
-  'src/index.js',
-  'src/client.js',
-  'src/tool.js',
-  'src/history.js',
-  'src/updater.js',
-  'src/parser.js',
-  'src/sync.js',
-  'src/daemon.js',
-  'src/plugin.js',
-  'src/winetoken-native.js',
-  'README.md'
-];
-
-function fetchRaw(url) {
-  return new Promise((resolve, reject) => {
+function fetchJSON(url) {
+  return new Promise((resolve) => {
     https.get(url, {
       headers: {
-        'User-Agent': 'WineToken-DSH-Updater',
-        'Accept': '*/*'
-      }
+        'User-Agent': 'WineToken-DSH-VersionChecker',
+        'Accept': 'application/vnd.github+json'
+      },
+      timeout: 8000
     }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return resolve(fetchRaw(res.headers.location));
+        return resolve(fetchJSON(res.headers.location));
       }
       if (res.statusCode !== 200) {
-        return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+        return resolve(null);
       }
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-    }).on('error', reject);
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (_) {
+          resolve(null);
+        }
+      });
+    }).on('error', () => resolve(null))
+      .on('timeout', function() {
+        this.destroy();
+        resolve(null);
+      });
   });
-}
-
-function fetchJSON(url) {
-  return fetchRaw(url).then(buf => JSON.parse(buf.toString('utf8'))).catch(() => null);
 }
 
 function compareSemver(v1, v2) {
@@ -62,11 +55,11 @@ function compareSemver(v1, v2) {
   return 0;
 }
 
-let isUpdating = false;
+let isChecking = false;
 
 async function checkAndUpdate(options = {}) {
-  if (isUpdating) return;
-  isUpdating = true;
+  if (isChecking) return;
+  isChecking = true;
 
   try {
     const pkgPath = path.join(PLUGIN_ROOT, 'package.json');
@@ -74,106 +67,42 @@ async function checkAndUpdate(options = {}) {
     const localPkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
     const currentVersion = localPkg.version || '0.0.0';
 
-    // 1. 获取最新版本信息 (GitHub Releases API 优先，国内镜像 CDN 备用)
-    let latestTag = null;
-    try {
-      const ghRelease = await fetchJSON(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`);
-      if (ghRelease && ghRelease.tag_name) {
-        latestTag = ghRelease.tag_name;
-      }
-    } catch (_) {}
+    // 仅通过 GitHub 官方 API 检查最新 Releases 版本
+    const ghRelease = await fetchJSON(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`);
+    const latestTag = ghRelease?.tag_name || null;
 
     if (!latestTag) {
-      try {
-        const ghproxyPkg = await fetchJSON(`https://ghproxy.net/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/package.json`);
-        if (ghproxyPkg && ghproxyPkg.version) {
-          latestTag = `v${ghproxyPkg.version}`;
-        }
-      } catch (_) {}
-    }
-
-    if (!latestTag) {
-      try {
-        const cdnPkg = await fetchJSON(`https://fastly.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/package.json`);
-        if (cdnPkg && cdnPkg.version) {
-          latestTag = `v${cdnPkg.version}`;
-        }
-      } catch (_) {}
-    }
-
-    if (!latestTag) {
-      if (!options.quiet) console.log('[WineToken Updater] Could not fetch remote version.');
+      if (!options.quiet) console.log('[WineToken Updater] 未能获取远程版本信息');
       return;
     }
 
     const remoteVersion = latestTag.replace(/^v/, '');
-    if (compareSemver(remoteVersion, currentVersion) <= 0) {
-      if (!options.quiet) console.log(`[WineToken Updater] Already up to date (current: v${currentVersion}, latest: ${latestTag}).`);
+    const hasUpdate = compareSemver(remoteVersion, currentVersion) > 0;
+
+    if (!hasUpdate) {
+      if (!options.quiet) console.log(`[WineToken Updater] 当前已是最新版本 (本地: v${currentVersion}, 远程: ${latestTag})`);
       return;
     }
 
-    console.log(`[WineToken Updater] New version detected: ${latestTag} (current: v${currentVersion}). Starting background update...`);
+    console.log(`[WineToken Updater] 检测到新版本: ${latestTag} (当前本地: v${currentVersion})。请前往插件中心手动升级。`);
 
-    // 2. 依次下载核心文件到临时备份区 (增加国内高速免魔法镜像)
-    const tempDir = path.join(PLUGIN_ROOT, '.tmp_update_' + Date.now());
-    fs.mkdirSync(tempDir, { recursive: true });
-
-    const downloadSuccess = [];
-    for (const relFile of CORE_FILES) {
-      const encodedRelFile = relFile.replace(/\\/g, '/');
-      const urls = [
-        `https://ghproxy.net/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${encodedRelFile}`,
-        `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${encodedRelFile}`,
-        `https://fastly.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/${encodedRelFile}`
-      ];
-
-      let content = null;
-      for (const url of urls) {
-        try {
-          content = await fetchRaw(url);
-          if (content && content.length > 0) break;
-        } catch (_) {}
-      }
-
-      if (!content) {
-        throw new Error(`Failed to download required file: ${relFile}`);
-      }
-
-      const tempFilePath = path.join(tempDir, relFile);
-      fs.mkdirSync(path.dirname(tempFilePath), { recursive: true });
-      fs.writeFileSync(tempFilePath, content);
-      downloadSuccess.push(relFile);
-    }
-
-    // 3. 所有文件下载校验成功后，执行覆盖更新
-    for (const relFile of downloadSuccess) {
-      const srcFile = path.join(tempDir, relFile);
-      const destFile = path.join(PLUGIN_ROOT, relFile);
-      fs.mkdirSync(path.dirname(destFile), { recursive: true });
-      fs.copyFileSync(srcFile, destFile);
-    }
-
-    // 4. 清理临时下载目录
-    try {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch (_) {}
-
-    // 5. 记录更新状态供 client 端感知
+    // 记录版本状态供前端感知并提示，绝不静默覆盖本地业务文件
     const statusData = {
-      updated: true,
-      fromVersion: currentVersion,
-      toVersion: remoteVersion,
-      updatedAt: Date.now()
+      hasUpdate: true,
+      currentVersion,
+      latestVersion: remoteVersion,
+      checkedAt: Date.now(),
+      releaseUrl: ghRelease.html_url || `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/tag/${latestTag}`
     };
-    try {
-      fs.writeFileSync(path.join(PLUGIN_ROOT, 'src', 'update_status.json'), JSON.stringify(statusData, null, 2), 'utf8');
-    } catch (_) {}
 
-    console.log(`[WineToken Updater] Successfully auto-updated to v${remoteVersion}. Files replaced safely.`);
+    try {
+      const statusFile = path.join(PLUGIN_ROOT, 'src', 'update_status.json');
+      fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2), 'utf8');
+    } catch (_) {}
   } catch (err) {
-    console.warn('[WineToken Updater] Background auto-update skipped or failed:', err.message);
+    if (!options.quiet) console.warn('[WineToken Updater] 检查版本异常:', err.message);
   } finally {
-    isUpdating = false;
+    isChecking = false;
   }
 }
 

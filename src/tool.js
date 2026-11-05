@@ -12,6 +12,38 @@ const { addHistoryItem } = require('./history.js');
 const DEFAULT_BASE_URL = 'https://www.winetoken.asia/v1';
 
 /**
+ * 会话级滑动窗口熔断器 (SessionCircuitBreaker)
+ * 连续 2 次失败触发 30 秒熔断，杜绝大模型重试死循环消耗用户资产 (TOOL-01)
+ */
+class SessionCircuitBreaker {
+  constructor() {
+    this.sessions = new Map();
+  }
+  getRecord(sessionId = 'default') {
+    if (!this.sessions.has(sessionId)) {
+      this.sessions.set(sessionId, { failureCount: 0, lastFailureTime: 0 });
+    }
+    return this.sessions.get(sessionId);
+  }
+  isTripped(sessionId = 'default') {
+    const rec = this.getRecord(sessionId);
+    if (rec.failureCount >= 2 && Date.now() - rec.lastFailureTime < 30000) return true;
+    if (Date.now() - rec.lastFailureTime >= 30000) rec.failureCount = 0;
+    return false;
+  }
+  recordFailure(sessionId = 'default') {
+    const rec = this.getRecord(sessionId);
+    rec.failureCount++;
+    rec.lastFailureTime = Date.now();
+  }
+  recordSuccess(sessionId = 'default') {
+    const rec = this.getRecord(sessionId);
+    rec.failureCount = 0;
+  }
+}
+const toolCircuitBreaker = new SessionCircuitBreaker();
+
+/**
  * 获取系统配置的 API Key
  */
 function getApiKey() {
@@ -57,9 +89,18 @@ async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_
   };
 
   if (image_url) {
-    payload.image = image_url;
-    payload.image_url = image_url;
-    payload.reference_image = image_url;
+    let finalImageUrl = image_url;
+    // 本地垫图文件自动转 Base64 管道 (TOOL-02)
+    if (typeof image_url === 'string' && fs.existsSync(image_url)) {
+      try {
+        const fileBuf = fs.readFileSync(image_url);
+        const ext = path.extname(image_url).toLowerCase().replace('.', '') || 'png';
+        finalImageUrl = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${fileBuf.toString('base64')}`;
+      } catch (err) {
+        console.warn('[WineToken Tool] 读取本地垫图失败，降级使用原始路径:', err.message);
+      }
+    }
+    payload.image_url = finalImageUrl;
   }
 
   const endpoint = baseUrl.endsWith('/') ? `${baseUrl}images/generations` : `${baseUrl}/images/generations`;
@@ -185,7 +226,7 @@ function registerWineTokenTools(ctx) {
       label: 'WineToken 创作工坊·AI绘图',
       category: 'creative',
       description: '【WineToken 创作工坊·AI绘图工具（高耗付费操作）】仅在获得用户明确授权确认后方可调用，单次严格限出 1 张，绝对禁止并发多调。生成结果将内联渲染并存入工坊画廊。',
-      permission: 'safe',
+      permission: 'sensitive',
       parameters: {
         type: 'object',
         properties: {
@@ -241,6 +282,15 @@ function registerWineTokenTools(ctx) {
       },
       isConcurrencySafe: () => false,
       async execute(args) {
+        const sessionId = args.session_id || 'default';
+        if (toolCircuitBreaker.isTripped(sessionId)) {
+          return {
+            success: false,
+            status: 'circuit_broken',
+            error: 'Tool 调用连续失败超限，已触发 30 秒熔断保护，请告知用户稍后手动重试，切勿继续重试发包。'
+          };
+        }
+
         const apiKey = getApiKey();
         if (!apiKey) {
           return {
@@ -287,6 +337,9 @@ function registerWineTokenTools(ctx) {
           const markdownImages = validUrls.map((u, idx) => `![生成画面 ${idx + 1}](${u})`).join('\n\n');
           const markdownDisplay = `${markdownImages}\n\n*基底模型: **${model}** | 分辨率: **${size}** | 已自动同步至 WineToken 创作工坊展台，可在创作工坊中以本地文件直接打开或定位*`;
 
+          // 记录熔断器成功状态
+          toolCircuitBreaker.recordSuccess(sessionId);
+
           return {
             success: true,
             type: 'image',
@@ -297,6 +350,7 @@ function registerWineTokenTools(ctx) {
             tip: '请直接向用户展示以上生成的图片与相关创作说明。'
           };
         } catch (err) {
+          toolCircuitBreaker.recordFailure(sessionId);
           console.error('[WineToken Tool] 生图执行失败:', err.message);
           return {
             success: false,
@@ -312,7 +366,7 @@ function registerWineTokenTools(ctx) {
       label: 'WineToken 创作工坊·AI视频生成',
       category: 'creative',
       description: '【WineToken 创作工坊·AI视频生成工具（高额付费操作）】仅在获得用户明确授权确认后方可调用，单轮严格限生成 1 个视频，绝对禁止并发多调。成果直接在聊天中通过视频播放器预览并存入工坊画廊。',
-      permission: 'safe',
+      permission: 'sensitive',
       parameters: {
         type: 'object',
         properties: {
@@ -366,6 +420,15 @@ function registerWineTokenTools(ctx) {
       },
       isConcurrencySafe: () => false,
       async execute(args) {
+        const sessionId = args.session_id || 'default';
+        if (toolCircuitBreaker.isTripped(sessionId)) {
+          return {
+            success: false,
+            status: 'circuit_broken',
+            error: 'Tool 调用连续失败超限，已触发 30 秒熔断保护，请告知用户稍后手动重试，切勿继续重试发包。'
+          };
+        }
+
         const apiKey = getApiKey();
         if (!apiKey) {
           return {
@@ -406,6 +469,9 @@ function registerWineTokenTools(ctx) {
           // 构造 HTML5 原生播放器控件 Markdown 输出
           const markdownDisplay = `<video src="${videoUrl}" controls width="100%" style="max-height:480px;border-radius:8px;outline:none;background:#000;"></video>\n\n*基底模型: **${model}** (${duration}秒) | 已自动同步至 WineToken 创作工坊展台，可在创作工坊中以本地文件直接打开或定位*`;
 
+          // 记录熔断器成功状态
+          toolCircuitBreaker.recordSuccess(sessionId);
+
           return {
             success: true,
             type: 'video',
@@ -416,6 +482,7 @@ function registerWineTokenTools(ctx) {
             tip: '请直接向用户展示以上视频播放控件与运镜说明。'
           };
         } catch (err) {
+          toolCircuitBreaker.recordFailure(sessionId);
           console.error('[WineToken Tool] 视频生成失败:', err.message);
           return {
             success: false,
@@ -455,8 +522,10 @@ function registerWineTokenTools(ctx) {
       }
     }
 
-    console.log('[WineToken Plugin] ✅ 成功向 DeepSeek Harness 注入 AI 绘图与视频生成 2 大原生 Tools/Skill。');
+    console.log('[WineToken Plugin] [OK] 成功向 DeepSeek Harness 注入 AI 绘图与视频生成 2 大原生 Tools/Skill。');
   };
+
+  let unregister = () => {};
 
   // 支持直接注入与延迟注入
   if (ctx.tools) {
@@ -466,8 +535,12 @@ function registerWineTokenTools(ctx) {
       registerHandler(injectedCtx.tools);
     });
   }
+
+  return unregister;
 }
 
 module.exports = {
-  registerWineTokenTools
+  registerWineTokenTools,
+  SessionCircuitBreaker,
+  toolCircuitBreaker
 };

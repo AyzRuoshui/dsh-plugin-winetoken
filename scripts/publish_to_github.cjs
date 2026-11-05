@@ -74,6 +74,9 @@ function getAllFiles(dir, baseDir = '') {
       file === 'node_modules' ||
       file === '.git' ||
       file === '.tmp' ||
+      file === '.agents' ||
+      file === 'ENGINEERING_REVIEW_REPORT.md' ||
+      file === 'PHASED_IMPLEMENTATION_PLAN.md' ||
       file === 'package-lock.json' ||
       file === '.package-lock.json' ||
       file === 'HANDOVER.md' ||

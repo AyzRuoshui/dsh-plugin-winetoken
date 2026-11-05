@@ -22,6 +22,40 @@
   const BASE_URL = "https://www.winetoken.asia";
   const CACHE_KEY = "WINETOKEN_BILLING_CACHE_V3";
 
+  // 顶层全局内存单例保活 (CANVAS-01, CANVAS-02 跨卸载水合保活)
+  if (typeof window !== 'undefined') {
+    window.__WINETOKEN_CANVAS_MEMORY_STORE__ = window.__WINETOKEN_CANVAS_MEMORY_STORE__ || {
+      characters: null,
+      panels: null,
+      viewport: null,
+      activeModel: null
+    };
+  }
+
+  // 引入并挂载独立持久化存储驱动、WAL任务队列、几何计算与命令模式历史栈
+  let CanvasProjectStorageClass = null;
+  let CanvasJobQueueSingleton = null;
+  let CanvasMathUtils = null;
+  let CanvasHistoryManagerClass = null;
+  try {
+    const storageMod = require('./canvas-storage.js');
+    CanvasProjectStorageClass = storageMod.CanvasProjectStorage;
+  } catch (_) {}
+  try {
+    const queueMod = require('./canvas-job-queue.js');
+    CanvasJobQueueSingleton = queueMod.canvasJobQueue;
+  } catch (_) {}
+  try {
+    CanvasMathUtils = require('./canvas-math.js');
+  } catch (_) {}
+  try {
+    const histMod = require('./canvas-history.js');
+    CanvasHistoryManagerClass = histMod.CanvasHistoryManager;
+  } catch (_) {}
+
+  const canvasStorageDriver = CanvasProjectStorageClass ? new CanvasProjectStorageClass() : null;
+  const canvasHistoryManager = CanvasHistoryManagerClass ? new CanvasHistoryManagerClass(30) : null;
+
   /**
    * WineToken 跨进程凭据同步中枢 (WineTokenCredentialBridge)
    * 双向打通渲染进程 localStorage 与 DSH 宿主微内核 ~/.dsh/.credentials.yaml
@@ -796,8 +830,26 @@ $owner.Dispose()
         }
       } catch (_) {}
       try {
+        const path = require('path');
+        const ext = path.extname(filePath).toLowerCase();
+        const SAFE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.mp4', '.json', '.txt'];
+        if (!SAFE_EXTS.includes(ext)) {
+          console.warn('[WineToken] 拒绝打开非安全白名单扩展名的文件:', ext);
+          return false;
+        }
+        const normalized = path.normalize(filePath);
+        if (/[\&\|\`\$\;\>\<]/.test(normalized)) {
+          console.warn('[WineToken] 文件路径包含非法特殊字符，阻断执行 (SEC-03)');
+          return false;
+        }
         const cp = require('child_process');
-        cp.execFile('cmd.exe', ['/c', 'start', '""', filePath]);
+        if (process.platform === 'win32') {
+          cp.spawn('explorer.exe', [normalized], { detached: true, stdio: 'ignore' });
+        } else if (process.platform === 'darwin') {
+          cp.spawn('open', [normalized], { detached: true, stdio: 'ignore' });
+        } else {
+          cp.spawn('xdg-open', [normalized], { detached: true, stdio: 'ignore' });
+        }
         return true;
       } catch (_) {
         return false;
@@ -1510,7 +1562,11 @@ $owner.Dispose()
           }, [onClose]);
 
           const maskedKey = currentKey
-            ? (currentKey.length > 12 ? currentKey.slice(0, 7) + '········' + currentKey.slice(-4) : currentKey)
+            ? (currentKey.length <= 6
+                ? '******'
+                : (currentKey.length <= 12
+                    ? currentKey.slice(0, 2) + '····' + currentKey.slice(-2)
+                    : currentKey.slice(0, 7) + '········' + currentKey.slice(-4)))
             : '未配置';
 
           const handleCopyKey = () => {
@@ -2470,16 +2526,49 @@ $owner.Dispose()
         function CanvasWorkspace({ theme: propTheme, isVip, isSvip, isSuper, onOpenTutorial }) {
           const hookTheme = useTheme();
           const theme = propTheme || hookTheme;
+          // 三级水合恢复机制：全局内存单例 -> CanvasProjectStorage 磁盘备份 -> localStorage 镜像 -> 初始模板 (CANVAS-01)
+          const initialProject = React.useMemo(() => {
+            const mem = (typeof window !== 'undefined') ? window.__WINETOKEN_CANVAS_MEMORY_STORE__ : null;
+            if (mem && mem.characters && mem.panels && mem.characters.length > 0) {
+              return mem;
+            }
+            if (canvasStorageDriver) {
+              try {
+                const disk = canvasStorageDriver.loadProject();
+                if (disk && disk.characters && disk.panels && disk.characters.length > 0) {
+                  return disk;
+                }
+              } catch (_) {}
+            }
+            try {
+              if (typeof localStorage !== 'undefined') {
+                const raw = localStorage.getItem('__winetoken_canvas_snapshot__');
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  if (parsed && parsed.characters && parsed.panels) return parsed;
+                }
+              }
+            } catch (_) {}
+            return (canvasStorageDriver && canvasStorageDriver.getDefaultProject()) || {
+              characters: [{ id: 'char_chuyun', name: '主角·楚云', dna: '少年剑客，黑袍高领，银白碎发，剑眉星目，冷峻英气，电影质感', avatar: '' }],
+              panels: [
+                { id: 'shot_01', num: 1, x: 360, y: 60, width: 280, height: 420, aspectRatio: '2:3', shot: 'CU', shotLabel: '特写', prompt: '少年剑客面部特写，发丝微动，冷峻眼神，侧逆光，细致皮肤纹理，虚化背景，电影光影', dialogue: '“这一剑，我已等了三年。”', characterId: 'char_chuyun', imageUrl: '', isGenerating: false, stagingCandidateUrl: null },
+                { id: 'shot_02', num: 2, x: 690, y: 60, width: 360, height: 240, aspectRatio: '16:9', shot: 'MS', shotLabel: '中景', prompt: '雨夜长街，黑袍剑客拔剑而立，剑锋泛起寒光，雨水飞溅，深邃冷色调，宽银幕构图', dialogue: '长街风雨骤急，杀气四伏。', characterId: 'char_chuyun', imageUrl: '', isGenerating: false, stagingCandidateUrl: null }
+              ],
+              viewport: { x: 40, y: 30, zoom: 1 }
+            };
+          }, []);
+
           // 视口变换参数 (基于 Direct DOM Transform 硬件加速)
-          const viewportRef = React.useRef({ x: 40, y: 30, zoom: 1 });
+          const viewportRef = React.useRef(initialProject.viewport || { x: 40, y: 30, zoom: 1 });
           const canvasLayerRef = React.useRef(null);
           const isDraggingRef = React.useRef(false);
           const dragStartRef = React.useRef({ x: 0, y: 0, originX: 0, originY: 0 });
           const isSpacePressedRef = React.useRef(false);
-          const [zoomDisplay, setZoomDisplay] = React.useState(100);
+          const [zoomDisplay, setZoomDisplay] = React.useState(Math.round((initialProject.viewport?.zoom || 1) * 100));
 
           // 漫剧画布生图模型状态与原图全屏预览灯箱
-          const [canvasModel, setCanvasModel] = React.useState(WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite');
+          const [canvasModel, setCanvasModel] = React.useState(initialProject.activeModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite');
           const [availableImageModels, setAvailableImageModels] = React.useState(WineTokenManifestManager.getImageModels());
           const [lightboxUrl, setLightboxUrl] = React.useState(null);
 
@@ -2494,52 +2583,31 @@ $owner.Dispose()
           }, []);
 
           // 角色资产库
-          const [characters, setCharacters] = React.useState([
-            {
-              id: 'char_chuyun',
-              name: '主角·楚云',
-              dna: '少年剑客，黑袍高领，银白碎发，剑眉星目，冷峻英气，电影质感',
-              avatar: ''
-            }
-          ]);
+          const [characters, setCharacters] = React.useState(initialProject.characters);
 
           // 分镜格资产
-          const [panels, setPanels] = React.useState([
-            {
-              id: 'shot_01',
-              num: 1,
-              x: 360,
-              y: 60,
-              width: 280,
-              height: 420,
-              aspectRatio: '2:3',
-              shot: 'CU',
-              shotLabel: '特写',
-              prompt: '少年剑客面部特写，发丝微动，冷峻眼神，侧逆光，细致皮肤纹理，虚化背景，电影光影',
-              dialogue: '“这一剑，我已等了三年。”',
-              characterId: 'char_chuyun',
-              imageUrl: '',
-              isGenerating: false,
-              stagingCandidateUrl: null
-            },
-            {
-              id: 'shot_02',
-              num: 2,
-              x: 690,
-              y: 60,
-              width: 360,
-              height: 240,
-              aspectRatio: '16:9',
-              shot: 'MS',
-              shotLabel: '中景',
-              prompt: '雨夜长街，黑袍剑客拔剑而立，剑锋泛起寒光，雨水飞溅，深邃冷色调，宽银幕构图',
-              dialogue: '长街风雨骤急，杀气四伏。',
-              characterId: 'char_chuyun',
-              imageUrl: '',
-              isGenerating: false,
-              stagingCandidateUrl: null
+          const [panels, setPanels] = React.useState(initialProject.panels);
+
+          // 状态变更双轨同步写盘与内存保活 (CANVAS-01, CANVAS-02)
+          React.useEffect(() => {
+            const snapshot = {
+              characters,
+              panels,
+              viewport: viewportRef.current,
+              activeModel: canvasModel
+            };
+            if (typeof window !== 'undefined' && window.__WINETOKEN_CANVAS_MEMORY_STORE__) {
+              window.__WINETOKEN_CANVAS_MEMORY_STORE__ = snapshot;
             }
-          ]);
+            if (canvasStorageDriver) {
+              canvasStorageDriver.debounceSave(snapshot, 500);
+            }
+            try {
+              if (typeof localStorage !== 'undefined') {
+                localStorage.setItem('__winetoken_canvas_snapshot__', JSON.stringify(snapshot));
+              }
+            } catch (_) {}
+          }, [characters, panels, canvasModel]);
 
           // 更新视图 Transform
           const updateTransform = () => {
@@ -2568,6 +2636,68 @@ $owner.Dispose()
               window.removeEventListener('keydown', onKeyDown);
               window.removeEventListener('keyup', onKeyUp);
             };
+          }, []);
+
+          // 30 步命令模式撤销/重做堆栈 (CANVAS-04)
+          const handleUndo = () => {
+            if (!canvasHistoryManager || !canvasHistoryManager.canUndo()) return;
+            const prev = canvasHistoryManager.undo({ characters, panels });
+            if (prev) {
+              if (prev.characters) setCharacters(prev.characters);
+              if (prev.panels) setPanels(prev.panels);
+            }
+          };
+
+          const handleRedo = () => {
+            if (!canvasHistoryManager || !canvasHistoryManager.canRedo()) return;
+            const next = canvasHistoryManager.redo({ characters, panels });
+            if (next) {
+              if (next.characters) setCharacters(next.characters);
+              if (next.panels) setPanels(next.panels);
+            }
+          };
+
+          // 全局快捷键监听 (Ctrl+Z / Ctrl+Y)
+          React.useEffect(() => {
+            const handleGlobalKeyDown = (e) => {
+              if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+              if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                  handleRedo();
+                } else {
+                  handleUndo();
+                }
+              } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+                e.preventDefault();
+                handleRedo();
+              }
+            };
+            window.addEventListener('keydown', handleGlobalKeyDown);
+            return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+          }, [panels, characters]);
+
+          // 监听 WAL 异步任务队列，跨卸载/跨Tab自动完成水合对账 (CANVAS-02)
+          React.useEffect(() => {
+            if (!CanvasJobQueueSingleton) return;
+            const unsub = CanvasJobQueueSingleton.subscribe((job) => {
+              if (job.status === 'completed' && job.resultUrl) {
+                setPanels(prev => prev.map(p => {
+                  if (p.id === job.panelId) {
+                    return {
+                      ...p,
+                      imageUrl: job.resultUrl,
+                      isGenerating: false,
+                      candidates: [job.resultUrl, ...(p.candidates || [])].slice(0, 4)
+                    };
+                  }
+                  return p;
+                }));
+              } else if (job.status === 'failed') {
+                setPanels(prev => prev.map(p => p.id === job.panelId ? { ...p, isGenerating: false } : p));
+              }
+            });
+            return unsub;
           }, []);
 
           // 滚轮缩放处理 (支持光标定点缩放与阻尼平滑)
@@ -2903,11 +3033,13 @@ $owner.Dispose()
                 ctx.drawImage(img, 0, curY, standardW, item.renderH);
               }
 
-              // 绘制台词对白气泡
+              // 绘制台词对白气泡 (多行自适应折行断句，彻底杜绝长文本溢出 CANVAS-05)
               if (item.dialogue) {
                 ctx.save();
-                const bubW = Math.min(standardW - 80, 520);
-                const bubH = 54;
+                const bubW = Math.min(standardW - 80, 560);
+                const lines = CanvasMathUtils ? CanvasMathUtils.measureAndWrapText(item.dialogue, bubW - 48, 18) : [item.dialogue];
+                const lineHeight = 28;
+                const bubH = Math.max(54, 24 + lines.length * lineHeight);
                 const bubX = (standardW - bubW) / 2;
                 const bubY = curY + item.renderH - bubH - 24;
 
@@ -2921,10 +3053,13 @@ $owner.Dispose()
                 ctx.stroke();
 
                 ctx.fillStyle = '#111827';
-                ctx.font = 'bold 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+                ctx.font = 'bold 18px "PingFang SC", "Microsoft YaHei", sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(item.dialogue, standardW / 2, bubY + bubH / 2);
+                const startTextY = bubY + bubH / 2 - ((lines.length - 1) * lineHeight) / 2;
+                lines.forEach((lineText, lIdx) => {
+                  ctx.fillText(lineText, standardW / 2, startTextY + lIdx * lineHeight);
+                });
                 ctx.restore();
               }
 
@@ -3021,6 +3156,42 @@ $owner.Dispose()
                   gap: '5px'
                 }
               }, [h(Icon, { name: 'plus', size: 13 }), h('span', {}, '添加分镜')]),
+
+              h('button', {
+                type: 'button',
+                onClick: handleUndo,
+                title: '撤销上一步操作 (Ctrl+Z)',
+                style: {
+                  padding: '5px 8px',
+                  borderRadius: '5px',
+                  border: `1px solid ${theme.borderSubtle}`,
+                  backgroundColor: 'transparent',
+                  color: theme.textSecondary,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }
+              }, [h(Icon, { name: 'arrowLeft', size: 12 }), h('span', {}, '撤销')]),
+
+              h('button', {
+                type: 'button',
+                onClick: handleRedo,
+                title: '恢复下一步操作 (Ctrl+Y)',
+                style: {
+                  padding: '5px 8px',
+                  borderRadius: '5px',
+                  border: `1px solid ${theme.borderSubtle}`,
+                  backgroundColor: 'transparent',
+                  color: theme.textSecondary,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }
+              }, [h(Icon, { name: 'refresh', size: 12 }), h('span', {}, '重做')]),
 
               h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 4px' } }),
 
@@ -3418,7 +3589,7 @@ $owner.Dispose()
                     flexDirection: 'column'
                   }
                 }, [
-                  // 镜号与景别顶栏
+                  // 镜号与景别顶栏 (带自由拖拽手柄与 8px 磁吸对齐 CANVAS-03)
                   h('div', {
                     style: {
                       padding: '8px 12px',
@@ -3426,7 +3597,45 @@ $owner.Dispose()
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'
+                      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                      cursor: 'grab',
+                      userSelect: 'none'
+                    },
+                    onPointerDown: (e) => {
+                      if (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'OPTION') return;
+                      e.stopPropagation();
+                      const startX = e.clientX;
+                      const startY = e.clientY;
+                      const originX = p.x;
+                      const originY = p.y;
+                      let hasMoved = false;
+
+                      const handleDragMove = (moveEvt) => {
+                        const zoom = viewportRef.current.zoom || 1;
+                        const dx = (moveEvt.clientX - startX) / zoom;
+                        const dy = (moveEvt.clientY - startY) / zoom;
+                        if (!hasMoved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+                          hasMoved = true;
+                          if (canvasHistoryManager) {
+                            canvasHistoryManager.pushState({ characters, panels });
+                          }
+                        }
+                        if (hasMoved) {
+                          const rawX = originX + dx;
+                          const rawY = originY + dy;
+                          const nextX = CanvasMathUtils ? CanvasMathUtils.snapToGrid(rawX, 8) : Math.round(rawX);
+                          const nextY = CanvasMathUtils ? CanvasMathUtils.snapToGrid(rawY, 8) : Math.round(rawY);
+                          setPanels(prev => prev.map(item => item.id === p.id ? { ...item, x: nextX, y: nextY } : item));
+                        }
+                      };
+
+                      const handleDragUp = () => {
+                        window.removeEventListener('pointermove', handleDragMove);
+                        window.removeEventListener('pointerup', handleDragUp);
+                      };
+
+                      window.addEventListener('pointermove', handleDragMove);
+                      window.addEventListener('pointerup', handleDragUp);
                     }
                   }, [
                     h('div', { style: { display: 'flex', alignItems: 'center', gap: '5px' } }, [
@@ -3467,7 +3676,14 @@ $owner.Dispose()
                     ]),
                     h('button', {
                       type: 'button',
+                      title: '删除分镜卡片 (支持 Ctrl+Z 撤销 CANVAS-04)',
                       onClick: () => {
+                        if (typeof confirm !== 'undefined' && !confirm(`确定要删除分镜 #${p.num} 及其关联画面吗？此操作可按 Ctrl+Z 撤销。`)) {
+                          return;
+                        }
+                        if (canvasHistoryManager) {
+                          canvasHistoryManager.pushState({ characters, panels });
+                        }
                         setPanels(prev => prev.filter(x => x.id !== p.id));
                       },
                       style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '11px' }
@@ -4002,12 +4218,26 @@ $owner.Dispose()
                   return await res.json();
                 };
 
+                // 前置可用额度与余额校验，杜绝透支双花 (BILLING-03)
+                const totalEstCost = estCost * count;
+                const currentWallet = billingState?.walletCNY || 0;
+                const currentSubRemain = Math.max(0, (billingState?.subTotalCNY || 0) - (billingState?.subUsedCNY || 0));
+                const totalAvailable = currentWallet + currentSubRemain;
+                if (totalAvailable < totalEstCost && totalAvailable > 0) {
+                  throw new Error(`账户总可用额度 (¥${formatCNY(totalAvailable)}) 不足以支付本次渲染预估消耗 (¥${formatCNY(totalEstCost)})，已为您中止发包。`);
+                }
+
                 let generatedData = [];
                 if (count > 1) {
-                  // 所有生图模型在选多张时，一律并发发送单张请求，彻底杜绝上游 API "invalid n, should be in [1, 1]" 校验拦截
-                  setStatusMsg(`AI 正在并发绘制第 1~${count} 张画面，请稍候...`);
-                  const tasks = Array.from({ length: count }, () => requestSingleBatch(1));
-                  const results = await Promise.all(tasks);
+                  // 所有生图模型在选多张时，采用受控并发 (Limit=2)，彻底杜绝上游 API "invalid n" 与并发击穿
+                  setStatusMsg(`AI 正在按序并发绘制第 1~${count} 张画面，请稍候...`);
+                  const results = [];
+                  for (let i = 0; i < count; i += 2) {
+                    const batchSize = Math.min(2, count - i);
+                    const batchTasks = Array.from({ length: batchSize }, () => requestSingleBatch(1));
+                    const batchRes = await Promise.all(batchTasks);
+                    results.push(...batchRes);
+                  }
                   for (const r of results) {
                     if (r && r.data && Array.isArray(r.data)) generatedData.push(...r.data);
                   }
@@ -4045,7 +4275,104 @@ $owner.Dispose()
                   updateBilling();
                 }
               } else {
-                alert(`【视频生成任务提交成功】\n基底模型: ${currentModelObj.name}\n渲染规格: ${size} · 时长 ${duration} 秒\n预估消耗: ¥${formatCNY(estCost)}${isVip ? ` (${isSvip ? 'SVIP专属8折' : 'VIP专属9折'}特惠)` : ''}\n\n已成功载入视频渲染队列，视频渲染通常需 1~2 分钟，请稍候在视频展台查看。`);
+                // 真实视频网络调用与长轮询 (彻底终结假存根 BILLING-01, BILLING-05)
+                setStatusMsg(`AI 正在向云端提交视频渲染任务 (${selectedModel}, ${duration}秒)...`);
+                const videoPayload = {
+                  model: selectedModel || 'MiniMax-H3',
+                  prompt: prompt.trim(),
+                  seconds: duration || 5,
+                  duration: duration || 5,
+                  resolution: (size && size.includes('1080')) ? '1080P' : '768P'
+                };
+                if (referenceSlots.length > 0 && referenceSlots[0].dataUrl) {
+                  videoPayload.image_url = referenceSlots[0].dataUrl;
+                  videoPayload.image = referenceSlots[0].dataUrl;
+                }
+
+                const endpoint = `${BASE_URL}/v1/videos/generations`;
+                const submitRes = await fetch(endpoint, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${key}`
+                  },
+                  body: JSON.stringify(videoPayload)
+                });
+
+                if (!submitRes.ok) {
+                  const errText = await submitRes.text().catch(() => '');
+                  let msg = `HTTP ${submitRes.status}`;
+                  try {
+                    const parsed = JSON.parse(errText);
+                    msg = parsed.error?.message || msg;
+                  } catch (_) {
+                    if (errText) msg = errText.slice(0, 100);
+                  }
+                  throw new Error(`创建视频任务失败: ${msg}`);
+                }
+
+                const submitData = await submitRes.json();
+                let finalVideoUrl = submitData.url || (submitData.data && submitData.data[0] && submitData.data[0].url);
+
+                if (!finalVideoUrl) {
+                  const taskId = submitData.task_id || submitData.id || (submitData.data && submitData.data.id);
+                  if (!taskId) throw new Error('视频接口未返回任务 ID 或直接视频链接');
+
+                  const pollUrl = `${endpoint}/${taskId}`;
+                  const maxAttempts = 40;
+                  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                    setStatusMsg(`视频正在加速渲染中 (${attempt * 3}秒 / 最长120秒)...`);
+                    await new Promise(r => setTimeout(r, 3000));
+
+                    try {
+                      const pollRes = await fetch(pollUrl, {
+                        headers: { 'Authorization': `Bearer ${key}` }
+                      });
+                      if (!pollRes.ok) continue;
+                      const pollData = await pollRes.json();
+                      const status = (pollData.status || pollData.state || '').toLowerCase();
+                      if (status === 'succeeded' || status === 'success') {
+                        finalVideoUrl = pollData.url || (pollData.data && pollData.data[0] && pollData.data[0].url) || (pollData.output && pollData.output.url);
+                        if (finalVideoUrl) break;
+                      }
+                      if (status === 'failed' || status === 'error') {
+                        throw new Error(pollData.error?.message || pollData.message || '视频渲染失败');
+                      }
+                    } catch (pollErr) {
+                      if (pollErr.message && pollErr.message.includes('视频渲染失败')) throw pollErr;
+                    }
+                  }
+                }
+
+                if (!finalVideoUrl) {
+                  throw new Error('视频生成已提交但轮询超时，稍后可在创作工坊历史中核对');
+                }
+
+                const videoItem = {
+                  url: finalVideoUrl,
+                  prompt: prompt.trim(),
+                  model: selectedModel,
+                  size: size,
+                  duration: duration,
+                  type: 'video',
+                  time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                };
+
+                setResultImages([videoItem]);
+                setActiveImage(videoItem);
+
+                const nextHist = [videoItem, ...history].slice(0, 40);
+                setHistory(nextHist);
+                try {
+                  localStorage.setItem('WINETOKEN_STUDIO_HISTORY', JSON.stringify(nextHist));
+                  const fs = require('fs');
+                  const path = require('path');
+                  const os = require('os');
+                  const file = path.join(os.homedir(), '.dsh', 'storages', 'winetoken_studio_history.json');
+                  fs.writeFileSync(file, JSON.stringify(nextHist, null, 2), 'utf8');
+                } catch (_) {}
+
+                updateBilling();
               }
             } catch (e) {
               alert('生成失败: ' + e.message);
@@ -4389,17 +4716,27 @@ $owner.Dispose()
               ])
             ]),
 
-            // 2. 主体工作台 (漫剧画布 vs 传统工坊双栏)
-            mode === 'canvas' ? h(CanvasWorkspace, {
-              theme,
-              isVip,
-              isSvip,
-              isSuper,
-              onOpenTutorial: () => setShowTutorial(true)
-            }) : h('div', {
+            // 2. 主体工作台 (双层容器常驻保活，彻底杜绝切 Tab 销毁 React 局部状态 CANVAS-01)
+            h('div', {
               style: {
                 flex: 1,
-                display: 'grid',
+                display: mode === 'canvas' ? 'flex' : 'none',
+                flexDirection: 'column',
+                overflow: 'hidden'
+              }
+            }, [
+              h(CanvasWorkspace, {
+                theme,
+                isVip,
+                isSvip,
+                isSuper,
+                onOpenTutorial: () => setShowTutorial(true)
+              })
+            ]),
+            h('div', {
+              style: {
+                flex: 1,
+                display: mode === 'canvas' ? 'none' : 'grid',
                 gridTemplateColumns: '360px 1fr',
                 overflow: 'hidden'
               }
