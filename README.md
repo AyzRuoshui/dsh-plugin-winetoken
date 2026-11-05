@@ -1,7 +1,7 @@
 # DeepSeek Harness (DSH) - WineToken 原生聚合插件
 
 [![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-v0.2.1--rc.5-blue)](https://github.com/deepseek-ai/deepseek-harness)
-[![Version](https://img.shields.io/badge/version-2.0.0-green.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-2.0.1-green.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/AyzRuoshui/dsh-plugin-winetoken)](https://github.com/AyzRuoshui/dsh-plugin-winetoken/releases)
 
@@ -72,11 +72,13 @@ dsh-plugin-winetoken/
 ├── src/
 │   ├── index.js                # Host 端插件入口 (生命周期注入 & 资源清理)
 │   ├── client.js               # Client 端核心模块 (状态栏胶囊、工坊、AI漫剧画布)
+│   ├── credentials.js          # 统一凭据中枢 (跨进程、别名兼容与自动对齐)
+│   ├── patch-engine.js         # 纯原生零依赖 Patch 增量合并引擎 (保留注释与用户provider)
 │   ├── canvas-storage.js       # 漫剧画布独立持久化存储驱动 (原子双写双备份)
 │   ├── canvas-job-queue.js     # WAL 预写日志异步任务队列驱动 (防切Tab丢图)
 │   ├── canvas-math.js          # 画布数学计算工具 (贝塞尔曲线、网格磁吸、文本折行)
 │   ├── canvas-history.js       # 命令模式 30 步撤销/重做堆栈 (Undo/Redo)
-│   ├── tool.js                 # 大模型 Tool Calling 原生技能注入引擎 (带熔断器)
+│   ├── tool.js                 # 大模型 Tool Calling 原生技能注入引擎 (带熔断器与尺寸智能对齐)
 │   ├── parser.js               # 智能模型元数据解析引擎
 │   ├── updater.js              # 安全版本检查器 (只读检查无覆写)
 │   ├── history.js              # 本地画廊创作历史库管理
@@ -86,6 +88,9 @@ dsh-plugin-winetoken/
 │   ├── canvas-storage.test.js  # 本地工程原子落盘与恢复测试
 │   ├── canvas-job-queue.test.js# WAL 异步任务状态机测试
 │   ├── circuit-breaker.test.js # 会话级熔断器状态机测试
+│   ├── credentials.test.js     # 凭据别名解析与换行符防御测试
+│   ├── patch-engine.test.js    # 零依赖增量合并与注释保留测试
+│   ├── image-size.test.js      # 图像尺寸 32 倍数智能对齐测试
 │   └── sync-security.test.js   # 凭据安全与防误杀单元测试
 ├── scripts/
 │   ├── safe_install.cjs        # 官方标准安全增量合并安装器
@@ -93,7 +98,7 @@ dsh-plugin-winetoken/
 │   └── publish_to_github.cjs   # 基于 GitHub REST API 的免 Git CLI 发布引擎 (带脱敏审计)
 ├── cordis.patch.yml            # 官方 Bundle 补丁定义
 ├── icon.svg                    # 官方规范矢量图标
-└── package.json                # 插件元数据与依赖定义 (v2.0.0)
+└── package.json                # 插件元数据与依赖定义 (v2.0.1)
 ```
 
 ---

@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { homedir } = require('os');
 const { addHistoryItem } = require('./history.js');
+const { resolveApiKey, getResolvedBaseUrl } = require('./credentials.js');
 
 const DEFAULT_BASE_URL = 'https://www.winetoken.asia/v1';
 
@@ -44,47 +45,56 @@ class SessionCircuitBreaker {
 const toolCircuitBreaker = new SessionCircuitBreaker();
 
 /**
- * 获取系统配置的 API Key
+ * 图像分辨率 32 倍数智能对齐算法 (兼容商汤日日新 sensenova-u1.5-lite 等严苛引擎)
+ */
+function normalizeImageSize(size, model = '') {
+  if (!size || typeof size !== 'string') return '1024x1024';
+  const parts = size.toLowerCase().split('x');
+  if (parts.length !== 2) return size;
+  let w = parseInt(parts[0], 10);
+  let h = parseInt(parts[1], 10);
+  if (isNaN(w) || isNaN(h)) return size;
+
+  // 1280x720 与 720x1280 经典非 32 倍数优雅映射为标准 32 倍数
+  if (w === 1280 && h === 720) return '1280x768';
+  if (w === 720 && h === 1280) return '768x1280';
+
+  // Clamp 限制在 [512, 4096]
+  w = Math.max(512, Math.min(4096, w));
+  h = Math.max(512, Math.min(4096, h));
+
+  // 向上/四舍五入对齐至 32 的整数倍
+  if (w % 32 !== 0) w = Math.round(w / 32) * 32;
+  if (h % 32 !== 0) h = Math.round(h / 32) * 32;
+
+  return `${w}x${h}`;
+}
+
+/**
+ * 获取系统配置的 API Key (已接入 credentials 统一中枢)
  */
 function getApiKey() {
-  if (process.env.WINETOKEN_API_KEY && process.env.WINETOKEN_API_KEY.trim()) {
-    return process.env.WINETOKEN_API_KEY.trim();
-  }
-  const credentialsPath = path.join(homedir(), '.dsh', '.credentials.yaml');
-  if (fs.existsSync(credentialsPath)) {
-    try {
-      const content = fs.readFileSync(credentialsPath, 'utf8');
-      const m = content.match(/WINETOKEN_API_KEY:\s*([^\r\n#]+)/);
-      if (m && m[1]) return m[1].trim();
-    } catch (_) {}
-  }
-  return '';
+  const resolved = resolveApiKey({ autoAlias: true });
+  return resolved.apiKey;
 }
 
 /**
- * 获取 Base URL
+ * 获取 Base URL (已接入 credentials 统一中枢)
  */
 function getBaseUrl() {
-  const patchPath = path.join(homedir(), '.dsh', 'profiles', 'desktop', 'cordis.patch.yml');
-  if (fs.existsSync(patchPath)) {
-    try {
-      const content = fs.readFileSync(patchPath, 'utf8');
-      const m = content.match(/baseURL:\s*([^\r\n#]+)/);
-      if (m && m[1]) return m[1].trim().replace(/\/+$/, '');
-    } catch (_) {}
-  }
-  return DEFAULT_BASE_URL;
+  return getResolvedBaseUrl();
 }
 
 /**
- * 单张生图请求核心逻辑 (并发单张调度，彻底规避上游 invalid n)
+ * 单张生图请求核心逻辑 (并发单张调度，彻底规避上游 invalid n 与非 32 倍数尺寸错误)
  */
 async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_url }) {
+  const finalSize = normalizeImageSize(size, model);
   const payload = {
     model: model || 'gpt-image-2.5-flare',
     prompt: prompt.trim(),
     n: 1,
-    size: size || '1024x1024',
+    size: finalSize,
     response_format: 'url'
   };
 
@@ -241,8 +251,8 @@ function registerWineTokenTools(ctx) {
           },
           size: {
             type: 'string',
-            enum: ['1024x1024', '1792x1024', '1024x1792', '1280x720', '720x1280'],
-            description: '输出尺寸比例：1024x1024 为正方形，1792x1024/1280x720 为横屏，1024x1792/720x1280 为竖屏',
+            enum: ['1024x1024', '1792x1024', '1024x1792', '1280x768', '768x1280', '1280x720', '720x1280'],
+            description: '输出尺寸比例：1024x1024 为正方形，1792x1024/1280x768 为横屏，1024x1792/768x1280 为竖屏 (非 32 倍数将自动智能对齐校准以兼容商汤等引擎)',
             default: '1024x1024'
           },
           count: {
@@ -295,7 +305,7 @@ function registerWineTokenTools(ctx) {
         if (!apiKey) {
           return {
             success: false,
-            error: '未检测到 WineToken API Key，请先在 WineToken 插件设置或 ~/.dsh/.credentials.yaml 中配置。'
+            error: '未检测到有效 API Key (已探测 WINETOKEN_API_KEY 与 ZHAIZHU_API_KEY 等别名)，请先在 WineToken 插件设置或账户设置中配置。'
           };
         }
 
@@ -433,7 +443,7 @@ function registerWineTokenTools(ctx) {
         if (!apiKey) {
           return {
             success: false,
-            error: '未检测到 WineToken API Key，请先在 WineToken 插件设置或 ~/.dsh/.credentials.yaml 中配置。'
+            error: '未检测到有效 API Key (已探测 WINETOKEN_API_KEY 与 ZHAIZHU_API_KEY 等别名)，请先在 WineToken 插件设置或账户设置中配置。'
           };
         }
 

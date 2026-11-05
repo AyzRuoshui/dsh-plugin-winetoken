@@ -2,12 +2,15 @@ const { existsSync, readFileSync } = require('fs');
 const { homedir } = require('os');
 const { join } = require('path');
 
+const { resolveApiKey } = require('./credentials.js');
+const { syncWithHarness, ensureBaselineProviderInPatch } = require('./sync.js');
+
 const name = 'dsh-plugin-winetoken';
 const inject = ['tools', 'systemPrompt'];
 
 /**
  * WineToken Harness Host Plugin (CommonJS)
- * 纯原生生命周期随 DSH 容器存亡，开机静默同步最新模型
+ * 纯原生生命周期随 DSH 容器存亡，开机增量注入基线模型与 SWR 动态 Manifest 热拉取
  */
 function apply(ctx) {
   console.log('[WineToken Plugin] Host plugin loaded inside DeepSeek Harness Cordis container.');
@@ -34,26 +37,27 @@ function apply(ctx) {
     });
   }
 
-  // 2. 读取 API Key
-  const credentialsPath = join(homedir(), '.dsh', '.credentials.yaml');
-  let apiKey = process.env.WINETOKEN_API_KEY || '';
-  if (!apiKey && existsSync(credentialsPath)) {
-    try {
-      const credContent = readFileSync(credentialsPath, 'utf8');
-      const m = credContent.match(/WINETOKEN_API_KEY:\s*([^\r\n#]+)/);
-      if (m && m[1]) apiKey = m[1].trim();
-    } catch (_) {}
+  // 2. 无论是否有 Key，开机无条件优先确保用户层 cordis.patch.yml 拥有基线模型 (解决 P0 覆盖问题)
+  try {
+    ensureBaselineProviderInPatch();
+  } catch (baseErr) {
+    console.warn('[WineToken Plugin] 开机注入基线模型异常:', baseErr.message);
   }
 
+  // 3. 统一凭据中枢解析 API Key (兼容 WINETOKEN_API_KEY 与 ZHAIZHU_API_KEY 别名)
+  const keyInfo = resolveApiKey({ autoAlias: true });
+  const apiKey = keyInfo.apiKey;
+
   if (!apiKey) {
-    console.log('[WineToken Plugin] No API Key found, skipping startup model sync.');
+    console.log('[WineToken Plugin] 未检测到 API Key，已保底注入 19 个离线基线模型。配置 WINETOKEN_API_KEY 或 ZHAIZHU_API_KEY 即可激活动态 Manifest 同步。');
     return;
   }
+
+  console.log(`[WineToken Plugin] 成功识别凭据 (来源: ${keyInfo.keyName})，准备启动后台动态模型同步...`);
 
   // 延后 2 秒在后台静默检查模型 (优先对接 Manifest 热更新中枢，断网自动回退)
   const modelTimer = setTimeout(async () => {
     try {
-      const { syncWithHarness } = require('./sync.js');
       const fs = require('fs');
 
       // 1. 优先尝试拉取高精度 Manifest (包含精准 tags、上下文、视觉/推理标记与 Super 隔离)

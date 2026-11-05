@@ -72,27 +72,27 @@
       }
     },
 
-    // 双轨读取：优先 localStorage，兜底 .credentials.yaml 与 process.env，自动反向回写对齐
+    // 双轨读取：优先 localStorage，兜底 .credentials.yaml 与 process.env (多别名兼容 WINETOKEN_API_KEY / ZHAIZHU_API_KEY)
     readKey() {
       let key = '';
       // 1. 优先读取渲染进程 localStorage
       try {
         if (typeof localStorage !== 'undefined') {
-          const local = localStorage.getItem('WINETOKEN_API_KEY');
+          const local = localStorage.getItem('WINETOKEN_API_KEY') || localStorage.getItem('ZHAIZHU_API_KEY');
           if (local && local.trim()) key = local.trim();
         }
       } catch (_) {}
 
-      // 2. 若 localStorage 为空，回退读取宿主 ~/.dsh/.credentials.yaml
+      // 2. 若 localStorage 为空，回退读取宿主 ~/.dsh/.credentials.yaml (按优先级探测别名)
       if (!key) {
         try {
           const fs = require('fs');
           const credPath = this.getCredentialsPath();
           if (credPath && fs.existsSync(credPath)) {
             const content = fs.readFileSync(credPath, 'utf8');
-            const m = content.match(/(?:^|\n)\s*WINETOKEN_API_KEY:\s*([^\r\n#]+)/);
-            if (m && m[1]) {
-              const fileKey = m[1].trim().replace(/^['"]|['"]$/g, '');
+            const m = content.match(/(?:^|\n)\s*(WINETOKEN_API_KEY|ZHAIZHU_API_KEY):\s*([^\r\n#]+)/);
+            if (m && m[2]) {
+              const fileKey = m[2].trim().replace(/^['"]|['"]$/g, '');
               if (fileKey) {
                 key = fileKey;
                 // 自动反向同步至 localStorage，保障工坊生图即时可用
@@ -106,16 +106,19 @@
       }
 
       // 3. 环境变量兜底
-      if (!key && typeof process !== 'undefined' && process.env && process.env.WINETOKEN_API_KEY) {
-        key = process.env.WINETOKEN_API_KEY.trim();
+      if (!key && typeof process !== 'undefined' && process.env) {
+        const envKey = process.env.WINETOKEN_API_KEY || process.env.ZHAIZHU_API_KEY;
+        if (envKey && envKey.trim()) {
+          key = envKey.trim();
+        }
       }
       return key;
     },
 
-    // 全链路即时同步写入 (安全处理 YAML 各种边界，防止 duplicate refs 破坏 DSH 核心)
+    // 全链路即时同步写入 (双向别名同步、严格回读验证与基线模型自愈注入)
     saveKey(key) {
       const trimmed = (key || '').trim();
-      if (!trimmed) return false;
+      if (!trimmed) return { success: false, error: 'Key 不能为空' };
 
       // 1. 写入渲染进程 localStorage (创作工坊与漫剧画布 0 秒生效)
       try {
@@ -130,6 +133,8 @@
       }
 
       // 3. 写入磁盘 ~/.dsh/.credentials.yaml (触发 DSH 官方凭据监视器 100ms 重载模型)
+      let fsWriteSuccess = false;
+      let fsErrorMessage = '';
       try {
         const fs = require('fs');
         const path = require('path');
@@ -139,29 +144,58 @@
           if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
           let content = fs.existsSync(credPath) ? fs.readFileSync(credPath, 'utf8') : '';
+          const hasZhaizhu = /(?:^|\n)[ \t]*ZHAIZHU_API_KEY:\s*/.test(content);
+
+          const writeOneKey = (rawContent, keyName, val) => {
+            const keyRegex = new RegExp(`(^|\\n)([ \\t]*${keyName}:\\s*)([^\\r\\n#]*)`, 'm');
+            const emptyRefsRegex = /(^|\n)([ \t]*refs:\s*\{\s*\})/m;
+            const refsBlockRegex = /(^|\n)([ \t]*refs:\s*(?:\r?\n|$))/m;
+            if (keyRegex.test(rawContent)) {
+              return rawContent.replace(keyRegex, `$1  ${keyName}: ${val}`);
+            } else if (emptyRefsRegex.test(rawContent)) {
+              return rawContent.replace(emptyRefsRegex, `$1refs:\n  ${keyName}: ${val}`);
+            } else if (refsBlockRegex.test(rawContent)) {
+              return rawContent.replace(refsBlockRegex, `$1refs:\n  ${keyName}: ${val}\n`);
+            } else {
+              return rawContent.trimEnd() + `\nrefs:\n  ${keyName}: ${val}\n`;
+            }
+          };
+
           if (!content || !content.trim()) {
             content = `version: 1\nrecords: {}\nrefs:\n  WINETOKEN_API_KEY: ${trimmed}\n`;
           } else {
-            const keyRegex = /(^|\n)([ \t]*WINETOKEN_API_KEY:\s*)([^\r\n#]*)/m;
-            const emptyRefsRegex = /(^|\n)([ \t]*refs:\s*\{\s*\})/m;
-            const refsBlockRegex = /(^|\n)([ \t]*refs:\s*(?:\r?\n|$))/m;
-
-            if (keyRegex.test(content)) {
-              content = content.replace(keyRegex, `$1  WINETOKEN_API_KEY: ${trimmed}`);
-            } else if (emptyRefsRegex.test(content)) {
-              content = content.replace(emptyRefsRegex, `$1refs:\n  WINETOKEN_API_KEY: ${trimmed}`);
-            } else if (refsBlockRegex.test(content)) {
-              content = content.replace(refsBlockRegex, `$1refs:\n  WINETOKEN_API_KEY: ${trimmed}\n`);
-            } else {
-              content = content.trimEnd() + `\nrefs:\n  WINETOKEN_API_KEY: ${trimmed}\n`;
+            content = writeOneKey(content, 'WINETOKEN_API_KEY', trimmed);
+            if (hasZhaizhu) {
+              content = writeOneKey(content, 'ZHAIZHU_API_KEY', trimmed);
             }
           }
           fs.writeFileSync(credPath, content, { encoding: 'utf8', mode: 0o600 });
+
+          // 回读校验物理落盘状态
+          const verifyContent = fs.readFileSync(credPath, 'utf8');
+          if (verifyContent.includes(trimmed)) {
+            fsWriteSuccess = true;
+          } else {
+            fsErrorMessage = '写入凭据文件后回读未找到有效密钥';
+          }
         }
       } catch (e) {
+        fsErrorMessage = e.message;
         console.warn('[WineToken] 写入 .credentials.yaml 失败:', e.message);
       }
-      return true;
+
+      // 4. 触发基线模型自愈注入用户层 cordis.patch.yml (彻底消除 P0 覆盖问题)
+      try {
+        const { ensureBaselineProviderInPatch } = require('./sync.js');
+        if (typeof ensureBaselineProviderInPatch === 'function') {
+          ensureBaselineProviderInPatch();
+        }
+      } catch (_) {}
+
+      if (!fsWriteSuccess && fsErrorMessage) {
+        return { success: false, error: fsErrorMessage };
+      }
+      return { success: true };
     },
 
     // 清除凭据
@@ -1585,7 +1619,11 @@ $owner.Dispose()
               setStatusTip('请输入有效的 API Key');
               return;
             }
-            WineTokenCredentialBridge.saveKey(trimmed);
+            const saveRes = WineTokenCredentialBridge.saveKey(trimmed);
+            if (saveRes && saveRes.success === false) {
+              setStatusTip(`保存异常: ${saveRes.error || '写入失败'}`);
+              return;
+            }
             setCurrentKey(trimmed);
             setKeyInput('');
             setShowKeyInput(false);

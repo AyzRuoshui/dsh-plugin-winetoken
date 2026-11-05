@@ -1,7 +1,7 @@
 // -*- coding: utf-8 -*-
 /**
  * WineToken 自动模型同步引擎 (DeepSeek Harness 专属插件)
- * 支持一次性填写 API Key、开机自启更新、每小时定时轮询
+ * 支持一次性填写 API Key、开机自启更新、纯原生零破坏增量合并
  */
 const fs = require('fs');
 const path = require('path');
@@ -9,24 +9,24 @@ const os = require('os');
 const https = require('https');
 const http = require('http');
 
-// DeepSeek Harness 用户配置主路径 (提升至最顶层声明，彻底消除 TDZ 暂存死区崩溃风险)
-const DSH_HOME = path.join(process.env.USERPROFILE || process.env.HOME || os.homedir(), '.dsh');
-const CREDENTIALS_FILE = path.join(DSH_HOME, '.credentials.yaml');
-const CORDIS_PATCH_FILE = path.join(DSH_HOME, 'profiles', 'desktop', 'cordis.patch.yml');
+const {
+  DSH_HOME,
+  CREDENTIALS_FILE,
+  CORDIS_PATCH_FILE,
+  DEFAULT_BASE_URL,
+  resolveApiKey,
+  saveApiKey,
+  saveCredentialsRef
+} = require('./credentials.js');
+
+const {
+  mergeProviderIntoPatchContent,
+  getBaselineModels
+} = require('./patch-engine.js');
+
 const BASE_DIR = __dirname;
 const CONFIG_PATH = path.join(BASE_DIR, 'config.json');
 
-let YAML = null;
-try {
-  YAML = require('yaml');
-} catch (_) {
-  try {
-    const yamlFallback = path.join(DSH_HOME, 'plugins', 'winetoken-sync', 'node_modules', 'yaml');
-    if (fs.existsSync(yamlFallback)) {
-      YAML = require(yamlFallback);
-    }
-  } catch (_) {}
-}
 const { parseModelList } = require('./parser');
 
 /**
@@ -39,7 +39,7 @@ function fetchModels(baseUrl, apiKey) {
     const req = client.get(url, {
       headers: {
         'Authorization': 'Bearer ' + apiKey.trim(),
-        'User-Agent': 'WineToken-DSH-Plugin/1.3.0',
+        'User-Agent': 'WineToken-DSH-Plugin/2.0.1',
         'Accept': 'application/json'
       },
       timeout: 10000
@@ -69,16 +69,15 @@ function fetchModels(baseUrl, apiKey) {
   });
 }
 
-
 /**
- * 读取或初始化插件配置
+ * 读取或初始化插件配置 (支持从凭据文件与环境变量自动反查兜底)
  */
 function loadConfig() {
   let cfg = {
     apiKey: '',
-    baseUrl: 'https://www.winetoken.asia/v1',
+    baseUrl: DEFAULT_BASE_URL,
     providerId: 'winetoken',
-    providerDisplayName: 'WineToken 聚合平台 (全推理)',
+    providerDisplayName: 'WineToken (全平台推理模型)',
     syncIntervalHours: 1,
     filterNonChatModels: true
   };
@@ -104,167 +103,124 @@ function loadConfig() {
     }
   }
 
+  // 凭据反查兜底：若 config.json 中 apiKey 为空，自动从环境变量与 ~/.dsh/.credentials.yaml 探测
+  if (!cfg.apiKey || !cfg.apiKey.trim()) {
+    const resolved = resolveApiKey({ autoAlias: true });
+    if (resolved && resolved.hasKey) {
+      cfg.apiKey = resolved.apiKey;
+    }
+  }
+
   return cfg;
 }
 
 /**
- * 保存配置回文件
+ * 保存配置回文件 (严格对 apiKey 实施脱敏置空，坚守开源代码仓库安全红线)
  */
 function saveConfig(cfg) {
   try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf-8');
+    const safeConfig = { ...cfg, apiKey: '' };
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(safeConfig, null, 2), 'utf-8');
   } catch (e) {
     console.error('保存 config.json 失败:', e.message);
   }
 }
 
 /**
- * 更新 ~/.dsh/.credentials.yaml
+ * 更新 ~/.dsh/.credentials.yaml (复用 credentials 中枢安全实现)
  */
 function updateCredentials(apiKey, envKeyName = 'WINETOKEN_API_KEY') {
-  if (!fs.existsSync(DSH_HOME)) {
-    fs.mkdirSync(DSH_HOME, { recursive: true });
-  }
-
-  const trimmed = (apiKey || '').trim();
-  if (!trimmed) return;
-
-  // 凭据格式强校验，彻底阻断换行符注入 YAML 隐患 (SEC-05)
-  if (!/^[a-zA-Z0-9_\-\.]{10,128}$/.test(trimmed)) {
-    console.warn('[WineToken Sync] API Key 格式非法，拒绝写入凭据');
-    return false;
-  }
-
-  if (YAML) {
-    try {
-      let credsDoc = { version: 1, refs: {}, records: {} };
-      if (fs.existsSync(CREDENTIALS_FILE)) {
-        const content = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
-        const parsed = YAML.parse(content);
-        if (parsed && typeof parsed === 'object') {
-          credsDoc = parsed;
-          if (!credsDoc.refs) credsDoc.refs = {};
-        }
-      }
-      credsDoc.refs[envKeyName] = trimmed;
-      const newYaml = YAML.stringify(credsDoc, { indent: 2 });
-      fs.writeFileSync(CREDENTIALS_FILE, newYaml, { encoding: 'utf-8', mode: 0o600 });
-      console.log(`[凭证更新] 已成功注入 ${envKeyName} 到 ~/.dsh/.credentials.yaml`);
-      return;
-    } catch (e) {
-      console.warn('YAML 解析凭证失败，回退至原生安全正则写入:', e.message);
-    }
-  }
-
-  // 原生安全正则写入兜底 (零外部依赖，100% 防崩溃)
-  try {
-    let content = fs.existsSync(CREDENTIALS_FILE) ? fs.readFileSync(CREDENTIALS_FILE, 'utf8') : '';
-    if (!content || !content.trim()) {
-      content = `version: 1\nrecords: {}\nrefs:\n  ${envKeyName}: ${trimmed}\n`;
-    } else {
-      const keyRegex = new RegExp(`(^|\\n)([ \\t]*${envKeyName}:\\s*)([^\\r\\n#]*)`, 'm');
-      const emptyRefsRegex = /(^|\n)([ \t]*refs:\s*\{\s*\})/m;
-      const refsBlockRegex = /(^|\n)([ \t]*refs:\s*(?:\r?\n|$))/m;
-
-      if (keyRegex.test(content)) {
-        content = content.replace(keyRegex, `$1  ${envKeyName}: ${trimmed}`);
-      } else if (emptyRefsRegex.test(content)) {
-        content = content.replace(emptyRefsRegex, `$1refs:\n  ${envKeyName}: ${trimmed}`);
-      } else if (refsBlockRegex.test(content)) {
-        content = content.replace(refsBlockRegex, `$1refs:\n  ${envKeyName}: ${trimmed}\n`);
-      } else {
-        content = content.trimEnd() + `\nrefs:\n  ${envKeyName}: ${trimmed}\n`;
-      }
-    }
-    fs.writeFileSync(CREDENTIALS_FILE, content, { encoding: 'utf8', mode: 0o600 });
-    console.log(`[凭证更新] 原生引擎已注入 ${envKeyName} 到 ~/.dsh/.credentials.yaml`);
-  } catch (e) {
-    console.warn('[WineToken] 写入 .credentials.yaml 失败:', e.message);
-  }
+  return saveCredentialsRef(envKeyName, apiKey);
 }
 
 /**
  * 更新 ~/.dsh/profiles/desktop/cordis.patch.yml
+ * 采用原生 PatchEngine 实施增量合并，100% 保护用户现有 provider (如 zhaizhu) 与已有注释
  */
 function updateCordisPatch(providerConfig) {
-  // YAML 模块空指针安全守卫 (ARCH-02)
-  if (!YAML || typeof YAML.parse !== 'function' || typeof YAML.stringify !== 'function') {
-    console.warn('[WineToken Sync] yaml 模块不可用，跳过补丁写盘');
-    return false;
-  }
-
   const desktopProfileDir = path.dirname(CORDIS_PATCH_FILE);
   if (!fs.existsSync(desktopProfileDir)) {
     fs.mkdirSync(desktopProfileDir, { recursive: true });
   }
 
-  let patches = [];
-
+  let originalContent = '';
   if (fs.existsSync(CORDIS_PATCH_FILE)) {
     try {
-      const content = fs.readFileSync(CORDIS_PATCH_FILE, 'utf-8');
-      const parsed = YAML.parse(content);
-      if (Array.isArray(parsed)) {
-        patches = parsed;
-      }
+      originalContent = fs.readFileSync(CORDIS_PATCH_FILE, 'utf-8');
     } catch (e) {
-      console.warn('读取 cordis.patch.yml 失败，将新建补丁列表:', e.message);
+      console.warn('读取 cordis.patch.yml 失败:', e.message);
     }
   }
 
-  // 查找或新建 llm-pi-ai 补丁项
-  let llmPatch = patches.find(p => p && p.id === 'llm-pi-ai');
-  if (!llmPatch) {
-    llmPatch = {
-      id: 'llm-pi-ai',
-      name: '@deepseek-ai/dsh-llm-pi-ai',
-      config: {
-        providers: {}
-      }
-    };
-    patches.push(llmPatch);
-  }
-
-  if (!llmPatch.config) llmPatch.config = {};
-  if (!llmPatch.config.providers) llmPatch.config.providers = {};
-
-  const targetProvider = {
-    displayName: providerConfig.displayName,
+  const targetConfig = {
+    id: providerConfig.id || 'winetoken',
+    displayName: providerConfig.displayName || 'WineToken (全平台推理模型)',
     api: 'openai-completions',
-    baseURL: providerConfig.baseURL,
-    apiKeyEnv: providerConfig.apiKeyEnv,
-    defaultContextWindow: 262144,
-    defaultMaxTokens: 65536,
-    models: providerConfig.models
+    baseURL: providerConfig.baseURL || DEFAULT_BASE_URL,
+    apiKeyEnv: providerConfig.apiKeyEnv || 'WINETOKEN_API_KEY',
+    defaultContextWindow: providerConfig.defaultContextWindow || 262144,
+    defaultMaxTokens: providerConfig.defaultMaxTokens || 65536,
+    models: providerConfig.models || []
   };
 
-  const currentProvider = llmPatch.config.providers[providerConfig.id];
+  const newContent = mergeProviderIntoPatchContent(originalContent, targetConfig);
 
-  // 严格幂等性检查：如果配置与模型列表完全一致，绝对不重新序列化写盘，100% 保护用户自定义注释
-  if (currentProvider && JSON.stringify(currentProvider) === JSON.stringify(targetProvider)) {
-    console.log(`[模型同步] Provider [${providerConfig.id}] 模型与配置未变更，保持只读跳过写盘 (保护 YAML 用户注释)。`);
-    return;
+  // 严格幂等性检查：若无文本改动，绝对不重新写盘
+  if (newContent === originalContent) {
+    console.log(`[模型同步] Provider [${targetConfig.id}] 模型与配置未变更，保持只读跳过写盘 (保护 YAML 用户注释)。`);
+    return true;
   }
 
-  // 将我们的 Provider 注入
-  llmPatch.config.providers[providerConfig.id] = targetProvider;
+  fs.writeFileSync(CORDIS_PATCH_FILE, newContent, 'utf-8');
+  console.log(`[模型注入] 已成功增量注入/更新 Provider [${targetConfig.id}] (共 ${targetConfig.models.length} 个模型) 到 cordis.patch.yml`);
+  return true;
+}
 
-  // 写回 cordis.patch.yml
-  const newYaml = YAML.stringify(patches, { indent: 2 });
-  fs.writeFileSync(CORDIS_PATCH_FILE, newYaml, 'utf-8');
-  console.log(`[模型注入] 已成功注入/更新 Provider [${providerConfig.id}] (共 ${providerConfig.models.length} 个模型) 到 cordis.patch.yml`);
+/**
+ * 确保用户层 cordis.patch.yml 中包含基线静态模型 (无论是否有 Key 均执行，彻底解决 P0 覆盖问题)
+ */
+function ensureBaselineProviderInPatch() {
+  try {
+    let originalContent = '';
+    if (fs.existsSync(CORDIS_PATCH_FILE)) {
+      originalContent = fs.readFileSync(CORDIS_PATCH_FILE, 'utf-8');
+    }
+
+    // 若已经包含 winetoken: 且有模型，跳过以免覆盖动态同步结果
+    if (originalContent && /(?:^|\n)[ \t]{4,8}winetoken:\s*$/.test(originalContent)) {
+      return true;
+    }
+
+    const baselineModels = getBaselineModels();
+    updateCordisPatch({
+      id: 'winetoken',
+      displayName: 'WineToken (全平台推理模型)',
+      baseURL: DEFAULT_BASE_URL,
+      apiKeyEnv: 'WINETOKEN_API_KEY',
+      models: baselineModels
+    });
+    return true;
+  } catch (err) {
+    console.warn('[WineToken Sync] 注入基线模型异常:', err.message);
+    return false;
+  }
 }
 
 /**
  * 主执行流程
  */
-async function runSync() {
+async function runSync(options = {}) {
   console.log('='.repeat(60));
   console.log(`[WineToken 同步引擎] 任务触发时间: ${new Date().toLocaleString()}`);
 
   const cfg = loadConfig();
+  if (options && options.forceNoKey) {
+    cfg.apiKey = '';
+  }
   if (!cfg.apiKey || !cfg.apiKey.trim()) {
-    console.warn('[WineToken Sync] 未配置 apiKey，已安全跳过同步流程 (杜绝误杀宿主进程 ARCH-03)');
+    console.warn('[WineToken Sync] 未检测到 API Key，先确保注入基线静态模型...');
+    ensureBaselineProviderInPatch();
+    console.warn('[WineToken Sync] 未配置 apiKey，已安全跳过在线同步流程 (杜绝误杀宿主进程 ARCH-03)');
     return { success: false, reason: 'MISSING_API_KEY' };
   }
 
@@ -289,7 +245,7 @@ async function runSync() {
     const envKeyName = 'WINETOKEN_API_KEY';
     updateCredentials(cfg.apiKey, envKeyName);
 
-    // 2. 更新 cordis.patch.yml
+    // 2. 增量更新 cordis.patch.yml
     updateCordisPatch({
       id: cfg.providerId || 'winetoken',
       displayName: cfg.providerDisplayName || 'WineToken 聚合平台',
@@ -319,7 +275,7 @@ function syncWithHarness(parsedModels, options = {}) {
   updateCordisPatch({
     id: cfg.providerId || 'winetoken',
     displayName: cfg.providerDisplayName || 'WineToken 聚合平台',
-    baseURL: cfg.baseUrl || 'https://www.winetoken.asia/v1',
+    baseURL: cfg.baseUrl || DEFAULT_BASE_URL,
     apiKeyEnv: envKeyName,
     models: parsedModels
   });
@@ -333,5 +289,7 @@ if (require.main === module) {
 
 module.exports = {
   runSync,
-  syncWithHarness
+  syncWithHarness,
+  updateCordisPatch,
+  ensureBaselineProviderInPatch
 };
