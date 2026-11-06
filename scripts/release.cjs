@@ -61,28 +61,28 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 画布清晰度 / AI拆镜模型选择 / 工具栏排版修订`;
+  const releaseTitle = `Release ${version} - 生图模型清单随 New-API 上下架动态同步`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-v2.1.0 之后的交互修订版，聚焦三处实机反馈：**画布放大发糊、AI拆镜不能选模型、窄窗口顶部按钮文字换行**。存储结构与 v2.1.0 完全一致（schema 2.2.0），旧工程零迁移、向后兼容。
+配合服务端 WBHub manifest 修订，客户端生图模型列表改为**完全跟随中转站 New-API 的上下架状态**，不再依赖写死的静态清单。本次 New-API 下架 3 个旧模型、上架 2 个 GPT-Image 2.6 模型，插件与服务端已同步。
 
-### 1. 画布放大后文字/图片发糊 (交互体验修复)
-- **根因**：缩放层原先用 \`translate3d(...) scale()\` + \`willChange: transform\`，会促使 Chromium 把整个画布层预先栅格化为一张固定分辨率的合成纹理，随后的 \`scale\` 放大只是在拉伸这张纹理；层内图片还额外加了 \`translateZ(0)\`，二次锁定分辨率——表现就是"画布像一张被放大的图片"、明显低于四周 UI 的清晰度。
-- **修复**：缩放层改回 2D \`translate\`，移除 \`willChange\` 与层内图片 / 灯箱的 \`translateZ(0)\` + \`backfaceVisibility\`，让浏览器在缩放时按目标分辨率重新栅格化文字。放大到 166% 及以上，卡片文字与 UI 保持同等清晰度。
+### 1. 模型清单以下发 manifest 为唯一真相
+- \`normalizeImageModel\` / \`normalizeVideoModel\` 保留服务端 \`enabled\` 字段，名称 / 标签 / 价格 / 尺寸一律以线上为准，移除写死的改名逻辑；
+- \`fetchManifest\` 去掉「静态兜底并集」旧逻辑：服务端标记下架（\`enabled=false\`）的模型不再被本地常量补回，界面即时消失；仅当线上完全没返回该类模型时才用静态兜底（断网保护）；
+- \`getSnapshot\` / getter / 订阅回调统一过滤可用模型，旧缓存无 \`enabled\` 字段时兼容视为可用；误入 \`chatModels\` 的生图模型（如 \`gpt-image-2.6-*\`）在消费侧剔除，AI 拆镜下拉不会再把它当对话模型。
 
-### 2. AI 剧本拆镜支持自选模型
-- 弹窗新增「拆解模型」下拉，与生图模型共用 Manifest 动态对话模型列表（SWR 热更新）；选中项写入 localStorage，下次打开自动记住。
-- \`runAiSplit\` 由原来"永远取列表第一个"改为：优先使用所选模型 → 未选或该模型已下线则退回列表首个 → Manifest 为空时用生产兜底模型。
-- 移除会触发发布脱敏门禁的受限免费通道兜底写法。
+### 2. 默认模型与静态兜底同步换新
+- 静态兜底清单由 6 个旧模型换为当前在架的 5 个：新增 \`gpt-image-2.6-flare\` / \`gpt-image-2.6-sunburst\`，移除已下架的 \`gpt-image-2.5-flare\` / \`2.5-sunburst\` / \`gpt-image-2\`；
+- 2.6 系列定价沿用 2.5 档：Flare ¥0.30/张（会员 ¥0.24）、Sunburst ¥0.40/张（会员 ¥0.32），统一 5 档尺寸；
+- Tool Calling 默认生图模型改为从 manifest 缓存动态解析（优先限免），工坊 / 画布初始选中模型也改为取可用清单首个，彻底清除 \`gpt-image-2.5-flare\` 写死引用。
 
-### 3. 顶部工具栏窄窗口排版
-- 整条工具栏 \`flex-wrap: nowrap\` + \`overflow-x: auto\`（隐藏滚动条的横向滚动兜底）；
-- 全部按钮与分隔线 \`flex-shrink: 0\` + 文字 \`white-space: nowrap\`，中文不再被压缩成两行；
-- 模型选择器宽度收紧（460→300 / 380→230），降低窄窗口挤压。
+### 3. 服务端联动（本次已部署）
+- WBHub \`subscription.py\` 的 \`BASE_IMAGE_MODELS\` 同步换血，并新增「按 \`models.tags\` 含 \`Image\` 自动发现生图模型」逻辑：以后在 New-API 上下架生图模型无需再改代码，也不会再误判成对话模型。
 
 ### 4. 工程状态
-- 全部源码 \`node --check\` 通过；
+- 全部源码 \`node --check\` 通过；服务端 \`py_compile\` 通过；
 - 自动化测试 **23 / 23 全绿**；
+- 线上 manifest 实测：\`imageModels\` 5 个（含 2.6 两个、下架 3 个已消失），\`chatModels\` 0 生图泄漏；
 - 发布脱敏门禁 32 文件 **0 违规**。
 
 ---

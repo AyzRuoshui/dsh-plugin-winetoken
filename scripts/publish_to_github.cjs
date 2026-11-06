@@ -195,7 +195,7 @@ async function publish(token) {
   });
 
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
-  const commitMsg = process.argv[3] || `fix: v${pkg.version} - canvas crispness, AI-split model picker, toolbar nowrap`;
+  const commitMsg = process.argv[3] || `feat: v${pkg.version} - manifest-driven image model list, GPT-Image 2.6 support`;
 
   const newCommit = await requestGithub(token, `/repos/${user.login}/${REPO_NAME}/git/commits`, 'POST', {
     message: commitMsg,

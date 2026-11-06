@@ -13,6 +13,26 @@ const { resolveApiKey, getResolvedBaseUrl } = require('./credentials.js');
 const DEFAULT_BASE_URL = 'https://www.winetoken.asia/v1';
 
 /**
+ * 解析 Tool Calling 的默认生图模型。
+ * host 端读不到渲染进程的 WineTokenManifestManager，只能读客户端落盘的 manifest 缓存；
+ * 以服务端 enabled 为准，优先取限免模型，异常时退回当前在架的限免模型。
+ */
+function resolveDefaultImageModel() {
+  try {
+    const cacheFile = path.join(homedir(), '.dsh', 'storages', 'winetoken_manifest.json');
+    if (fs.existsSync(cacheFile)) {
+      const data = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      const usable = (Array.isArray(data.imageModels) ? data.imageModels : [])
+        .filter(m => m && m.id && m.enabled !== false);
+      const free = usable.find(m => m.price === 0 || (m.tag && String(m.tag).includes('限免')));
+      const picked = free || usable[0];
+      if (picked) return picked.id;
+    }
+  } catch (_) {}
+  return 'sensenova-u1.5-lite';
+}
+
+/**
  * 会话级滑动窗口熔断器 (SessionCircuitBreaker)
  * 连续 2 次失败触发 30 秒熔断，杜绝大模型重试死循环消耗用户资产 (TOOL-01)
  */
@@ -91,7 +111,7 @@ function getBaseUrl() {
 async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_url }) {
   const finalSize = normalizeImageSize(size, model);
   const payload = {
-    model: model || 'gpt-image-2.5-flare',
+    model: model || resolveDefaultImageModel(),
     prompt: prompt.trim(),
     n: 1,
     size: finalSize,
@@ -246,8 +266,8 @@ function registerWineTokenTools(ctx) {
           },
           model: {
             type: 'string',
-            description: '生图基底模型：gpt-image-2.5-flare (极速高性价比/默认), gpt-image-2.5-sunburst (高画质), sensenova-u1.5-lite (4K排版/限免), grok-imagine-image-2.0 (真实摄影光影), gemini-imagen-3 (写实自然) 或工坊当前支持的其它模型',
-            default: 'gpt-image-2.5-flare'
+            description: '生图基底模型：留空则自动使用工坊当前可用列表中的首个限免/默认模型；也可显式指定服务端 manifest 中已上架的模型 ID（如 gpt-image-2.6-flare、gpt-image-2.6-sunburst、sensenova-u1.5-lite、grok-imagine-image-2.0、gemini-imagen-3）',
+            default: ''
           },
           size: {
             type: 'string',
@@ -310,7 +330,7 @@ function registerWineTokenTools(ctx) {
         }
 
         const baseUrl = getBaseUrl();
-        const model = args.model || 'gpt-image-2.5-flare';
+        const model = args.model || resolveDefaultImageModel();
         const prompt = args.prompt || '';
         const size = args.size || '1024x1024';
         // 物理级防暴走：强制单次调用只出 1 张，坚决杜绝模型批量并发消耗用户资产

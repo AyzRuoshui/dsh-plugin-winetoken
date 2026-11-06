@@ -273,52 +273,64 @@
   // =========================================================================
   const MANIFEST_CACHE_KEY = "WINETOKEN_MANIFEST_CACHE_V1";
 
+  // 断网兜底：与服务端 subscription.py 的 BASE_IMAGE_MODELS 保持一致
+  // (2026-11-06 New-API 下架 3 个 2.5/经典、上架 2 个 2.6)。
+  // 线上 manifest 可达时一律以线上为准，此表仅用于完全离线。
+  const IMAGE_RESOLUTIONS_5 = [
+    { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
+    { label: '3:4 竖屏', icon: 'ratio9_16', val: '768x1344' },
+    { label: '4:3 横屏', icon: 'ratio16_9', val: '1344x768' },
+    { label: '9:16 竖屏', icon: 'ratio9_16', val: '1024x1792' },
+    { label: '16:9 横屏', icon: 'ratio16_9', val: '1792x1024' }
+  ];
   const BASE_IMAGE_MODELS_FALLBACK = [
     {
-      id: 'gpt-image-2.5-flare',
-      name: 'GPT-Image 2.5 Flare',
-      tag: '极速',
+      id: 'gpt-image-2.6-flare',
+      name: 'GPT-Image 2.6 Flare',
+      tag: '超快极速',
       price: 0.30,
       vipPrice: 0.24,
+      enabled: true,
       singleNOnly: true,
       unit: '张',
-      desc: '出图极快，细节丰富，性价比首选',
-      resolutions: [
-        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-        { label: '16:9 横屏', icon: 'ratio16_9', val: '1792x1024' },
-        { label: '9:16 竖屏', icon: 'ratio9_16', val: '1024x1792' }
-      ]
+      desc: '极速出图引擎，细节与色彩较 2.5 系列进一步升级',
+      resolutions: IMAGE_RESOLUTIONS_5
     },
     {
-      id: 'gpt-image-2.5-sunburst',
-      name: 'GPT-Image 2.5 Sunburst',
-      tag: '高画质',
+      id: 'gpt-image-2.6-sunburst',
+      name: 'GPT-Image 2.6 Sunburst',
+      tag: '细腻逼真',
       price: 0.40,
       vipPrice: 0.32,
+      enabled: true,
       singleNOnly: true,
       unit: '张',
-      desc: '排版精细，写真质感与艺术风格',
-      resolutions: [
-        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-        { label: '16:9 横屏', icon: 'ratio16_9', val: '1792x1024' },
-        { label: '9:16 竖屏', icon: 'ratio9_16', val: '1024x1792' }
-      ]
+      desc: '高画质光影渲染，画质与指令遵循较 2.5 系列进一步升级',
+      resolutions: IMAGE_RESOLUTIONS_5
+    },
+    {
+      id: 'grok-imagine-image-2.0',
+      name: 'Grok Imagine 2.0 旗舰',
+      tag: '创意先锋',
+      price: 0.50,
+      vipPrice: 0.40,
+      enabled: true,
+      singleNOnly: true,
+      unit: '张',
+      desc: '具备顶级发散想象力与自然构图，色彩浓郁张力十足',
+      resolutions: IMAGE_RESOLUTIONS_5
     },
     {
       id: 'gemini-imagen-3',
       name: 'Google Imagen 3',
-      tag: '2K写实',
+      tag: '精准细节',
       price: 0.15,
       vipPrice: 0.12,
+      enabled: true,
       singleNOnly: true,
       unit: '张',
-      desc: '光影自然真实，语言理解顶尖',
-      resolutions: [
-        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-        { label: '16:9 高清', icon: 'ratio16_9', val: '1280x720' },
-        { label: '9:16 竖屏', icon: 'ratio9_16', val: '720x1280' },
-        { label: '宽幅 1792', icon: 'ratio16_9', val: '1792x1024' }
-      ]
+      desc: '谷歌下一代生图旗舰，超高文字渲染能力与真实细节重现',
+      resolutions: IMAGE_RESOLUTIONS_5
     },
     {
       id: 'sensenova-u1.5-lite',
@@ -326,45 +338,11 @@
       tag: '限免4K',
       price: 0.00,
       vipPrice: 0.00,
+      enabled: true,
       singleNOnly: true,
       unit: '张',
-      desc: '4K超清直出，中英文字排版',
-      resolutions: [
-        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-        { label: '3:2 横屏', icon: 'ratio16_9', val: '1536x1024' },
-        { label: '2:3 竖屏', icon: 'ratio9_16', val: '1024x1536' },
-        { label: '2K 超清', icon: 'ratio1_1', val: '2048x2048' }
-      ]
-    },
-    {
-      id: 'grok-imagine-image-2.0',
-      name: 'Grok Imagine 2.0 旗舰',
-      tag: '光影旗舰',
-      price: 0.50,
-      vipPrice: 0.40,
-      singleNOnly: true,
-      unit: '张',
-      desc: '真实摄影级光影，概念艺术',
-      resolutions: [
-        { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-        { label: '16:9 横屏', icon: 'ratio16_9', val: '1280x720' },
-        { label: '9:16 竖屏', icon: 'ratio9_16', val: '720x1280' }
-      ]
-    },
-    {
-      id: 'gpt-image-2',
-      name: 'GPT-Image 2 (经典高清)',
-      tag: '经典专业',
-      price: 0.20,
-      vipPrice: 0.16,
-      singleNOnly: false,
-      unit: '张',
-      desc: '稳定经典生成，仅支持经典正方形尺寸',
-      resolutions: [
-        { label: '1024 大图', icon: 'ratio1_1', val: '1024x1024' },
-        { label: '512 标准', icon: 'ratio1_1', val: '512x512' },
-        { label: '256 小图', icon: 'ratio1_1', val: '256x256' }
-      ]
+      desc: '4K超清直出，中英文字排版与概念艺术',
+      resolutions: IMAGE_RESOLUTIONS_5
     }
   ];
 
@@ -431,20 +409,17 @@
         return r;
       });
     }
-    let displayName = raw.name || raw.id;
-    if (raw.id === 'gpt-image-2.5-flare') {
-      displayName = 'GPT-Image 2.5 Flare';
-    } else if (raw.id === 'gpt-image-2.5-sunburst') {
-      displayName = 'GPT-Image 2.5 Sunburst';
-    } else if (raw.id === 'gpt-image-2') {
-      displayName = 'GPT-Image 2 (经典高清)';
-    }
+    // 名称 / 标签 / 价格 / 尺寸一律以服务端 manifest 为准；静态改名逻辑已移除，
+    // 避免线上改名或调价后客户端仍显示旧值。
+    const displayName = raw.name || raw.id;
     return {
       id: raw.id,
       name: displayName,
       tag: raw.badge || raw.tag || '推荐',
       price: raw.cost != null ? Number(raw.cost) : (raw.price != null ? Number(raw.price) : 0),
       vipPrice: raw.vipCost != null ? Number(raw.vipCost) : (raw.vipPrice != null ? Number(raw.vipPrice) : 0),
+      // enabled 由服务端按分组下发；undefined 视为可用（兼容旧 manifest / 静态兜底）
+      enabled: raw.enabled !== false,
       singleNOnly: raw.singleNOnly !== undefined ? Boolean(raw.singleNOnly) : (raw.single_n_only !== undefined ? Boolean(raw.single_n_only) : false),
       unit: '张',
       desc: raw.desc || '',
@@ -487,16 +462,13 @@
     }
     const costSec = raw.costPerSec != null ? Number(raw.costPerSec) : (raw.pricePerSecond != null ? Number(raw.pricePerSecond) : 0);
     const vipCostSec = raw.vipCostPerSec != null ? Number(raw.vipCostPerSec) : (raw.vipPricePerSecond != null ? Number(raw.vipPricePerSecond) : 0);
-    let displayName = raw.name || raw.id;
-    // 彻底剥离 (海螺视频)
-    displayName = displayName.replace(/[\(（]海螺视频[\)）]/g, '').trim();
-    if (raw.id === 'MiniMax-H3') {
-      displayName = 'MiniMax H3';
-    }
+    // 仅清洗历史脏后缀 "(海螺视频)"，名称本身以服务端 manifest 为准
+    let displayName = (raw.name || raw.id).replace(/[\(（]海螺视频[\)）]/g, '').trim();
     return {
       id: raw.id,
       name: displayName,
       tag: raw.badge || raw.tag || '推荐',
+      enabled: raw.enabled !== false,
       pricePerSecond: costSec,
       vipPricePerSecond: vipCostSec,
       priceText: raw.priceText || (costSec === 0 ? '限免 ¥0.00/秒' : `原¥${costSec.toFixed(2)}/秒`),
@@ -554,9 +526,24 @@
       }
     },
 
+    // 只暴露服务端标记为可用的模型；旧缓存无 enabled 字段时视为可用。
+    // 若过滤后为空（极端异常），退回原清单，避免下拉彻底空白。
+    _usable(list) {
+      const arr = Array.isArray(list) ? list : [];
+      const filtered = arr.filter(m => m && m.enabled !== false);
+      return filtered.length > 0 ? filtered : arr;
+    },
+
+    // 对外快照也过滤，保证工坊 manifestSnapshot.imageModels / 订阅回调拿到的是可用清单
     getSnapshot() {
       if (!this._data) this.init();
-      return this._data;
+      const d = this._data;
+      return {
+        imageModels: this._usable(d.imageModels),
+        videoModels: this._usable(d.videoModels),
+        chatModels: Array.isArray(d.chatModels) ? d.chatModels : [],
+        updatedAt: d.updatedAt || 0
+      };
     },
 
     getImageModels() {
@@ -568,7 +555,13 @@
     },
 
     getChatModels() {
-      return this.getSnapshot().chatModels;
+      const imgIds = new Set((this._data?.imageModels || []).map(m => m.id));
+      const vidIds = new Set((this._data?.videoModels || []).map(m => m.id));
+      // 服务端旧逻辑会把未登记的生图模型误塞进 chatModels（如 gpt-image-2.6-*），
+      // 这里在消费侧剔除，避免 AI 拆镜把它们当对话模型列出。
+      return (this.getSnapshot().chatModels || []).filter(
+        m => m && m.enabled !== false && !imgIds.has(m.id) && !vidIds.has(m.id)
+      );
     },
 
     getFreeImageModel() {
@@ -583,8 +576,9 @@
     },
 
     _notify() {
+      const snapshot = this.getSnapshot();
       for (const fn of this._listeners) {
-        try { fn(this._data); } catch (_) {}
+        try { fn(snapshot); } catch (_) {}
       }
     },
 
@@ -605,20 +599,18 @@
             const nextChat = Array.isArray(json.chatModels) ? json.chatModels : [];
 
             if (nextImg.length > 0 || nextVid.length > 0) {
-              // 智能并集补齐：以本地 fallback 为基底，线上最新数据覆盖，保证基础限免模型与视频模型永不丢失
-              const mergeWithFallback = (onlineList, fallbackList) => {
-                const map = new Map();
-                (fallbackList || []).forEach(m => map.set(m.id, m));
-                (onlineList || []).forEach(m => map.set(m.id, { ...map.get(m.id), ...m }));
-                return Array.from(map.values());
-              };
-
-              const mergedImg = mergeWithFallback(nextImg, BASE_IMAGE_MODELS_FALLBACK);
-              const mergedVid = mergeWithFallback(nextVid, BASE_VIDEO_MODELS_FALLBACK);
+              // 服务端 manifest 是模型清单的唯一真相：名称 / 标签 / 价格 / 尺寸 / 上下线状态
+              // 全部以线上为准。enabled===false 表示当前分组不可用，直接过滤，不再用静态兜底
+              // 把它并集回来（否则服务端下架的模型会永远残留在下拉里）。
+              // 仅当线上完全没有返回该类模型时，才退回静态兜底，保证断网/异常时界面不空。
+              const usableImg = nextImg.filter(m => m.enabled !== false);
+              const usableVid = nextVid.filter(m => m.enabled !== false);
+              const finalImg = usableImg.length > 0 ? usableImg : BASE_IMAGE_MODELS_FALLBACK;
+              const finalVid = usableVid.length > 0 ? usableVid : BASE_VIDEO_MODELS_FALLBACK;
 
               this._data = {
-                imageModels: mergedImg,
-                videoModels: mergedVid,
+                imageModels: finalImg,
+                videoModels: finalVid,
                 chatModels: nextChat,
                 updatedAt: json.updatedAt || Date.now()
               };
@@ -5493,8 +5485,9 @@ $owner.Dispose()
           const theme = useTheme();
           const [mode, setMode] = React.useState('image'); // 'image' | 'video' | 'canvas'
           const [showTutorial, setShowTutorial] = React.useState(false);
-          const [selectedImageModel, setSelectedImageModel] = React.useState('gpt-image-2.5-flare');
-          const [selectedVideoModel, setSelectedVideoModel] = React.useState('grok-imagine-video-1.5');
+          // 初始模型从 manifest 可用清单动态取首个，避免写死已下架 ID 造成首帧闪错
+          const [selectedImageModel, setSelectedImageModel] = React.useState(() => (WineTokenManifestManager.getImageModels()[0] || {}).id || 'sensenova-u1.5-lite');
+          const [selectedVideoModel, setSelectedVideoModel] = React.useState(() => (WineTokenManifestManager.getVideoModels()[0] || {}).id || 'grok-imagine-video-1.5');
           const selectedModel = mode === 'image' ? selectedImageModel : selectedVideoModel;
           const setSelectedModel = (mId) => {
             if (mode === 'image') setSelectedImageModel(mId);
