@@ -2784,6 +2784,11 @@ $owner.Dispose()
           const [aiSplitText, setAiSplitText] = React.useState('');
           const [aiSplitCount, setAiSplitCount] = React.useState(6);
           const [aiSplitBusy, setAiSplitBusy] = React.useState(false);
+          const [aiSplitModel, setAiSplitModel] = React.useState(() => {
+            try {
+              return (typeof localStorage !== 'undefined' && localStorage.getItem('__winetoken_ai_split_model__')) || '';
+            } catch (_) { return ''; }
+          });
           const [marqueeRect, setMarqueeRect] = React.useState(null); // 容器相对坐标 {x0,y0,x1,y1}
           const [alignGuides, setAlignGuides] = React.useState([]); // [{orientation:'v'|'h', pos}]
           const isMarqueeRef = React.useRef(false);
@@ -2799,6 +2804,8 @@ $owner.Dispose()
           // 漫剧画布生图模型状态与原图全屏预览灯箱
           const [canvasModel, setCanvasModel] = React.useState(initialProject.activeModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite');
           const [availableImageModels, setAvailableImageModels] = React.useState(WineTokenManifestManager.getImageModels());
+          // AI 拆镜用对话模型列表 (与图片模型共用 Manifest SWR 热更新)
+          const [availableChatModels, setAvailableChatModels] = React.useState(() => WineTokenManifestManager.getChatModels());
           const [lightboxUrl, setLightboxUrl] = React.useState(null);
 
           // 监听 Manifest SWR 热更新事件
@@ -2806,6 +2813,9 @@ $owner.Dispose()
             const unsub = WineTokenManifestManager.subscribe((models) => {
               if (models && models.imageModels && models.imageModels.length > 0) {
                 setAvailableImageModels(models.imageModels);
+              }
+              if (models && Array.isArray(models.chatModels)) {
+                setAvailableChatModels(models.chatModels);
               }
             });
             return unsub;
@@ -2865,7 +2875,9 @@ $owner.Dispose()
           const updateTransform = () => {
             if (!canvasLayerRef.current) return;
             const { x, y, zoom } = viewportRef.current;
-            canvasLayerRef.current.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${zoom})`;
+            // 用 2D translate 而非 translate3d：避免 Chromium 把整层提升为固定分辨率的合成纹理，
+            // 否则 scale 放大时只是拉伸那张纹理，文字/图片会像"图片被放大"一样糊。
+            canvasLayerRef.current.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
           };
 
           // 30 步命令模式撤销/重做堆栈 (CANVAS-04, CANVAS-M2/M3 含节点、连线与组)
@@ -3630,9 +3642,10 @@ $owner.Dispose()
               alert('未检测到 API Key，请先点击顶栏钥匙图标输入');
               return;
             }
-            const chatModels = (WineTokenManifestManager.getChatModels ? WineTokenManifestManager.getChatModels() : []) || [];
-            const usable = chatModels.filter(m => m && m.id && m.enabled !== false);
-            const chosen = (usable[0] || {}).id || 'deepseek-v4.1-flash';
+            const usable = (availableChatModels || []).filter(m => m && m.id && m.enabled !== false);
+            // 优先用用户在弹窗里选的模型；未选或已下线则退回列表首个；manifest 为空时用生产兜底
+            const picked = usable.find(m => m.id === aiSplitModel);
+            const chosen = (picked || usable[0] || {}).id || 'deepseek-v4.1-flash';
             const count = Math.max(2, Math.min(12, Number(aiSplitCount) || 6));
             setAiSplitBusy(true);
             try {
@@ -4291,8 +4304,8 @@ $owner.Dispose()
                     lineHeight: 1.6
                   }
                 }),
-                h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
-                  h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: theme.textSecondary } }, [
+                h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } }, [
+                  h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: theme.textSecondary, whiteSpace: 'nowrap' } }, [
                     '目标分镜数 (2~12)',
                     h('input', {
                       type: 'number',
@@ -4311,6 +4324,47 @@ $owner.Dispose()
                       }
                     })
                   ]),
+                  h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: theme.textSecondary, whiteSpace: 'nowrap', flex: 1, minWidth: '220px' } }, [
+                    '拆解模型',
+                    h('select', {
+                      value: (() => {
+                        const usable = (availableChatModels || []).filter(m => m && m.id && m.enabled !== false);
+                        if (usable.some(m => m.id === aiSplitModel)) return aiSplitModel;
+                        return (usable[0] || {}).id || '';
+                      })(),
+                      onChange: (e) => {
+                        setAiSplitModel(e.target.value);
+                        try {
+                          if (typeof localStorage !== 'undefined') {
+                            localStorage.setItem('__winetoken_ai_split_model__', e.target.value);
+                          }
+                        } catch (_) {}
+                      },
+                      title: '选择用于剧本拆解的对话模型',
+                      style: {
+                        flex: 1,
+                        minWidth: '120px',
+                        padding: '5px 8px',
+                        border: `1px solid ${theme.borderSubtle}`,
+                        borderRadius: '6px',
+                        background: theme.bgInput || 'transparent',
+                        color: theme.textPrimary,
+                        fontSize: '12px',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }
+                    }, (() => {
+                      const usable = (availableChatModels || []).filter(m => m && m.id && m.enabled !== false);
+                      if (!usable.length) {
+                        return [h('option', { key: '__fallback__', value: '' }, '默认对话模型 (Manifest 未加载)')];
+                      }
+                      return usable.map(m => h('option', {
+                        key: m.id,
+                        value: m.id,
+                        style: { background: theme.bgSidebar, color: theme.textPrimary }
+                      }, m.name || m.id));
+                    })())
+                  ]),
                   h('button', {
                     type: 'button',
                     onClick: runAiSplit,
@@ -4323,7 +4377,8 @@ $owner.Dispose()
                       color: '#ffffff',
                       fontSize: '12.5px',
                       fontWeight: 600,
-                      cursor: aiSplitBusy ? 'not-allowed' : 'pointer'
+                      cursor: aiSplitBusy ? 'not-allowed' : 'pointer',
+                      flexShrink: 0
                     }
                   }, aiSplitBusy ? 'AI 拆解中…' : '开始拆镜铺图')
                 ])
@@ -4338,12 +4393,18 @@ $owner.Dispose()
                 zIndex: 100,
                 display: 'flex',
                 alignItems: 'center',
+                flexWrap: 'nowrap',
+                flexShrink: 0,
                 gap: '8px',
                 padding: '6px 12px',
                 borderRadius: '8px',
                 backgroundColor: theme.popoverBg,
                 border: `1px solid ${theme.popoverBorder}`,
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)'
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+                maxWidth: 'calc(100% - 40px)',
+                overflowX: 'auto',
+                overflowY: 'hidden',
+                scrollbarWidth: 'none'
               }
             }, [
               h('button', {
@@ -4360,7 +4421,9 @@ $owner.Dispose()
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '5px'
+                  gap: '5px',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap'
                 }
               }, [h(Icon, { name: 'user', size: 13 }), h('span', {}, '添加角色')]),
 
@@ -4378,7 +4441,9 @@ $owner.Dispose()
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '5px'
+                  gap: '5px',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap'
                 }
               }, [h(Icon, { name: 'plus', size: 13 }), h('span', {}, '添加分镜')]),
 
@@ -4396,7 +4461,9 @@ $owner.Dispose()
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  gap: '4px',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap'
                 }
               }, [h(Icon, { name: 'arrowLeft', size: 12 }), h('span', {}, '撤销')]),
 
@@ -4414,11 +4481,13 @@ $owner.Dispose()
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  gap: '4px',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap'
                 }
               }, [h(Icon, { name: 'refresh', size: 12 }), h('span', {}, '重做')]),
 
-              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 4px' } }),
+              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 4px', flexShrink: 0 } }),
 
               h('button', {
                 type: 'button',
@@ -4433,11 +4502,13 @@ $owner.Dispose()
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '5px'
+                  gap: '5px',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap'
                 }
               }, [h(Icon, { name: 'canvas', size: 13 }), h('span', {}, '四格模版')]),
 
-              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 4px' } }),
+              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 4px', flexShrink: 0 } }),
 
               // 漫剧画布自主生图模型选择器 (同步 Manifest 动态矩阵与实时生效会员价格)
               h('div', {
@@ -4449,7 +4520,7 @@ $owner.Dispose()
                   borderRadius: '6px',
                   backgroundColor: theme.bgInput,
                   border: `1px solid ${theme.borderSubtle}`,
-                  maxWidth: '460px',
+                  maxWidth: '300px',
                   flexShrink: 0
                 }
               }, [
@@ -4467,7 +4538,8 @@ $owner.Dispose()
                     fontWeight: 500,
                     outline: 'none',
                     cursor: 'pointer',
-                    maxWidth: '380px',
+                    maxWidth: '230px',
+                    textOverflow: 'ellipsis',
                     paddingRight: '6px'
                   }
                 }, availableImageModels.map(m => {
@@ -4512,7 +4584,9 @@ $owner.Dispose()
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  gap: '6px',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap'
                 }
               }, [h(Icon, { name: 'download', size: 13 }), h('span', {}, '导出条漫长图')])
             ]),
@@ -4613,8 +4687,9 @@ $owner.Dispose()
                 position: 'absolute',
                 left: 0,
                 top: 0,
-                transformOrigin: '0 0',
-                willChange: 'transform'
+                transformOrigin: '0 0'
+                // 不设 willChange: transform —— 它会强制整层栅格化为固定分辨率合成纹理，
+                // 导致放大时文字糊（见 updateTransform 注释）。缩放时浏览器按目标分辨率重绘。
               }
             }, [
               // 2.95 分镜组底框层 (CANVAS-M3 3.1): 组成员 AABB 虚线框 + 可点击标题
@@ -5205,8 +5280,6 @@ $owner.Dispose()
                             objectFit: 'cover',
                             filter: isCandidate ? 'brightness(0.95)' : 'none',
                             imageRendering: '-webkit-optimize-contrast',
-                            transform: 'translateZ(0)',
-                            backfaceVisibility: 'hidden',
                             cursor: 'zoom-in'
                           }
                         })
@@ -5405,8 +5478,7 @@ $owner.Dispose()
                   objectFit: 'contain',
                   borderRadius: '8px',
                   boxShadow: '0 24px 70px rgba(0, 0, 0, 0.85)',
-                  imageRendering: '-webkit-optimize-contrast',
-                  transform: 'translateZ(0)'
+                  imageRendering: '-webkit-optimize-contrast'
                 },
                 onClick: (e) => e.stopPropagation()
               })
@@ -7026,9 +7098,7 @@ $owner.Dispose()
                               borderRadius: '8px',
                               boxShadow: theme.isDark ? '0 12px 32px rgba(0, 0, 0, 0.65)' : '0 12px 32px rgba(0, 0, 0, 0.12)',
                               border: `1px solid ${theme.borderSubtle}`,
-                              imageRendering: '-webkit-optimize-contrast',
-                              transform: 'translateZ(0)',
-                              backfaceVisibility: 'hidden'
+                              imageRendering: '-webkit-optimize-contrast'
                             }
                           })
                     ]),
