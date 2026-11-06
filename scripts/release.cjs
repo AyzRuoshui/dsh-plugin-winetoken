@@ -61,28 +61,27 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 修复 Grok Imagine 生图/生视频上游 400`;
+  const releaseTitle = `Release ${version} - 修复新版桌面端保存密钥失败与模型列表不自动同步`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-修复用户实测反馈：工坊选择 **Grok Imagine 2.0（生图）** 在非正方形分辨率（如 768x1344）下必报 \`生成失败: xAI upstream returned status 400\`。根因是协议错配：**xAI 原生生图协议没有 \`size\` 参数**（改用固定档 \`aspect_ratio\`），OpenAI 风格的 \`size\` 被中转透传后遭 xAI 拒绝。
+修复新用户在**新版 DeepSeek 桌面端（全沙箱模式）**下安装后无法保存密钥（报 \`保存异常: require is not defined\`）、模型列表不自动同步的问题。两个症状同根因：新版 dsh-desktop 渲染进程为全沙箱（\`nodeIntegration:false\`），插件此前写宿主凭据文件的方式在该环境下必然失败。
 
-### 1. Grok 生图协议适配（工坊 + Tool Calling 双端修复）
-- 检测 \`grok-imagine-image\` 模型族：不再发送 \`size\`，改为按所选分辨率**最近比例吸附**成 xAI 原生 \`aspect_ratio\`（1:1 / 9:16 / 16:9 / 3:4 / 4:3 / 2:3 / 3:2 / 21:9 / 5:2 九档，log 距离最近匹配）；
-- 1024x1024 → 1:1、768x1344 / 1024x1792 → 9:16、1344x768 / 1792x1024 → 16:9，界面分辨率选项保持不变，行为对用户透明；
-- \`src/tool.js\` 的大模型 Tool Calling 生图链路同步修复。
+### 1. 保存密钥接入 DeepSeek 官方通道
+- 接入桌面端内置的 **凭据 Remote 服务**（\`ctx.remote.credentials.set / unset / describe\`）——与 DeepSeek 自家设置页相同的机制，客户端经认证 RPC 调用、宿主本地 provider 落盘 \`~/.dsh/.credentials.yaml\`；
+- 写入通道优先级：**官方 Remote 通道 → 直写磁盘（旧版桌面端，行为不变）→ 仅本地生效降级**；彻底移除"保存异常: require is not defined"式误导报错。
 
-### 2. Grok 视频分辨率档位矫正（同类隐患预防性修复）
-- xAI 视频仅接受 **480p / 720p / 1080p**，此前插件在非 1080 档一律发 \`768P\`（xAI 无此档位，尚未被用户踩到即已修复）：现在 Grok 视频族自动发 \`720P\` / \`1080P\`；
-- 服务端 manifest 已同步为 Grok 视频补上 1920x1080 / 1080x1920 两档真 1080P 选项（本次已部署，线上已验证）。
+### 2. 模型列表真·自动同步
+- 宿主插件新增**凭据文件监视器**：密钥经任意通道落盘后自动触发模型同步引擎（1.8s 去抖 + 密钥快照幂等，杜绝循环触发）；
+- 新用户保存密钥后，官方聊天模型列表**自动**从 19 个离线基线更新为线上全量清单，全程无感。
 
-### 3. 其他模型不受影响
-- MiniMax H3 / GPT-Image 2.6 / Imagen 3 / 商汤限免的上行参数与界面完全不变，协议适配仅对 Grok Imagine 族生效。
+### 3. 降级语义明示
+- 双通道皆不可达的极端环境下，保存仍保证**创作工坊生图 / 生视频 / 漫剧画布 / 账单**全链路可用（走本地存储），并如实提示边界，不再让人误以为"全坏了"；
+- 老版本桌面端用户行为完全不变。
 
 ### 4. 工程状态
-- 全部源码 \`node --check\` 通过；服务端 \`py_compile\` 通过；
-- 自动化测试 **23 / 23 全绿**；Grok 适配静态断言 **12 / 12 全过**；
-- 服务端部署后实测 manifest：Grok 视频 4 档分辨率就位，生图 5 模型 / 视频 2 模型无其他变动；
-- 发布脱敏门禁 **0 违规**。全程未发起任何真实生成调用（协议规格依据 New-API rc.48 内置插件源码与 xAI 官方文档核实）。
+- 全部源码 \`node --check\` 通过；
+- 自动化测试 **23 / 23 全绿**；沙箱兼容静态断言 **16 / 16 全过**；
+- 发布脱敏门禁 **0 违规**。全程未发起任何真实生成调用（凭据通道依据 dsh-desktop 0.2.2 应用包静态分析与官方 Remote 协议核实）。
 
 ---
 

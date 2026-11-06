@@ -64,8 +64,11 @@
   const WineTokenCredentialBridge = {
     getCredentialsPath() {
       try {
-        const path = require('path');
-        const os = require('os');
+        const nodeRequire = typeof require === 'function' ? require
+          : (typeof window !== 'undefined' && window && typeof window.require === 'function' ? window.require : null);
+        if (!nodeRequire) return '';
+        const path = nodeRequire('path');
+        const os = nodeRequire('os');
         return path.join(os.homedir(), '.dsh', '.credentials.yaml');
       } catch (_) {
         return '';
@@ -116,100 +119,140 @@
     },
 
     // 全链路即时同步写入 (双向别名同步、严格回读验证与基线模型自愈注入)
-    saveKey(key) {
+    // 写入通道优先级：① DSH 官方 credentials Remote 服务 (沙箱版唯一正解) ② 直写磁盘 (旧版 Node 集成)
+    // ③ 仅 localStorage 降级 —— 绝不让保存整体失败
+    async saveKey(key) {
       const trimmed = (key || '').trim();
       if (!trimmed) return { success: false, error: 'Key 不能为空' };
 
       // 1. 写入渲染进程 localStorage (创作工坊与漫剧画布 0 秒生效)
+      let localSaved = false;
       try {
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem('WINETOKEN_API_KEY', trimmed);
+          localSaved = true;
         }
       } catch (_) {}
 
-      // 2. 写入当前进程环境变量
+      // 2. 写入当前进程环境变量 (非沙箱 Electron 渲染进程可用)
       if (typeof process !== 'undefined' && process.env) {
-        process.env.WINETOKEN_API_KEY = trimmed;
+        try { process.env.WINETOKEN_API_KEY = trimmed; } catch (_) {}
       }
 
-      // 3. 写入磁盘 ~/.dsh/.credentials.yaml (触发 DSH 官方凭据监视器 100ms 重载模型)
-      let fsWriteSuccess = false;
-      let fsErrorMessage = '';
+      // 3a. DSH 官方 credentials Remote 通道 (ctx.remote.credentials.set，宿主 local provider 落盘)
+      let remoteSaved = false;
+      let remoteError = '';
       try {
-        const fs = require('fs');
-        const path = require('path');
-        const credPath = this.getCredentialsPath();
-        if (credPath) {
-          const dir = path.dirname(credPath);
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-          let content = fs.existsSync(credPath) ? fs.readFileSync(credPath, 'utf8') : '';
-          const hasZhaizhu = /(?:^|\n)[ \t]*ZHAIZHU_API_KEY:\s*/.test(content);
-
-          const writeOneKey = (rawContent, keyName, val) => {
-            const keyRegex = new RegExp(`(^|\\n)([ \\t]*${keyName}:\\s*)([^\\r\\n#]*)`, 'm');
-            const emptyRefsRegex = /(^|\n)([ \t]*refs:\s*\{\s*\})/m;
-            const refsBlockRegex = /(^|\n)([ \t]*refs:\s*(?:\r?\n|$))/m;
-            if (keyRegex.test(rawContent)) {
-              return rawContent.replace(keyRegex, `$1  ${keyName}: ${val}`);
-            } else if (emptyRefsRegex.test(rawContent)) {
-              return rawContent.replace(emptyRefsRegex, `$1refs:\n  ${keyName}: ${val}`);
-            } else if (refsBlockRegex.test(rawContent)) {
-              return rawContent.replace(refsBlockRegex, `$1refs:\n  ${keyName}: ${val}\n`);
-            } else {
-              return rawContent.trimEnd() + `\nrefs:\n  ${keyName}: ${val}\n`;
-            }
-          };
-
-          if (!content || !content.trim()) {
-            content = `version: 1\nrecords: {}\nrefs:\n  WINETOKEN_API_KEY: ${trimmed}\n`;
-          } else {
-            content = writeOneKey(content, 'WINETOKEN_API_KEY', trimmed);
-            if (hasZhaizhu) {
-              content = writeOneKey(content, 'ZHAIZHU_API_KEY', trimmed);
-            }
-          }
-          fs.writeFileSync(credPath, content, { encoding: 'utf8', mode: 0o600 });
-
-          // 回读校验物理落盘状态
-          const verifyContent = fs.readFileSync(credPath, 'utf8');
-          if (verifyContent.includes(trimmed)) {
-            fsWriteSuccess = true;
-          } else {
-            fsErrorMessage = '写入凭据文件后回读未找到有效密钥';
-          }
+        const credFace = (typeof window !== 'undefined' && window) ? window.__winetoken_remote_credentials : null;
+        if (credFace && typeof credFace.set === 'function') {
+          await credFace.set('WINETOKEN_API_KEY', trimmed);
+          remoteSaved = true;
         }
       } catch (e) {
-        fsErrorMessage = e.message;
-        console.warn('[WineToken] 写入 .credentials.yaml 失败:', e.message);
+        remoteError = (e && e.message) ? e.message : String(e);
+        console.warn('[WineToken] 官方凭据通道写入失败:', remoteError);
+      }
+
+      // 3b. 直写磁盘 ~/.dsh/.credentials.yaml (旧版桌面端 / Node 集成可用时)
+      const nodeRequire = typeof require === 'function' ? require
+        : (typeof window !== 'undefined' && window && typeof window.require === 'function' ? window.require : null);
+      let fsWriteSuccess = false;
+      let fsErrorMessage = '';
+      if (!remoteSaved && nodeRequire) {
+        try {
+          const fs = nodeRequire('fs');
+          const path = nodeRequire('path');
+          const credPath = this.getCredentialsPath();
+          if (credPath) {
+            const dir = path.dirname(credPath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+            let content = fs.existsSync(credPath) ? fs.readFileSync(credPath, 'utf8') : '';
+            const hasZhaizhu = /(?:^|\n)[ \t]*ZHAIZHU_API_KEY:\s*/.test(content);
+
+            const writeOneKey = (rawContent, keyName, val) => {
+              const keyRegex = new RegExp(`(^|\\n)([ \\t]*${keyName}:\\s*)([^\\r\\n#]*)`, 'm');
+              const emptyRefsRegex = /(^|\n)([ \t]*refs:\s*\{\s*\})/m;
+              const refsBlockRegex = /(^|\n)([ \t]*refs:\s*(?:\r?\n|$))/m;
+              if (keyRegex.test(rawContent)) {
+                return rawContent.replace(keyRegex, `$1  ${keyName}: ${val}`);
+              } else if (emptyRefsRegex.test(rawContent)) {
+                return rawContent.replace(emptyRefsRegex, `$1refs:\n  ${keyName}: ${val}`);
+              } else if (refsBlockRegex.test(rawContent)) {
+                return rawContent.replace(refsBlockRegex, `$1refs:\n  ${keyName}: ${val}\n`);
+              } else {
+                return rawContent.trimEnd() + `\nrefs:\n  ${keyName}: ${val}\n`;
+              }
+            };
+
+            if (!content || !content.trim()) {
+              content = `version: 1\nrecords: {}\nrefs:\n  WINETOKEN_API_KEY: ${trimmed}\n`;
+            } else {
+              content = writeOneKey(content, 'WINETOKEN_API_KEY', trimmed);
+              if (hasZhaizhu) {
+                content = writeOneKey(content, 'ZHAIZHU_API_KEY', trimmed);
+              }
+            }
+            fs.writeFileSync(credPath, content, { encoding: 'utf8', mode: 0o600 });
+
+            // 回读校验物理落盘状态
+            const verifyContent = fs.readFileSync(credPath, 'utf8');
+            if (verifyContent.includes(trimmed)) {
+              fsWriteSuccess = true;
+            } else {
+              fsErrorMessage = '写入凭据文件后回读未找到有效密钥';
+            }
+          }
+        } catch (e) {
+          fsErrorMessage = e.message;
+          console.warn('[WineToken] 写入 .credentials.yaml 失败:', e.message);
+        }
       }
 
       // 4. 触发基线模型自愈注入用户层 cordis.patch.yml (彻底消除 P0 覆盖问题)
-      try {
-        const { ensureBaselineProviderInPatch } = require('./sync.js');
-        if (typeof ensureBaselineProviderInPatch === 'function') {
-          ensureBaselineProviderInPatch();
-        }
-      } catch (_) {}
-
-      if (!fsWriteSuccess && fsErrorMessage) {
-        return { success: false, error: fsErrorMessage };
+      if (nodeRequire) {
+        try {
+          const { ensureBaselineProviderInPatch } = nodeRequire('./sync.js');
+          if (typeof ensureBaselineProviderInPatch === 'function') {
+            ensureBaselineProviderInPatch();
+          }
+        } catch (_) {}
       }
-      return { success: true };
+
+      if (remoteSaved || fsWriteSuccess) {
+        return { success: true, channel: remoteSaved ? 'remote' : 'fs' };
+      }
+      if (localSaved) {
+        // 双通道皆不可达：客户端全链路 (工坊/画布/账单/模型清单) 仍已生效
+        const reason = remoteError ? ('凭据服务响应: ' + remoteError) : '当前桌面端未暴露凭据写入通道';
+        return { success: true, partial: true, warning: reason };
+      }
+      return { success: false, error: fsErrorMessage || remoteError || '写入失败' };
     },
 
     // 清除凭据
-    clearKey() {
+    async clearKey() {
       try {
         if (typeof localStorage !== 'undefined') {
           localStorage.removeItem('WINETOKEN_API_KEY');
         }
       } catch (_) {}
       if (typeof process !== 'undefined' && process.env) {
-        delete process.env.WINETOKEN_API_KEY;
+        try { delete process.env.WINETOKEN_API_KEY; } catch (_) {}
       }
+      // 优先走 DSH 官方凭据 Remote 通道 (沙箱可用)，失败再尝试直写
       try {
-        const fs = require('fs');
+        const credFace = (typeof window !== 'undefined' && window) ? window.__winetoken_remote_credentials : null;
+        if (credFace && typeof credFace.unset === 'function') {
+          await credFace.unset('WINETOKEN_API_KEY');
+          return;
+        }
+      } catch (_) {}
+      try {
+        const nodeRequire = typeof require === 'function' ? require
+          : (typeof window !== 'undefined' && window && typeof window.require === 'function' ? window.require : null);
+        if (!nodeRequire) return;
+        const fs = nodeRequire('fs');
         const credPath = this.getCredentialsPath();
         if (credPath && fs.existsSync(credPath)) {
           let content = fs.readFileSync(credPath, 'utf8');
@@ -1611,7 +1654,7 @@ $owner.Dispose()
               setStatusTip('请输入有效的 API Key');
               return;
             }
-            const saveRes = WineTokenCredentialBridge.saveKey(trimmed);
+            const saveRes = await WineTokenCredentialBridge.saveKey(trimmed);
             if (saveRes && saveRes.success === false) {
               setStatusTip(`保存异常: ${saveRes.error || '写入失败'}`);
               return;
@@ -1624,12 +1667,18 @@ $owner.Dispose()
             try {
               WineTokenManifestManager.fetchManifest(true);
             } catch (_) {}
-            setStatusTip('已保存！官方模型与生图工坊已全链路就绪');
-            setTimeout(() => setStatusTip(''), 3000);
+            if (saveRes && saveRes.partial) {
+              // 双通道皆不可达：客户端全链路已生效，明示官方对话通道受限，不再误报"保存异常"
+              setStatusTip('已保存！工坊生图 / 生视频 / 漫剧画布 / 账单已全部生效；官方对话通道暂受桌面端限制 (' + (saveRes.warning || '无法写入系统凭据') + ')');
+              setTimeout(() => setStatusTip(''), 6000);
+            } else {
+              setStatusTip('已保存！官方模型与生图工坊已全链路就绪');
+              setTimeout(() => setStatusTip(''), 3000);
+            }
           };
 
           const handleResetKey = async () => {
-            WineTokenCredentialBridge.clearKey();
+            await WineTokenCredentialBridge.clearKey();
             setCurrentKey(DEFAULT_KEY);
             setKeyInput('');
             setShowKeyInput(true);
@@ -7977,13 +8026,21 @@ $owner.Dispose()
         }
 
         return {
-          inject: ['slots', 'layout'],
+          inject: ['slots', 'layout', 'remote'],
           apply(ctx) {
             // 暴露全局切换视图句柄
             if (typeof window !== 'undefined') {
               window.__dsh_layout_selectPanel = (panelId) => {
                 try { ctx.layout.selectPanel(panelId); } catch (_) {}
               };
+            }
+
+            // 挂载 DSH 官方凭据 Remote 服务面 (ctx.remote.credentials.set/unset/describe)
+            // 沙箱化桌面端保存密钥的唯一官方通道，写入即落盘 ~/.dsh/.credentials.yaml
+            try {
+              window.__winetoken_remote_credentials = (ctx.remote && ctx.remote.credentials) || null;
+            } catch (_) {
+              window.__winetoken_remote_credentials = null;
             }
 
             // 1. 状态栏余额与账户中心

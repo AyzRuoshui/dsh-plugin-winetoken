@@ -44,6 +44,51 @@ function apply(ctx) {
     console.warn('[WineToken Plugin] 开机注入基线模型异常:', baseErr.message);
   }
 
+  // 2.5 凭据文件监视器：密钥出现/变更时自动触发模型同步 (必须在无 Key 提前返回之前安装)
+  //     覆盖沙箱版桌面端经由官方 ctx.remote.credentials.set 通道写入的场景
+  //     (该通道由 DSH 本地凭据 provider 落盘同一文件)，实现保存后模型列表真正自动同步
+  try {
+    const fsWatch = require('fs');
+    const watchDir = join(homedir(), '.dsh');
+    const initialKeyInfo = resolveApiKey({ autoAlias: true });
+    let syncDebounce = null;
+    let lastKnownKey = (initialKeyInfo && initialKeyInfo.apiKey) || '';
+
+    const triggerResync = () => {
+      if (syncDebounce) clearTimeout(syncDebounce);
+      syncDebounce = setTimeout(async () => {
+        try {
+          const info = resolveApiKey({ autoAlias: true });
+          const currentKey = (info && info.apiKey) || '';
+          if (!currentKey || currentKey === lastKnownKey) return; // 幂等：无变化不同步
+          lastKnownKey = currentKey;
+          console.log('[WineToken Plugin] 检测到凭据更新 (Remote 通道或外部写入)，自动触发模型同步...');
+          const { runSync } = require('./sync.js');
+          await runSync({ forceNoKey: false });
+        } catch (syncErr) {
+          console.warn('[WineToken Plugin] 凭据变更后的自动同步失败:', syncErr && syncErr.message);
+        }
+      }, 1800);
+    };
+
+    if (existsSync(watchDir)) {
+      // 监听目录而非文件本身：原子替换/重命名场景下文件级 watcher 会失效
+      const credWatcher = fsWatch.watch(watchDir, { persistent: false }, (eventType, filename) => {
+        if (filename && String(filename).indexOf('.credentials.yaml') !== -1) {
+          triggerResync();
+        }
+      });
+      credWatcher.on('error', () => {});
+      if (ctx && typeof ctx.on === 'function') {
+        ctx.on('dispose', () => {
+          try { credWatcher.close(); } catch (_) {}
+        });
+      }
+    }
+  } catch (watchErr) {
+    console.warn('[WineToken Plugin] 凭据监视器初始化失败 (不影响其他功能):', watchErr.message);
+  }
+
   // 3. 统一凭据中枢解析 API Key (兼容 WINETOKEN_API_KEY 与 ZHAIZHU_API_KEY 别名)
   const keyInfo = resolveApiKey({ autoAlias: true });
   const apiKey = keyInfo.apiKey;
