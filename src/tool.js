@@ -99,6 +99,37 @@ function getApiKey() {
 }
 
 /**
+ * Grok Imagine 协议适配：xAI 生图原生协议没有 size 参数（用固定档 aspect_ratio），
+ * 视频 resolution 仅接受 480p/720p/1080p —— 非法参数会被上游以 400 拒绝
+ */
+const XAI_RATIOS = [
+  { label: '1:1', v: 1 }, { label: '9:16', v: 9 / 16 }, { label: '16:9', v: 16 / 9 },
+  { label: '3:4', v: 3 / 4 }, { label: '4:3', v: 4 / 3 }, { label: '2:3', v: 2 / 3 },
+  { label: '3:2', v: 3 / 2 }, { label: '21:9', v: 21 / 9 }, { label: '5:2', v: 5 / 2 }
+];
+
+function snapAspectRatio(sizeStr) {
+  try {
+    const parts = String(sizeStr).toLowerCase().split('x');
+    const w = Number(parts[0]);
+    const h = Number(parts[1]);
+    if (!w || !h) return '1:1';
+    const r = w / h;
+    let best = '1:1';
+    let bestDiff = Infinity;
+    for (const it of XAI_RATIOS) {
+      const d = Math.abs(Math.log(r) - Math.log(it.v));
+      if (d < bestDiff) { bestDiff = d; best = it.label; }
+    }
+    return best;
+  } catch (_) { return '1:1'; }
+}
+
+function resolveGrokVideoResolution(size) {
+  return (size && size.includes && size.includes('1080')) ? '1080P' : '720P';
+}
+
+/**
  * 获取 Base URL (已接入 credentials 统一中枢)
  */
 function getBaseUrl() {
@@ -117,6 +148,11 @@ async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_
     size: finalSize,
     response_format: 'url'
   };
+  // Grok Imagine 生图族：xAI 原生协议没有 size 参数，改发最近档位 aspect_ratio，杜绝 400
+  if (/grok-imagine-image/i.test(payload.model)) {
+    delete payload.size;
+    payload.aspect_ratio = snapAspectRatio(finalSize);
+  }
 
   if (image_url) {
     let finalImageUrl = image_url;
@@ -167,12 +203,15 @@ async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_
  * 视频生成请求与异步轮询任务
  */
 async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration, size, image_url }) {
+  const chosenModel = model || 'MiniMax-H3';
+  const isGrokVideo = /grok-imagine-video/i.test(chosenModel);
   const payload = {
-    model: model || 'MiniMax-H3',
+    model: chosenModel,
     prompt: prompt.trim(),
     seconds: duration || 5,
     duration: duration || 5,
-    resolution: (size && size.includes('1080')) ? '1080P' : '768P'
+    // Grok Imagine 视频族：xAI 仅接受 480p/720p/1080p，768P 会被上游 400 拒绝
+    resolution: isGrokVideo ? resolveGrokVideoResolution(size) : ((size && size.includes('1080')) ? '1080P' : '768P')
   };
 
   if (image_url) {

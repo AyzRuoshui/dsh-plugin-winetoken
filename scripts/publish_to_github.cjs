@@ -195,7 +195,7 @@ async function publish(token) {
   });
 
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
-  const commitMsg = process.argv[3] || `feat: v${pkg.version} - dedicated first/last frame slots for studio video generation`;
+  const commitMsg = process.argv[3] || `fix: v${pkg.version} - Grok Imagine protocol adaptation (aspect_ratio for image, 720p/1080p for video)`;
 
   const newCommit = await requestGithub(token, `/repos/${user.login}/${REPO_NAME}/git/commits`, 'POST', {
     message: commitMsg,

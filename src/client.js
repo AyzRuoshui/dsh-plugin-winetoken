@@ -5873,6 +5873,30 @@ $owner.Dispose()
           };
 
           // 发起生图 / 生视频请求 (彻底根除 invalid n 并支持并发自动分批发包)
+          // Grok Imagine 协议适配：xAI 生图原生协议没有 size 参数（用固定档 aspect_ratio），
+          // 视频 resolution 仅接受 480p/720p/1080p —— 非法参数会被上游以 400 拒绝
+          const XAI_RATIOS = [
+            { label: '1:1', v: 1 }, { label: '9:16', v: 9 / 16 }, { label: '16:9', v: 16 / 9 },
+            { label: '3:4', v: 3 / 4 }, { label: '4:3', v: 4 / 3 }, { label: '2:3', v: 2 / 3 },
+            { label: '3:2', v: 3 / 2 }, { label: '21:9', v: 21 / 9 }, { label: '5:2', v: 5 / 2 }
+          ];
+          const snapAspectRatio = (sizeStr) => {
+            try {
+              const parts = String(sizeStr).toLowerCase().split('x');
+              const w = Number(parts[0]);
+              const hgt = Number(parts[1]);
+              if (!w || !hgt) return '1:1';
+              const r = w / hgt;
+              let best = '1:1';
+              let bestDiff = Infinity;
+              for (const it of XAI_RATIOS) {
+                const d = Math.abs(Math.log(r) - Math.log(it.v));
+                if (d < bestDiff) { bestDiff = d; best = it.label; }
+              }
+              return best;
+            } catch (_) { return '1:1'; }
+          };
+
           const handleGenerate = async () => {
             const hasVideoFrame = Boolean((firstFrame && firstFrame.dataUrl) || (lastFrame && lastFrame.dataUrl));
             if (!prompt.trim() && referenceSlots.length === 0 && (mode !== 'video' || !hasVideoFrame)) {
@@ -5908,6 +5932,11 @@ $owner.Dispose()
                     size: size,
                     response_format: 'url'
                   };
+                  // Grok Imagine 生图族：xAI 原生协议没有 size 参数，改发最近档位 aspect_ratio，杜绝 400
+                  if (/grok-imagine-image/i.test(selectedModel)) {
+                    delete payload.size;
+                    payload.aspect_ratio = snapAspectRatio(size);
+                  }
                   if (referenceSlots.length > 0) {
                     payload.image = referenceSlots[0].dataUrl;
                     payload.image_url = referenceSlots[0].dataUrl;
@@ -5988,12 +6017,14 @@ $owner.Dispose()
               } else {
                 // 真实视频网络调用与长轮询 (彻底终结假存根 BILLING-01, BILLING-05)
                 setStatusMsg(`AI 正在向云端提交视频渲染任务 (${selectedModel}, ${duration}秒)...`);
+                // Grok Imagine 视频族：xAI 仅接受 480p/720p/1080p，768P 会被上游 400 拒绝
+                const isGrokVideo = /grok-imagine-video/i.test(selectedModel || '');
                 const videoPayload = {
                   model: selectedModel || 'MiniMax-H3',
                   prompt: prompt.trim(),
                   seconds: duration || 5,
                   duration: duration || 5,
-                  resolution: (size && size.includes('1080')) ? '1080P' : '768P'
+                  resolution: (size && size.includes('1080')) ? '1080P' : (isGrokVideo ? '720P' : '768P')
                 };
                 // 首帧 / 尾帧独立槽位：按模型族选择上行字段，交给 New-API 内置插件显式映射帧角色，
                 // 告别「多图数组按序猜帧」歧义 (hailuo → metadata.first/last_frame_image；xai → image + last_frame)。
