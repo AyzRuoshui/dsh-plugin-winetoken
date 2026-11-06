@@ -363,7 +363,7 @@
         { val: 10, label: '10 秒', tag: '长片' },
         { val: 15, label: '15 秒', tag: '旗舰' }
       ],
-      desc: '768P/1080P 电影级光影，原生支持 4~15 秒超长生成时长，支持上传首帧参考图驱动动态',
+      desc: '768P/1080P 电影级光影，原生支持 4~15 秒超长生成时长，支持首帧 / 尾帧参考图精准驱动动态',
       resolutions: [
         { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
         { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' },
@@ -5511,6 +5511,11 @@ $owner.Dispose()
           const [savingId, setSavingId] = React.useState(null);
           const [fileToast, setFileToast] = React.useState('');
           const fileInputRef = React.useRef(null);
+          // 首帧 / 尾帧独立槽位 (视频模式专用：语义在 UI 层定死，模型按显式字段识别开场与收尾，不再猜图)
+          const [firstFrame, setFirstFrame] = React.useState(null);  // { id, name, dataUrl, size }
+          const [lastFrame, setLastFrame] = React.useState(null);
+          const firstFrameInputRef = React.useRef(null);
+          const lastFrameInputRef = React.useRef(null);
 
           const [history, setHistory] = React.useState(() => {
             let localList = [];
@@ -5676,6 +5681,151 @@ $owner.Dispose()
             if (e.target) e.target.value = '';
           };
 
+          // 视频首帧 / 尾帧专用装载器 (单槽位，重复上传直接覆盖，杜绝多图歧义)
+          const loadImageFileToFrame = (file, setter) => {
+            if (!file) return;
+            if (!file.type || !file.type.startsWith('image/')) {
+              alert('请选择有效的图片文件 (PNG, JPG, WebP)');
+              return;
+            }
+            if (file.size > 15 * 1024 * 1024) {
+              alert(`图片 ${file.name} 超过 15MB，已跳过`);
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              setter({
+                id: 'frame_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                name: file.name.replace(/\.[^/.]+$/, '').slice(0, 10) || '画面帧',
+                dataUrl: ev.target.result,
+                size: (file.size / 1024).toFixed(1) + ' KB'
+              });
+            };
+            reader.readAsDataURL(file);
+          };
+
+          const handleFirstFrameChange = (e) => {
+            loadImageFileToFrame(e.target.files && e.target.files[0], setFirstFrame);
+            if (e.target) e.target.value = '';
+          };
+
+          const handleLastFrameChange = (e) => {
+            loadImageFileToFrame(e.target.files && e.target.files[0], setLastFrame);
+            if (e.target) e.target.value = '';
+          };
+
+          // 模式切换时的首尾帧与多参考图槽位双向迁移 (旧创作素材无缝升级，不丢图)
+          const frameMigrationRef = React.useRef(mode);
+          React.useEffect(() => {
+            if (frameMigrationRef.current === mode) return;
+            const prevMode = frameMigrationRef.current;
+            frameMigrationRef.current = mode;
+            if (prevMode === 'image' && mode === 'video') {
+              setFirstFrame(prev => prev || (referenceSlots[0] ? {
+                id: 'frame_' + Date.now() + '_f',
+                name: referenceSlots[0].name,
+                dataUrl: referenceSlots[0].dataUrl,
+                size: referenceSlots[0].size
+              } : null));
+              setLastFrame(prev => prev || (referenceSlots[1] ? {
+                id: 'frame_' + Date.now() + '_l',
+                name: referenceSlots[1].name,
+                dataUrl: referenceSlots[1].dataUrl,
+                size: referenceSlots[1].size
+              } : null));
+            } else if (prevMode === 'video' && mode === 'image') {
+              setReferenceSlots(prev => {
+                if (prev.length > 0) return prev;
+                return [firstFrame, lastFrame].filter(Boolean).map((f, i) => ({ ...f, index: i + 1 }));
+              });
+            }
+          }, [mode]);
+
+          // 视频画面帧槽位卡片 (首帧 / 尾帧共用渲染：独立上传、独立删除、语义固定)
+          const renderFrameCard = (title, frame, setter, inputRef, emptyText, accentColor, hint) => h('div', {
+            key: title,
+            onDragOver: (e) => { e.preventDefault(); e.stopPropagation(); },
+            onDrop: (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+                loadImageFileToFrame(e.dataTransfer.files[0], setter);
+              }
+            },
+            style: {
+              flex: 1,
+              minWidth: 0,
+              background: theme.bgInput,
+              border: `1px solid ${frame ? theme.borderStrong : theme.borderSubtle}`,
+              borderLeft: `3px solid ${accentColor}`,
+              borderRadius: '7px',
+              padding: '8px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              transition: 'all 0.15s ease'
+            }
+          }, [
+            h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
+              h('span', { style: { fontSize: '11.5px', fontWeight: '600', color: accentColor } }, title),
+              frame ? h('button', {
+                type: 'button',
+                title: '移除该画面帧',
+                onClick: () => setter(null),
+                style: {
+                  background: 'transparent', border: 'none', color: theme.textMuted,
+                  cursor: 'pointer', padding: '2px', borderRadius: '4px', display: 'flex'
+                },
+                onMouseEnter: (e) => { e.currentTarget.style.color = '#ef4444'; },
+                onMouseLeave: (e) => { e.currentTarget.style.color = theme.textMuted; }
+              }, h(Icon, { name: 'close', size: 12 })) : h('span', { style: { fontSize: '10px', color: theme.textMuted } }, '未设置')
+            ]),
+            frame ? h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } }, [
+              h('img', {
+                src: frame.dataUrl,
+                alt: frame.name,
+                style: {
+                  width: '44px', height: '44px', objectFit: 'cover', borderRadius: '5px',
+                  border: `1px solid ${theme.borderSubtle}`, display: 'block', flexShrink: 0
+                }
+              }),
+              h('div', { style: { flex: 1, minWidth: 0 } }, [
+                h('div', { style: { fontSize: '11px', color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, frame.name),
+                h('div', { style: { fontSize: '10px', color: theme.textMuted, marginTop: '1px' } }, frame.size)
+              ]),
+              h('button', {
+                type: 'button',
+                title: '更换该画面帧',
+                onClick: () => inputRef.current && inputRef.current.click(),
+                style: {
+                  padding: '3px 7px', borderRadius: '4px', background: theme.chipNormalBg,
+                  border: `1px solid ${theme.borderSubtle}`, color: theme.textSecondary,
+                  fontSize: '10.5px', cursor: 'pointer', flexShrink: 0
+                }
+              }, '更换')
+            ]) : h('div', {
+              onClick: () => inputRef.current && inputRef.current.click(),
+              style: {
+                border: `1px dashed ${theme.borderStrong}`,
+                borderRadius: '5px',
+                padding: '10px 8px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '3px',
+                transition: 'all 0.15s ease'
+              },
+              onMouseEnter: (e) => { e.currentTarget.style.borderColor = theme.textPrimary; },
+              onMouseLeave: (e) => { e.currentTarget.style.borderColor = theme.borderStrong; }
+            }, [
+              h(Icon, { name: 'upload', size: 13, style: { color: theme.textSecondary } }),
+              h('span', { style: { fontSize: '10px', color: theme.textMuted } }, emptyText)
+            ]),
+            h('div', { style: { fontSize: '10px', color: theme.textMuted, lineHeight: '1.4' } }, hint)
+          ]);
+
           // 拖拽上传到参考图栏
           const handleDropFile = (e) => {
             e.preventDefault();
@@ -5724,7 +5874,8 @@ $owner.Dispose()
 
           // 发起生图 / 生视频请求 (彻底根除 invalid n 并支持并发自动分批发包)
           const handleGenerate = async () => {
-            if (!prompt.trim() && referenceSlots.length === 0) {
+            const hasVideoFrame = Boolean((firstFrame && firstFrame.dataUrl) || (lastFrame && lastFrame.dataUrl));
+            if (!prompt.trim() && referenceSlots.length === 0 && (mode !== 'video' || !hasVideoFrame)) {
               alert('请输入画面描述提示词 (Prompt)，或上传参考图片');
               return;
             }
@@ -5735,9 +5886,13 @@ $owner.Dispose()
             }
 
             setIsGenerating(true);
-            const actionName = referenceSlots.length > 0
-              ? (mode === 'image' ? '多参考图垫图绘制' : '首帧图生视频渲染')
-              : (mode === 'image' ? '画面绘制' : '视频生成');
+            const actionName = mode === 'image'
+              ? (referenceSlots.length > 0 ? '多参考图垫图绘制' : '画面绘制')
+              : (hasVideoFrame
+                  ? ((firstFrame && firstFrame.dataUrl) && (lastFrame && lastFrame.dataUrl)
+                      ? '首尾帧图生视频渲染'
+                      : ((lastFrame && lastFrame.dataUrl) && !(firstFrame && firstFrame.dataUrl) ? '尾帧图生视频渲染' : '首帧图生视频渲染'))
+                  : '视频生成');
             setStatusMsg(`AI 正在进行${actionName}，请稍候...`);
 
             try {
@@ -5840,9 +5995,26 @@ $owner.Dispose()
                   duration: duration || 5,
                   resolution: (size && size.includes('1080')) ? '1080P' : '768P'
                 };
-                if (referenceSlots.length > 0 && referenceSlots[0].dataUrl) {
-                  videoPayload.image_url = referenceSlots[0].dataUrl;
-                  videoPayload.image = referenceSlots[0].dataUrl;
+                // 首帧 / 尾帧独立槽位：按模型族选择上行字段，交给 New-API 内置插件显式映射帧角色，
+                // 告别「多图数组按序猜帧」歧义 (hailuo → metadata.first/last_frame_image；xai → image + last_frame)。
+                // 注意：Grok (xai) 下顶层 images 数组会被解读为 reference_images，故绝不对视频帧使用 images。
+                const frameFirstUrl = firstFrame && firstFrame.dataUrl ? firstFrame.dataUrl : '';
+                const frameLastUrl = lastFrame && lastFrame.dataUrl ? lastFrame.dataUrl : '';
+                if (/minimax|hailuo/i.test(videoPayload.model)) {
+                  if (frameFirstUrl) {
+                    videoPayload.image = frameFirstUrl;
+                    videoPayload.metadata = { first_frame_image: frameFirstUrl };
+                  }
+                  if (frameLastUrl) {
+                    videoPayload.metadata = videoPayload.metadata || {};
+                    videoPayload.metadata.last_frame_image = frameLastUrl;
+                  }
+                } else {
+                  if (frameFirstUrl) {
+                    videoPayload.image = frameFirstUrl;
+                    videoPayload.image_url = frameFirstUrl;
+                  }
+                  if (frameLastUrl) videoPayload.last_frame = frameLastUrl;
                 }
 
                 const endpoint = `${BASE_URL}/v1/videos/generations`;
@@ -6501,12 +6673,14 @@ $owner.Dispose()
                   h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' } }, [
                     h('div', { style: { display: 'flex', alignItems: 'center', gap: '5px' } }, [
                       h('label', { style: { fontSize: '12px', fontWeight: '500', color: theme.textSecondary } },
-                        mode === 'image' ? `参考图库 (${referenceSlots.length}/5)` : '首帧参考图'
+                        mode === 'image' ? `参考图库 (${referenceSlots.length}/5)` : '视频画面帧 (首帧 → 尾帧)'
                       ),
-                      referenceSlots.length > 0 && h('span', { style: { fontSize: '10.5px', color: theme.textMuted } }, '可拖拽至输入框')
+                      mode === 'image' && referenceSlots.length > 0 && h('span', { style: { fontSize: '10.5px', color: theme.textMuted } }, '可拖拽至输入框')
                     ]),
-                    h('span', { style: { fontSize: '11px', color: referenceSlots.length > 0 ? '#22c55e' : theme.textMuted } },
-                      referenceSlots.length > 0 ? (mode === 'image' ? `已启用 ${referenceSlots.length} 张垫图` : '已启用首帧驱动') : '可选'
+                    h('span', { style: { fontSize: '11px', color: (mode === 'video' ? (firstFrame || lastFrame) : referenceSlots.length > 0) ? '#22c55e' : theme.textMuted } },
+                      mode === 'video'
+                        ? ((firstFrame && lastFrame) ? '首尾帧驱动 · 模型明确识别开场与收尾' : (firstFrame ? '首帧驱动' : '可选'))
+                        : (referenceSlots.length > 0 ? `已启用 ${referenceSlots.length} 张垫图` : '可选')
                     )
                   ]),
 
@@ -6520,7 +6694,36 @@ $owner.Dispose()
                     onChange: handleFileChange
                   }),
 
-                  referenceSlots.length > 0 ? h('div', {
+                  // 首帧 / 尾帧专用隐藏文件输入框 (视频模式)
+                  h('input', {
+                    ref: firstFrameInputRef,
+                    type: 'file',
+                    accept: 'image/png,image/jpeg,image/webp,image/gif',
+                    style: { display: 'none' },
+                    onChange: handleFirstFrameChange
+                  }),
+                  h('input', {
+                    ref: lastFrameInputRef,
+                    type: 'file',
+                    accept: 'image/png,image/jpeg,image/webp,image/gif',
+                    style: { display: 'none' },
+                    onChange: handleLastFrameChange
+                  }),
+
+                  // 视频模式：首帧 / 尾帧独立双槽位 (语义在 UI 层固定，模型按显式字段识别帧角色)
+                  mode === 'video' ? h('div', {
+                    style: {
+                      display: 'flex',
+                      gap: '8px',
+                      alignItems: 'stretch'
+                    }
+                  }, [
+                    renderFrameCard('首帧 · 开场画面', firstFrame, setFirstFrame, firstFrameInputRef, '上传开场画面', '#22c55e', '视频将以此画面开场 (推荐与成片比例一致)'),
+                    h('div', {
+                      style: { display: 'flex', alignItems: 'center', flexShrink: 0, color: theme.textMuted, fontSize: '15px', fontWeight: '600', padding: '0 1px' }
+                    }, '→'),
+                    renderFrameCard('尾帧 · 收尾画面', lastFrame, setLastFrame, lastFrameInputRef, '上传收尾画面', '#a855f7', '可选 · 视频将平滑过渡到该画面结束')
+                  ]) : referenceSlots.length > 0 ? h('div', {
                     style: {
                       display: 'flex',
                       flexDirection: 'column',
@@ -6740,7 +6943,7 @@ $owner.Dispose()
                   }, [
                     h(Icon, { name: 'upload', size: 16, style: { color: theme.textSecondary } }),
                     h('span', { style: { fontSize: '11.5px', color: theme.textSecondary } }, '点击或拖拽上传参考图 (最多5张)'),
-                    h('span', { style: { fontSize: '10.5px', color: theme.textMuted } }, mode === 'image' ? '支持多角色人物与场景垫图、拖拽指代' : '作为视频首帧引导动态')
+                    h('span', { style: { fontSize: '10.5px', color: theme.textMuted } }, '支持多角色人物与场景垫图、拖拽指代')
                   ])
                 ]),
 
@@ -7007,9 +7210,11 @@ $owner.Dispose()
                       ? (referenceSlots.length > 0
                           ? `立即垫图生成 · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
                           : `立即生成 · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`)
-                      : (referenceSlots.length > 0
-                          ? `提交首帧生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
-                          : `提交文生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`)
+                      : ((firstFrame && lastFrame)
+                          ? `提交首尾帧生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
+                          : ((firstFrame || lastFrame)
+                              ? `${firstFrame ? '提交首帧' : '提交尾帧'}生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
+                              : `提交文生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`))
                     )
                   ])
                 ])
@@ -7463,7 +7668,15 @@ $owner.Dispose()
                       ),
                       h('p', { style: { margin: '0', fontSize: '12px', color: theme.textMuted, lineHeight: '1.5' } },
                         isGenerating ? (statusMsg || '请稍候片刻，正在生成高分辨率细节...') : (
-                          referenceSlots.length > 0 ? `已选择 ${referenceSlots.length} 张参考图，点击「立即垫图生成」即可开始` : '在左侧配置模型或上传参考底图，点击「立即生成」即可在此呈现成果'
+                          mode === 'video'
+                            ? ((firstFrame && lastFrame)
+                                ? '已设置首帧 + 尾帧画面，点击「提交生视频」即可开始渲染'
+                                : (firstFrame
+                                    ? '已设置首帧画面，点击「提交生视频」即可开始渲染'
+                                    : (lastFrame
+                                        ? '已设置尾帧画面，点击「提交生视频」即可开始渲染'
+                                        : '在左侧配置模型或上传首帧画面，点击「提交生视频」即可在此呈现成果')))
+                            : (referenceSlots.length > 0 ? `已选择 ${referenceSlots.length} 张参考图，点击「立即垫图生成」即可开始` : '在左侧配置模型或上传参考底图，点击「立即生成」即可在此呈现成果')
                         )
                       )
                     ])

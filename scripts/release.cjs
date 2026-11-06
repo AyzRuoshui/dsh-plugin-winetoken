@@ -61,29 +61,32 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 生图模型清单随 New-API 上下架动态同步`;
+  const releaseTitle = `Release ${version} - 视频工坊首帧 / 尾帧独立双槽位`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-配合服务端 WBHub manifest 修订，客户端生图模型列表改为**完全跟随中转站 New-API 的上下架状态**，不再依赖写死的静态清单。本次 New-API 下架 3 个旧模型、上架 2 个 GPT-Image 2.6 模型，插件与服务端已同步。
+响应创作者反馈：视频工坊此前把多张参考图混在一个槽位栏里，模型无法分辨哪张是开场、哪张是收尾（且多出的图会被静默丢弃）。本版将视频画面帧拆成**独立首帧 / 尾帧双槽位**，语义在界面上定死，并按模型族以显式字段上行，让模型明确识别帧角色。
 
-### 1. 模型清单以下发 manifest 为唯一真相
-- \`normalizeImageModel\` / \`normalizeVideoModel\` 保留服务端 \`enabled\` 字段，名称 / 标签 / 价格 / 尺寸一律以线上为准，移除写死的改名逻辑；
-- \`fetchManifest\` 去掉「静态兜底并集」旧逻辑：服务端标记下架（\`enabled=false\`）的模型不再被本地常量补回，界面即时消失；仅当线上完全没返回该类模型时才用静态兜底（断网保护）；
-- \`getSnapshot\` / getter / 订阅回调统一过滤可用模型，旧缓存无 \`enabled\` 字段时兼容视为可用；误入 \`chatModels\` 的生图模型（如 \`gpt-image-2.6-*\`）在消费侧剔除，AI 拆镜下拉不会再把它当对话模型。
+### 1. 视频画面帧双槽位
+- 视频工坊左侧参考栏改为 **「首帧 · 开场画面 → 尾帧 · 收尾画面」** 两张独立卡片：各自上传 / 拖拽 / 更换 / 删除，尾帧为可选项；
+- 状态行实时提示「首尾帧驱动 · 模型明确识别开场与收尾」，提交按钮按 文生 / 首帧 / 尾帧 / 首尾帧 四态显示。
 
-### 2. 默认模型与静态兜底同步换新
-- 静态兜底清单由 6 个旧模型换为当前在架的 5 个：新增 \`gpt-image-2.6-flare\` / \`gpt-image-2.6-sunburst\`，移除已下架的 \`gpt-image-2.5-flare\` / \`2.5-sunburst\` / \`gpt-image-2\`；
-- 2.6 系列定价沿用 2.5 档：Flare ¥0.30/张（会员 ¥0.24）、Sunburst ¥0.40/张（会员 ¥0.32），统一 5 档尺寸；
-- Tool Calling 默认生图模型改为从 manifest 缓存动态解析（优先限免），工坊 / 画布初始选中模型也改为取可用清单首个，彻底清除 \`gpt-image-2.5-flare\` 写死引用。
+### 2. 上行协议按模型族显式映射（依据中转站 New-API 内置插件源码核实）
+- **MiniMax-H3（海螺）**：以 \`metadata.first_frame_image\` / \`metadata.last_frame_image\` 显式标注帧角色，不再依赖「多图数组按序猜帧」；
+- **grok-imagine-video-1.5**：以 \`image\`（首帧）+ \`last_frame\`（尾帧）上行；并规避了顶层 \`images\` 数组会被解读为参考图集（reference_to_video，限制分辨率）的协议陷阱；
+- 兼容保留 \`image\` 字段，旧版首帧行为不变；两个现役视频模型均原生支持尾帧，**服务端零改动**。
 
-### 3. 服务端联动（本次已部署）
-- WBHub \`subscription.py\` 的 \`BASE_IMAGE_MODELS\` 同步换血，并新增「按 \`models.tags\` 含 \`Image\` 自动发现生图模型」逻辑：以后在 New-API 上下架生图模型无需再改代码，也不会再误判成对话模型。
+### 3. 旧素材无缝迁移
+- 图像工坊 → 视频工坊：参考图 1 / 2 自动迁移为首帧 / 尾帧；反向切回时若参考库为空则反向回填，创作素材不丢失；
+- 重复上传同一槽位直接覆盖（15MB 上限不变），杜绝多图歧义。
 
-### 4. 工程状态
-- 全部源码 \`node --check\` 通过；服务端 \`py_compile\` 通过；
+### 4. 图像模式与画布不受影响
+- 图像工坊 5 槽位多参考垫图体系（别名、拖拽指代、语义解耦编译）原样保留；漫剧画布分镜生图链路未触碰。
+
+### 5. 工程状态
+- 全部源码 \`node --check\` 通过；
 - 自动化测试 **23 / 23 全绿**；
-- 线上 manifest 实测：\`imageModels\` 5 个（含 2.6 两个、下架 3 个已消失），\`chatModels\` 0 生图泄漏；
-- 发布脱敏门禁 32 文件 **0 违规**。
+- 首尾帧功能静态断言 **23 / 23 全过**（含协议字段、UI 文案、脱敏自检）；
+- 发布脱敏门禁 **0 违规**。全程未发起任何真实生成调用（帧字段核实依据 New-API rc.48 源码与无效 Key 路由探针，零额度消耗）。
 
 ---
 
