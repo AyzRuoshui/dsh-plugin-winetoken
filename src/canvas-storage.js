@@ -32,7 +32,7 @@ class CanvasProjectStorage {
    */
   getDefaultProject() {
     return {
-      version: '2.0.0',
+      version: '2.2.0',
       updatedAt: Date.now(),
       characters: [
         {
@@ -61,6 +61,9 @@ class CanvasProjectStorage {
           status: 'idle'
         }
       ],
+      canvasItems: [],
+      edges: [],
+      groups: [],
       viewport: { x: 40, y: 30, zoom: 1 },
       activeModel: 'sensenova-u1.5-lite'
     };
@@ -76,6 +79,10 @@ class CanvasProjectStorage {
         const raw = fs.readFileSync(this.projectFilePath, 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.characters) && Array.isArray(parsed.panels)) {
+          // CANVAS-M2/M3: 增量字段向后兼容 (旧版本工程文件缺省补空，杜绝破坏性迁移)
+          parsed.canvasItems = Array.isArray(parsed.canvasItems) ? parsed.canvasItems : [];
+          parsed.edges = Array.isArray(parsed.edges) ? parsed.edges : [];
+          parsed.groups = Array.isArray(parsed.groups) ? parsed.groups : [];
           return parsed;
         }
       } catch (err) {
@@ -89,6 +96,9 @@ class CanvasProjectStorage {
         const parsedBak = JSON.parse(rawBak);
         if (parsedBak && Array.isArray(parsedBak.characters) && Array.isArray(parsedBak.panels)) {
           console.log('[WineToken CanvasStorage] 成功从备份文件恢复工程快照');
+          parsedBak.canvasItems = Array.isArray(parsedBak.canvasItems) ? parsedBak.canvasItems : [];
+          parsedBak.edges = Array.isArray(parsedBak.edges) ? parsedBak.edges : [];
+          parsedBak.groups = Array.isArray(parsedBak.groups) ? parsedBak.groups : [];
           return parsedBak;
         }
       } catch (bakErr) {
@@ -108,7 +118,7 @@ class CanvasProjectStorage {
     try {
       const payload = {
         ...data,
-        version: '2.0.0',
+        version: '2.2.0',
         updatedAt: Date.now()
       };
       const jsonStr = JSON.stringify(payload, null, 2);

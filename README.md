@@ -1,7 +1,7 @@
 # DeepSeek Harness (DSH) - WineToken 原生聚合插件
 
 [![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-v0.2.1--rc.5-blue)](https://github.com/deepseek-ai/deepseek-harness)
-[![Version](https://img.shields.io/badge/version-2.0.1-green.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-2.1.0-green.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/AyzRuoshui/dsh-plugin-winetoken)](https://github.com/AyzRuoshui/dsh-plugin-winetoken/releases)
 
@@ -16,11 +16,16 @@
   - 配备完整的国际化元数据（`locale/zh.json`、`locale/en.json`）与纯矢量 SVG 图标；
   - **原生陈列于左侧边栏「插件」中心**，支持在界面中查看详情、启用与管理。
 - **现代化 AI 漫剧画布创作工坊 (Comic Canvas Studio)**：
-  - **无限视口漫游**：基于 Direct DOM Transform 硬件加速，支持 20%~300% 平滑平移缩放与视口快速复位；
-  - **分镜自由编排**：卡片支持拖拽手柄、8px 流式网格磁吸对齐、三次贝塞尔拓扑流光连线实时吸附；
+  - **无限视口漫游 (LibTV 对标)**：Ctrl+滚轮/触控板捏合定点缩放 (20%~300%)、滚轮/Shift+滚轮/Space/中键多通道平移、V/H 工具状态机、`Ctrl+0` 一键适应画布总览全部内容；
+  - **专业选择集**：橡皮筋框选多选、Shift 加减选、多选批量移动（单次手势单快照）与批量删除、`Ctrl+A` 全选、对齐参考线自动吸附；
+  - **万物皆节点 (节点工作流)**：生成图自动作为独立图片节点落画布并连线到源分镜（提示词随节点保存）、通用图片/文本节点、`Tab`/双击空白新建节点菜单、`Ctrl+L` 连线模式与绿色锚点拖出连线、连线可选中删除；
+  - **复制三件套**：`Ctrl+D` 复制节点和连线、`Alt+拖动` 克隆节点、`Ctrl+Alt+拖动` 创建副本（保留对外连线）；
+  - **组织力**：`Ctrl/Alt+G` 成组 / 解组 / 合并分镜组（组虚线底框 + 成员随动）、`Alt+Shift+F` 整理画布（组波段自动布局 + 适应视图）、`Ctrl+F` 节点搜索（镜号/提示词/台词/角色名/组名定位居中）、AABB 视口虚拟化支撑百卡长画布；
+  - **AI 剧本拆镜自动铺图**：粘贴剧本文本一键调用对话模型结构化拆解为分镜卡阵列（含景别/提示词/台词），自动铺上画布；
   - **角色 DNA 锚定**：多角色资产库与参考图绑定，彻底解决跨分镜人物“换脸”与画风漂移问题；
   - **WAL 异步任务队列**：引入 Write-Ahead Log 本地离线任务队列与三级水合保活机制，彻底解决切 Tab 或刷新丢图丢状态问题；
-  - **撤销/重做堆栈**：基于命令模式实现 30 步动作栈，支持全局 `Ctrl+Z` 撤销与 `Ctrl+Y` 重做，删除卡片原生二次确认；
+  - **撤销/重做堆栈**：基于命令模式实现 30 步动作栈（覆盖节点/连线/组），支持全局 `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y`；
+  - **画布快捷键速查面板与五步新手引导**：工具栏「快捷键」弹层四栏速查，交互完全对标 LibTV；
   - **条漫长图自适应导出**：离屏 Canvas 渲染导出高清条漫，台词对白多行自适应折行断句，杜绝溢出重叠。
 - **左侧导航栏原生「创作工坊」与 Tool Calling 技能体系**：
   - 无缝接入主导航栏，拥有独立全功能生图与生视频工作空间；
@@ -46,11 +51,11 @@
 4. 粘贴安装地址：
    - **国内免魔法高速镜像**：
      ```text
-     https://ghproxy.net/https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/v2.0.0.tar.gz
+     https://ghproxy.net/https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/v2.1.0.tar.gz
      ```
    - **GitHub 官方直链**：
      ```text
-     https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/v2.0.0.tar.gz
+     https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/v2.1.0.tar.gz
      ```
 5. 点击确认完成安全增量安装；首次在底部点击状态胶囊配置 API Key 即可！
 
@@ -98,7 +103,7 @@ dsh-plugin-winetoken/
 │   └── publish_to_github.cjs   # 基于 GitHub REST API 的免 Git CLI 发布引擎 (带脱敏审计)
 ├── cordis.patch.yml            # 官方 Bundle 补丁定义
 ├── icon.svg                    # 官方规范矢量图标
-└── package.json                # 插件元数据与依赖定义 (v2.0.1)
+└── package.json                # 插件元数据与依赖定义 (v2.1.0)
 ```
 
 ---

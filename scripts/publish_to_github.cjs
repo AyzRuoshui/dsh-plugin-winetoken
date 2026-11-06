@@ -77,6 +77,7 @@ function getAllFiles(dir, baseDir = '') {
       file === '.agents' ||
       file === 'ENGINEERING_REVIEW_REPORT.md' ||
       file === 'PHASED_IMPLEMENTATION_PLAN.md' ||
+      file === 'CANVAS_INTERACTION_PARITY_PLAN.md' ||
       file === 'package-lock.json' ||
       file === '.package-lock.json' ||
       file === 'HANDOVER.md' ||
@@ -194,7 +195,7 @@ async function publish(token) {
   });
 
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
-  const commitMsg = process.argv[3] || `feat: v${pkg.version} - built-in studio workspace & accurate model specs (context/multimodal)`;
+  const commitMsg = process.argv[3] || `feat: v${pkg.version} - LibTV-parity canvas: node workflow, groups, AI storyboard split`;
 
   const newCommit = await requestGithub(token, `/repos/${user.login}/${REPO_NAME}/git/commits`, 'POST', {
     message: commitMsg,

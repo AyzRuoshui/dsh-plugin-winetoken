@@ -39,7 +39,7 @@ function fetchModels(baseUrl, apiKey) {
     const req = client.get(url, {
       headers: {
         'Authorization': 'Bearer ' + apiKey.trim(),
-        'User-Agent': 'WineToken-DSH-Plugin/2.0.1',
+        'User-Agent': 'WineToken-DSH-Plugin/2.1.0',
         'Accept': 'application/json'
       },
       timeout: 10000

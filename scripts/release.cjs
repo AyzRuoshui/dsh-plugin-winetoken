@@ -1,3 +1,4 @@
+// -*- coding: utf-8 -*-
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -60,58 +61,57 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 紧急修复模型不同步、跨进程凭据分裂与商汤尺寸报错 (Hotfix)`;
-  const releaseBody = `## DeepSeek Harness WineToken 插件 ${version}
+  const releaseTitle = `Release ${version} - AI 漫剧画布交互对标 LibTV (节点工作流 / 组织力 / AI 拆镜)`;
+  const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-### 紧急更新说明 (Hotfix 2.0.1)
+本版本把 AI 漫剧画布从"静态卡片墙"升级为**可缩放、可组织、万物皆节点的无限画布工作流**，交互层完整对标 LibTV。存储 schema 由 2.1.0 增量演进至 2.2.0，旧工程文件零迁移、向后兼容。
 
-针对社区与创作者反馈的现场 Bug 报告，v2.0.1 紧急闭环解决了以下关键问题：
+### 1. 画布手感 (对标 LibTV 快捷键全集)
+- **无限视口**：Ctrl+滚轮 / 触控板捏合定点缩放 (20%~300%)、普通滚轮 / Shift+滚轮 / Space / 中键多通道平移、V / H 工具状态机、\`Ctrl+0\` 一键适应画布总览；
+- **专业选择集**：橡皮筋框选、Shift 加减选、\`Ctrl+A\` 全选、多选批量移动（单次手势单快照）、\`Del\` 批量删除；
+- **对齐吸附**：8px 网格磁吸 + 6px 阈值对齐参考线（青色辅助线）；
+- **统一快捷键管理器**：所有快捷键单点注册，输入框 / contentEditable 聚焦时统一失效，消除三处分散 keydown 的互相踩踏。
 
-#### 1. 彻底解决模型列表不同步与提供商丢失问题 (P0)
-- **解构 DSH Loader 覆盖机制**：针对用户层 \`cordis.patch.yml\` 整体覆盖 bundle patch 的宿主特性，独立研发 \`src/patch-engine.js\` 纯原生零依赖增量合并引擎；
-- **开机即时自愈保底**：无论用户是否配置 Key，插件加载时无条件优先在用户层注入 19 个经典静态基线模型，模型选择器中 WineToken 官方模型 100% 稳定秒现；
-- **零破坏已有配置与注释**：增量注入严格保留用户已有的所有自定义 provider（如 \`zhaizhu\` 等）以及原始 YAML 用户注释，通过行级严格缩进判定保证 100% 幂等写盘。
+### 2. 节点范式 (万物皆节点，边是数据)
+- 新增 \`canvasItems[]\` / \`edges[]\` 数据模型（schema 2.1.0 增量字段）：图片 / 文本节点、分镜生成图自动作为独立图片节点落画布并 \`panel → image\` 自动连边、提示词随节点保存；
+- **连线**：\`Ctrl+L\` 点击连线模式、绿色锚点拖出连线、SVG 数据驱动贝塞尔边、边可选中 / 删除、建边去重；
+- **新建**：\`Tab\` / 双击空白弹出节点类型菜单（分镜 / 角色 / 图片 / 文本）；
+- **复制三件套**：\`Ctrl+D\` 复制节点和其间连线、\`Alt+拖动\` 克隆节点、\`Ctrl+Alt+拖动\` 创建副本（保留对外连线）；
+- **批量生成**：\`Ctrl+Enter\` 对所选分镜逐个入队（350ms 受控间隔）。
 
-#### 2. 终结跨进程凭据命名空间分裂 (P1)
-- **统一凭据解析中枢 (\`src/credentials.js\`)**：全面统一 Tool Calling、开机生命周期、CLI 同步及前端 UI 的凭据探测链路；
-- **别名自愈与双向补齐**：自动兼容宿主官方账号设置生成的 \`ZHAIZHU_API_KEY\` 与 \`WINETOKEN_API_KEY\`，识别别名后自动双向补齐同值映射，彻底根除“未检测到 API Key”误判；
-- **物理落盘回读强校验**：前端配置 Key 时执行物理落盘回读验证，写入失败时向用户明确报错，彻底消灭假成功提示。
+### 3. 组织力 (承接"很长的画布")
+- 新增 \`groups[]\`（schema 2.2.0 增量字段）：\`Ctrl/Alt+G\` 成组 / 解组、\`Ctrl+Alt+G\` 合并分镜组，组虚线底框 + 可点击标题，拖组成员整组随动；
+- \`Alt+Shift+F\` 整理画布：\`layoutCanvas()\` 纯函数按镜号分列自动排布 + 执行后自动 fit；
+- \`Ctrl+F\` 节点搜索：镜号 / 景别 / 提示词 / 台词 / 角色名 / 节点文本 / 组名模糊定位居中；
+- **AABB 视口虚拟化**：离屏节点显示裁剪，支撑 100+ 节点长画布。
 
-#### 3. 生图尺寸 32 倍数智能对齐 (P2)
-- **算法级自动对齐**：生图链路注入 \`normalizeImageSize()\` 算法，自动 clamp 到 \`[512, 4096]\` 且向上/四舍五入对齐至 32 的整数倍；
-- **优雅映射经典分辨率**：将经典的 \`1280x720\` / \`720x1280\` 智能映射为标准 32 倍数分辨率 \`1280x768\` / \`768x1280\`，彻底终结商汤日日新 (\`sensenova-u1.5-lite\`) 等严苛引擎的参数报错。
+### 4. AI 剧本拆镜自动铺图
+- 工具栏「AI拆镜」：粘贴剧本 → 调用对话模型结构化拆解 → \`parseStoryboardJSON()\` 稳健解析（剥围栏 / 容寒暄 / 脏数据降级）→ 分镜卡阵列自动铺上画布并适应视图；
+- 未实测真实 LLM 调用（遵守额度约束，待放行验收）。
 
-#### 4. 自动化测试防线扩充至 14 项
-- 新增 PatchEngine 增量合并与注释保留回归测试；
-- 新增统一凭据别名解析与换行符防御回归测试；
-- 新增图像尺寸 32 倍数对齐算法回归测试；
-- 全部 14 项自动化测试 100% 通过。
+### 5. 修订与稳定性
+- 修正 super 用户身份显示为独立「SUPER」（权益仍 ≡ SVIP 8 折），定价逻辑不变；
+- 撤销栈覆盖节点 / 连线 / 组，30 步快照栈；边随节点删除自动清理；
+- 画布新手引导扩为 5 步，快捷键速查面板补「节点与连线」「组织」两组；
+- 自动化测试扩充至 **23 项全绿**（新增对齐参考线、自动布局、剧本 JSON 解析、旧工程 2.0.0→2.2.0 迁移回归等）。
 
 ---
 
 ### 安装与使用方法 (DSH 客户端直接操作 · 推荐)
 
-1. 打开 **DeepSeek Harness** 客户端，进入左侧 **「插件」** 页面；
+1. 打开 **DeepSeek** 客户端，进入左侧 **「插件」** 页面；
 2. 点击右上角 **「+ 添加插件」**，选择 **「安装第三方插件」**；
 3. 粘贴安装地址：
    \`\`\`
-   https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/v2.0.1.tar.gz
+   https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/${version}.tar.gz
    \`\`\`
    国内加速下载地址：
    \`\`\`
-   https://ghproxy.net/https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/v2.0.1.tar.gz
+   https://ghproxy.net/https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/${version}.tar.gz
    \`\`\`
 4. 提示安装成功后，在弹出的重载提示中点击 **「重载窗口」** 即可畅享全新体验！
-`;
-   - **国内免魔法高速镜像（推荐，解决网络超时）**：
-     \`\`\`text
-     https://ghproxy.net/https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/${version}.tar.gz
-     \`\`\`
-   - **GitHub 官方直链**：
-     \`\`\`text
-     https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/${version}.tar.gz
-     \`\`\`
-4. 点击确认，DSH 即可通过内置包管理器秒级完成安全增量安装，已有配置与历史数据 100% 完好无损！
+
+> 说明：画布交互可自由测试；\`Ctrl+Enter\` 批量生成、生图 / 生视频、AI 拆镜的真实模型调用会在中转站产生额度消耗，请按自身额度使用。
 `;
 
   try {

@@ -376,7 +376,7 @@
       pricePerSecond: 0.15,
       vipPricePerSecond: 0.12,
       priceText: '原¥0.15/秒 (5秒基准 ¥0.75)',
-      vipPriceText: 'SVIP ¥0.12/秒 (5秒基准 ¥0.60)',
+      vipPriceText: '会员 ¥0.12/秒 (5秒基准 ¥0.60)',
       unit: '秒',
       durations: [
         { val: 4, label: '4 秒', tag: '轻量' },
@@ -400,7 +400,7 @@
       pricePerSecond: 0.20,
       vipPricePerSecond: 0.16,
       priceText: '原¥0.20/秒 (5秒基准 ¥1.00)',
-      vipPriceText: 'SVIP ¥0.16/秒 (5秒基准 ¥0.80)',
+      vipPriceText: '会员 ¥0.16/秒 (5秒基准 ¥0.80)',
       unit: '秒',
       durations: [
         { val: 5, label: '5 秒', tag: '标配' },
@@ -2270,19 +2270,47 @@ $owner.Dispose()
 
           const STEPS = [
             {
-              badge: '01 / 03',
+              badge: '01 / 05',
               tag: '视口操控',
               targetSelector: '#winetoken-canvas-viewport',
-              title: '无限画布 · 自由平移与阻尼缩放',
+              title: '无限画布 · 平移缩放与适应视图',
               desc: '专为漫剧多镜头排布打造的高帧率无限画板，支持全局全景鸟瞰与微距细节精修。',
               tips: [
-                { key: 'Space + 鼠标拖拽 / 鼠标中键', text: '自由平移漫游视野' },
-                { key: '鼠标滚轮 / 触控板捏合', text: '以光标为中心自适应阻尼缩放 (20% ~ 300%)' },
-                { key: 'Ctrl + 0 / 快速复位', text: '一键复位 100% 居中视野' }
+                { key: 'Ctrl + 滚轮 / 触控板捏合', text: '以光标为中心定点缩放 (20% ~ 300%)' },
+                { key: '滚轮 / Shift+滚轮 / Space+拖拽 / 中键', text: '画布平移 (纵向 / 横向 / 自由漫游)' },
+                { key: 'V / H', text: '切换选择工具与抓手工具' },
+                { key: 'Ctrl + 0 或工具栏「适应」', text: '适应画布，一键总览全部内容' }
               ]
             },
             {
-              badge: '02 / 03',
+              badge: '02 / 05',
+              tag: '选择与批量',
+              targetSelector: '#winetoken-canvas-panels-area',
+              title: '选择集 · 框选多选与批量操作',
+              desc: '像专业画板一样整批调度分镜：框选、加选、整组移动、批量删除，一步到位。',
+              tips: [
+                { key: '空白处按下拖拽', text: '橡皮筋框选批量选中分镜卡' },
+                { key: 'Shift + 点击', text: '加选 / 减选单个分镜' },
+                { key: '拖动选中集任一卡', text: '整组批量移动 (8px 磁吸 + 对齐参考线自动吸附)' },
+                { key: 'Ctrl/Alt + G · Alt + Shift + F', text: '成组管理；一键整理画布自动布局并适应视图' },
+                { key: 'Del / Ctrl + A / Ctrl + Z', text: '批量删除 / 全选分镜 / 撤销重做' }
+              ]
+            },
+            {
+              badge: '03 / 05',
+              tag: '节点与连线',
+              targetSelector: '#winetoken-canvas-items-area',
+              title: '万物皆节点 · 生成图落画布与自由连线',
+              desc: '生成的每一张图都会作为独立节点落在画布上并自动连到源分镜；节点之间可自由连线表达创作关系。',
+              tips: [
+                { key: 'Tab / 双击空白处', text: '呼出新建节点菜单 (分镜 / 角色 / 图片 / 文本)' },
+                { key: '拖动节点上的绿色锚点', text: '拖出连线到目标节点；Ctrl+L 进入连续连线模式' },
+                { key: 'Ctrl + D / Alt + 拖动', text: '复制节点和连线 / 快速克隆节点' },
+                { key: '点击连线再按 Del', text: '删除连线；Esc 退出连线模式' }
+              ]
+            },
+            {
+              badge: '04 / 05',
               tag: '角色定妆',
               targetSelector: '#winetoken-canvas-char-deck',
               title: '角色锚点 · 连线锁定五官与画风',
@@ -2294,7 +2322,7 @@ $owner.Dispose()
               ]
             },
             {
-              badge: '03 / 03',
+              badge: '05 / 05',
               tag: '分镜出图',
               targetSelector: '#winetoken-canvas-panels-area',
               title: '景别运镜 · 对白气泡与条漫拼版',
@@ -2302,7 +2330,7 @@ $owner.Dispose()
               tips: [
                 { key: '标准景别切换', text: '特写 CU、中景 MS、全景 WS 一键注入运镜提示词' },
                 { key: '矢量漫画对白', text: '输入角色台词，自动排布标准漫画对白气泡框' },
-                { key: '导出长图条漫', text: '按镜头时序一键拼接导出符合发布规范的高清长图' }
+                { key: 'Ctrl + Enter (选中分镜)', text: '批量生成所选分镜；生成图自动落画布' }
               ]
             }
           ];
@@ -2559,6 +2587,148 @@ $owner.Dispose()
         }
 
         // ==========================================
+        // 4.5 画布快捷键速查面板 (CANVAS-M1 1.9, 对标 LibTV 四栏布局)
+        // ==========================================
+        function CanvasShortcutsPanel({ isOpen, onClose }) {
+          const theme = useTheme();
+          React.useEffect(() => {
+            if (!isOpen) return;
+            const onKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
+            window.addEventListener('keydown', onKeyDown);
+            return () => window.removeEventListener('keydown', onKeyDown);
+          }, [isOpen]);
+
+          if (!isOpen) return null;
+
+          const groups = [
+            {
+              title: '选择与编辑',
+              items: [
+                ['空白处拖拽', '框选批量选中'],
+                ['Shift + 点击', '加选 / 减选'],
+                ['Ctrl + A', '全选分镜'],
+                ['Esc', '取消选择'],
+                ['Del / Backspace', '删除所选分镜'],
+                ['Ctrl + Z / Ctrl + Shift + Z', '撤销 / 重做']
+              ]
+            },
+            {
+              title: '节点与连线',
+              items: [
+                ['Tab / 双击空白', '新建节点菜单'],
+                ['Ctrl + L', '连线模式 (点源 → 点目标)'],
+                ['拖动绿色锚点', '拖出连线到目标节点'],
+                ['点击连线 + Del', '选中并删除连线'],
+                ['Ctrl + D', '复制节点和连线'],
+                ['Alt + 拖动节点', '克隆节点 (不带线)'],
+                ['Ctrl + Alt + 拖动节点', '创建副本 (保留对外连线)'],
+                ['Ctrl + Enter', '批量生成所选分镜']
+              ]
+            },
+            {
+              title: '组织',
+              items: [
+                ['Ctrl/Alt + G', '成组所选'],
+                ['Ctrl/Alt + Shift + G', '解组所选'],
+                ['Ctrl + Alt + G', '合并分镜组'],
+                ['Alt + Shift + F', '整理画布 (自动布局 + 适应视图)'],
+                ['Ctrl + F', '节点搜索'],
+                ['拖动组成员', '整组随动']
+              ]
+            },
+            {
+              title: '缩放',
+              items: [
+                ['Ctrl + 滚轮 / 触控板捏合', '定点缩放 (20%~300%)'],
+                ['Ctrl + + / Ctrl + -', '步进放大 / 缩小'],
+                ['Ctrl + 0', '适应画布总览']
+              ]
+            },
+            {
+              title: '移动画布',
+              items: [
+                ['滚轮 / Shift + 滚轮', '纵向 / 横向平移'],
+                ['Space + 拖拽 / 鼠标中键', '自由平移'],
+                ['V', '选择工具'],
+                ['H', '抓手工具 (拖拽平移)']
+              ]
+            },
+            {
+              title: '对齐',
+              items: [
+                ['拖动时自动', '8px 网格磁吸'],
+                ['靠近邻卡边缘', '对齐参考线自动吸附']
+              ]
+            }
+          ];
+
+          return h('div', {
+            onClick: onClose,
+            style: {
+              position: 'fixed',
+              left: 0,
+              top: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.55)',
+              zIndex: 9000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '24px'
+            }
+          }, [
+            h('div', {
+              onClick: (e) => e.stopPropagation(),
+              style: {
+                backgroundColor: theme.bgCard,
+                border: `1px solid ${theme.borderSubtle}`,
+                borderRadius: '14px',
+                boxShadow: '0 24px 60px rgba(0, 0, 0, 0.4)',
+                padding: '22px 26px',
+                maxWidth: '880px',
+                width: '100%',
+                maxHeight: '80vh',
+                overflowY: 'auto'
+              }
+            }, [
+              h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' } }, [
+                h('div', { style: { fontSize: '15px', fontWeight: 700, color: theme.textPrimary } }, '画布快捷键'),
+                h('button', {
+                  type: 'button',
+                  onClick: onClose,
+                  style: { background: 'none', border: 'none', color: theme.textMuted, fontSize: '18px', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }
+                }, '×')
+              ]),
+              h('div', {
+                style: {
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '18px'
+                }
+              }, groups.map(g => h('div', { key: g.title }, [
+                h('div', { style: { fontSize: '12.5px', fontWeight: 700, color: '#06b6d4', marginBottom: '10px' } }, g.title),
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
+                  g.items.map(([k, v]) => h('div', { key: k, style: { display: 'flex', flexDirection: 'column', gap: '2px' } }, [
+                    h('div', {
+                      style: {
+                        fontSize: '11px',
+                        fontFamily: 'monospace',
+                        color: theme.textPrimary,
+                        backgroundColor: theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                        borderRadius: '4px',
+                        padding: '2px 6px',
+                        alignSelf: 'flex-start'
+                      }
+                    }, k),
+                    h('div', { style: { fontSize: '11px', color: theme.textSecondary } }, v)
+                  ])))
+              ])))
+            ])
+          ]);
+        }
+
+        // ==========================================
         // 5. 漫剧 AI 画布全景工作台组件 (CanvasWorkspace)
         // ==========================================
         function CanvasWorkspace({ theme: propTheme, isVip, isSvip, isSuper, onOpenTutorial }) {
@@ -2605,6 +2775,27 @@ $owner.Dispose()
           const isSpacePressedRef = React.useRef(false);
           const [zoomDisplay, setZoomDisplay] = React.useState(Math.round((initialProject.viewport?.zoom || 1) * 100));
 
+          // CANVAS-M1 1.4/1.7: 选择集、工具状态与框选/参考线渲染态
+          const [selectedIds, setSelectedIds] = React.useState(() => new Set());
+          const [activeTool, setActiveTool] = React.useState('select'); // 'select' | 'grab'
+          const [showShortcuts, setShowShortcuts] = React.useState(false);
+          // CANVAS-M4 客户端部分: AI 剧本拆镜
+          const [aiSplitOpen, setAiSplitOpen] = React.useState(false);
+          const [aiSplitText, setAiSplitText] = React.useState('');
+          const [aiSplitCount, setAiSplitCount] = React.useState(6);
+          const [aiSplitBusy, setAiSplitBusy] = React.useState(false);
+          const [marqueeRect, setMarqueeRect] = React.useState(null); // 容器相对坐标 {x0,y0,x1,y1}
+          const [alignGuides, setAlignGuides] = React.useState([]); // [{orientation:'v'|'h', pos}]
+          const isMarqueeRef = React.useRef(false);
+          const marqueeOriginRef = React.useRef(null);
+
+          const clearSelection = () => setSelectedIds(prev => (prev.size ? new Set() : prev));
+          const toggleSelectId = (id) => setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+          });
+
           // 漫剧画布生图模型状态与原图全屏预览灯箱
           const [canvasModel, setCanvasModel] = React.useState(initialProject.activeModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite');
           const [availableImageModels, setAvailableImageModels] = React.useState(WineTokenManifestManager.getImageModels());
@@ -2626,11 +2817,34 @@ $owner.Dispose()
           // 分镜格资产
           const [panels, setPanels] = React.useState(initialProject.panels);
 
+          // CANVAS-M2 2.1: 通用画布节点 (生成图/文本) 与显式连线
+          const [canvasItems, setCanvasItems] = React.useState(initialProject.canvasItems || []);
+          const [edges, setEdges] = React.useState(initialProject.edges || []);
+          // CANVAS-M3 3.1/3.3/3.4: 组、搜索与视口裁剪
+          const [groups, setGroups] = React.useState(initialProject.groups || []);
+          const [searchOpen, setSearchOpen] = React.useState(false);
+          const [searchQuery, setSearchQuery] = React.useState('');
+          const [viewportTick, setViewportTick] = React.useState(0); // 平移结束后触发虚拟化重算
+          const [connectMode, setConnectMode] = React.useState(null); // null | {from: {type,id}|null} — Ctrl+L 连线模式
+          const [connectDrag, setConnectDrag] = React.useState(null); // {from, x, y} — 锚点拖出临时线
+          const [nodeMenu, setNodeMenu] = React.useState(null); // {screenX, screenY, worldX, worldY}
+          const connectDragRef = React.useRef(null);
+          const panelsRef = React.useRef(panels);
+          const canvasItemsRef = React.useRef(canvasItems);
+          React.useEffect(() => { panelsRef.current = panels; }, [panels]);
+          React.useEffect(() => { canvasItemsRef.current = canvasItems; }, [canvasItems]);
+
+          // 撤销/重做统一快照 (含节点、连线与组)
+          const snapshotState = () => ({ characters, panels, canvasItems, edges, groups });
+
           // 状态变更双轨同步写盘与内存保活 (CANVAS-01, CANVAS-02)
           React.useEffect(() => {
             const snapshot = {
               characters,
               panels,
+              canvasItems,
+              edges,
+              groups,
               viewport: viewportRef.current,
               activeModel: canvasModel
             };
@@ -2645,7 +2859,7 @@ $owner.Dispose()
                 localStorage.setItem('__winetoken_canvas_snapshot__', JSON.stringify(snapshot));
               }
             } catch (_) {}
-          }, [characters, panels, canvasModel]);
+          }, [characters, panels, canvasItems, edges, groups, canvasModel]);
 
           // 更新视图 Transform
           const updateTransform = () => {
@@ -2654,66 +2868,30 @@ $owner.Dispose()
             canvasLayerRef.current.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${zoom})`;
           };
 
-          // 键盘空格监听
-          React.useEffect(() => {
-            const onKeyDown = (e) => {
-              if (e.code === 'Space' && !e.repeat && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-                isSpacePressedRef.current = true;
-                if (canvasLayerRef.current) canvasLayerRef.current.style.cursor = 'grab';
-              }
-            };
-            const onKeyUp = (e) => {
-              if (e.code === 'Space') {
-                isSpacePressedRef.current = false;
-                if (canvasLayerRef.current) canvasLayerRef.current.style.cursor = 'default';
-              }
-            };
-            window.addEventListener('keydown', onKeyDown);
-            window.addEventListener('keyup', onKeyUp);
-            return () => {
-              window.removeEventListener('keydown', onKeyDown);
-              window.removeEventListener('keyup', onKeyUp);
-            };
-          }, []);
-
-          // 30 步命令模式撤销/重做堆栈 (CANVAS-04)
+          // 30 步命令模式撤销/重做堆栈 (CANVAS-04, CANVAS-M2/M3 含节点、连线与组)
           const handleUndo = () => {
             if (!canvasHistoryManager || !canvasHistoryManager.canUndo()) return;
-            const prev = canvasHistoryManager.undo({ characters, panels });
+            const prev = canvasHistoryManager.undo(snapshotState());
             if (prev) {
               if (prev.characters) setCharacters(prev.characters);
               if (prev.panels) setPanels(prev.panels);
+              if (prev.canvasItems) setCanvasItems(prev.canvasItems);
+              if (prev.edges) setEdges(prev.edges);
+              if (prev.groups) setGroups(prev.groups);
             }
           };
 
           const handleRedo = () => {
             if (!canvasHistoryManager || !canvasHistoryManager.canRedo()) return;
-            const next = canvasHistoryManager.redo({ characters, panels });
+            const next = canvasHistoryManager.redo(snapshotState());
             if (next) {
               if (next.characters) setCharacters(next.characters);
               if (next.panels) setPanels(next.panels);
+              if (next.canvasItems) setCanvasItems(next.canvasItems);
+              if (next.edges) setEdges(next.edges);
+              if (next.groups) setGroups(next.groups);
             }
           };
-
-          // 全局快捷键监听 (Ctrl+Z / Ctrl+Y)
-          React.useEffect(() => {
-            const handleGlobalKeyDown = (e) => {
-              if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
-              if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-                e.preventDefault();
-                if (e.shiftKey) {
-                  handleRedo();
-                } else {
-                  handleUndo();
-                }
-              } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-                e.preventDefault();
-                handleRedo();
-              }
-            };
-            window.addEventListener('keydown', handleGlobalKeyDown);
-            return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-          }, [panels, characters]);
 
           // 监听 WAL 异步任务队列，跨卸载/跨Tab自动完成水合对账 (CANVAS-02)
           React.useEffect(() => {
@@ -2731,6 +2909,9 @@ $owner.Dispose()
                   }
                   return p;
                 }));
+                // CANVAS-M2 2.2: 生成图作为独立节点落画布并连线到源分镜 (跨Tab水合同样生效)
+                const srcPanel = panelsRef.current.find(p => p.id === job.panelId);
+                if (srcPanel) spawnImageNodeForPanel(srcPanel, job.resultUrl);
               } else if (job.status === 'failed') {
                 setPanels(prev => prev.map(p => p.id === job.panelId ? { ...p, isGenerating: false } : p));
               }
@@ -2738,7 +2919,9 @@ $owner.Dispose()
             return unsub;
           }, []);
 
-          // 滚轮缩放处理 (支持光标定点缩放与阻尼平滑)
+          // 滚轮手势处理 (CANVAS-M1 1.2, 决策 D1 对齐 LibTV):
+          // Ctrl/Cmd+滚轮 = 光标定点缩放 (触控板捏合在 Chromium 中天然携带 ctrlKey)
+          // 普通滚轮 = 纵向平移, Shift+滚轮 = 横向平移, 触控板双指 = deltaX/deltaY 直接平移
           const handleWheel = (e) => {
             e.preventDefault();
             const container = canvasLayerRef.current?.parentElement;
@@ -2746,30 +2929,47 @@ $owner.Dispose()
             const rect = container.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
-
-            let delta = e.deltaY;
-            if (e.deltaMode === 1) delta *= 16;
-            const clampedDelta = Math.max(-80, Math.min(80, delta));
-            const factor = 1 - clampedDelta * 0.0018;
-
             const cur = viewportRef.current;
-            const nextZoom = Math.min(3.0, Math.max(0.2, cur.zoom * factor));
-            const ratio = nextZoom / cur.zoom;
 
-            cur.x = mouseX - (mouseX - cur.x) * ratio;
-            cur.y = mouseY - (mouseY - cur.y) * ratio;
-            cur.zoom = nextZoom;
+            if (e.ctrlKey || e.metaKey) {
+              let delta = e.deltaY;
+              if (e.deltaMode === 1) delta *= 16;
+              const clampedDelta = Math.max(-80, Math.min(80, delta));
+              const factor = 1 - clampedDelta * 0.0018;
+              const nextZoom = Math.min(3.0, Math.max(0.2, cur.zoom * factor));
+              const ratio = nextZoom / cur.zoom;
+              cur.x = mouseX - (mouseX - cur.x) * ratio;
+              cur.y = mouseY - (mouseY - cur.y) * ratio;
+              cur.zoom = nextZoom;
+            } else {
+              let dx = e.deltaX || 0;
+              let dy = e.deltaY;
+              if (e.deltaMode === 1) { dx *= 16; dy *= 16; }
+              if (e.shiftKey && !dx) { dx = dy; dy = 0; }
+              cur.x -= dx;
+              cur.y -= dy;
+            }
 
             requestAnimationFrame(() => {
               updateTransform();
-              setZoomDisplay(Math.round(nextZoom * 100));
+              setZoomDisplay(Math.round(viewportRef.current.zoom * 100));
             });
           };
 
-          // 鼠标按下漫游
+          // React 的 onWheel 在根节点注册为 passive，无法阻止 Ctrl+滚轮触发浏览器整页缩放，
+          // 因此改用原生非 passive 监听挂载在视口容器上 (CANVAS-M1 1.2)
+          React.useEffect(() => {
+            const container = canvasLayerRef.current?.parentElement;
+            if (!container) return;
+            container.addEventListener('wheel', handleWheel, { passive: false });
+            return () => container.removeEventListener('wheel', handleWheel);
+          }, []);
+
+          // 鼠标按下: 中键/空格/抓手 → 漫游; 左键点背景 → 清空选择并开始框选 (CANVAS-M1 1.4)
           const handlePointerDown = (e) => {
-            if (e.button === 1 || (e.button === 0 && isSpacePressedRef.current)) {
+            if (e.button === 1 || (e.button === 0 && (isSpacePressedRef.current || activeTool === 'grab'))) {
               e.preventDefault();
+              // 漫游不清空选择集 (对齐 Figma/LibTV 惯例)，仅框选起点清空
               isDraggingRef.current = true;
               dragStartRef.current = {
                 x: e.clientX,
@@ -2778,10 +2978,35 @@ $owner.Dispose()
                 originY: viewportRef.current.y
               };
               e.currentTarget.setPointerCapture?.(e.pointerId);
+              return;
             }
+            if (e.button !== 0 || activeTool !== 'select') return;
+            const startedOnBackground = e.target === canvasLayerRef.current || e.target === e.currentTarget;
+            if (!startedOnBackground) {
+              // 点在卡片内 (画面区/控件区): 交由卡片自身的选中逻辑处理
+              return;
+            }
+            e.preventDefault();
+            clearSelection();
+            const rect = e.currentTarget.getBoundingClientRect();
+            const sx = e.clientX - rect.left;
+            const sy = e.clientY - rect.top;
+            isMarqueeRef.current = true;
+            marqueeOriginRef.current = { x: sx, y: sy };
+            setMarqueeRect({ x0: sx, y0: sy, x1: sx, y1: sy });
+            e.currentTarget.setPointerCapture?.(e.pointerId);
           };
 
           const handlePointerMove = (e) => {
+            if (isMarqueeRef.current) {
+              const rect = canvasLayerRef.current?.parentElement;
+              if (!rect) return;
+              const box = rect.getBoundingClientRect();
+              const sx = e.clientX - box.left;
+              const sy = e.clientY - box.top;
+              setMarqueeRect(prev => prev ? { ...prev, x1: sx, y1: sy } : prev);
+              return;
+            }
             if (!isDraggingRef.current) return;
             const dx = e.clientX - dragStartRef.current.x;
             const dy = e.clientY - dragStartRef.current.y;
@@ -2791,9 +3016,43 @@ $owner.Dispose()
           };
 
           const handlePointerUp = (e) => {
+            if (isMarqueeRef.current) {
+              isMarqueeRef.current = false;
+              e.currentTarget.releasePointerCapture?.(e.pointerId);
+              const origin = marqueeOriginRef.current;
+              const rect = canvasLayerRef.current?.parentElement;
+              if (origin && rect && marqueeRect) {
+                const box = rect.getBoundingClientRect();
+                const x1 = e.clientX - box.left;
+                const y1 = e.clientY - box.top;
+                const zoom = viewportRef.current.zoom || 1;
+                const wx0 = (Math.min(origin.x, x1) - viewportRef.current.x) / zoom;
+                const wy0 = (Math.min(origin.y, y1) - viewportRef.current.y) / zoom;
+                const wx1 = (Math.max(origin.x, x1) - viewportRef.current.x) / zoom;
+                const wy1 = (Math.max(origin.y, y1) - viewportRef.current.y) / zoom;
+                // 微小拖拽视同误触，不产生选择
+                if (wx1 - wx0 > 4 && wy1 - wy0 > 4) {
+                  const hits = new Set(
+                    panels
+                      .filter(p => {
+                        const pw = p.width || 280;
+                        const ph = p.height || 420;
+                        return p.x < wx1 && (p.x + pw) > wx0 && p.y < wy1 && (p.y + ph) > wy0;
+                      })
+                      .map(p => p.id)
+                  );
+                  setSelectedIds(hits);
+                }
+              }
+              setMarqueeRect(null);
+              marqueeOriginRef.current = null;
+              return;
+            }
             if (isDraggingRef.current) {
               isDraggingRef.current = false;
               e.currentTarget.releasePointerCapture?.(e.pointerId);
+              // 平移结束触发视口虚拟化重算 (CANVAS-M3 3.4)
+              setViewportTick(t => t + 1);
             }
           };
 
@@ -2804,6 +3063,37 @@ $owner.Dispose()
             setZoomDisplay(100);
           };
 
+          // 适应画布 (Ctrl+0, CANVAS-M1 1.3): 计算全部内容 AABB 后缩放视口至刚好容纳 (80px 内边距)
+          const handleFitToContent = () => {
+            const container = canvasLayerRef.current?.parentElement;
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+
+            // 角色资产库锚点卡为固定左列 (left:40, top:60, 宽 220, 行距 246, 高约 230)，与渲染层布局常量保持一致
+            const boxes = characters.map((c, i) => ({ x: 40, y: 60 + i * 246, w: 220, h: 230 }));
+            panels.forEach(p => boxes.push({ x: p.x, y: p.y, w: p.width || 280, h: p.height || 420 }));
+            if (!boxes.length) {
+              handleResetView();
+              return;
+            }
+
+            const pad = 80;
+            const minX = Math.min(...boxes.map(b => b.x)) - pad;
+            const minY = Math.min(...boxes.map(b => b.y)) - pad;
+            const contentW = Math.max(...boxes.map(b => b.x + b.w)) + pad - minX;
+            const contentH = Math.max(...boxes.map(b => b.y + b.h)) + pad - minY;
+
+            const nextZoom = Math.min(3.0, Math.max(0.2, Math.min(rect.width / contentW, rect.height / contentH)));
+            viewportRef.current = {
+              x: (rect.width - contentW * nextZoom) / 2 - minX * nextZoom,
+              y: (rect.height - contentH * nextZoom) / 2 - minY * nextZoom,
+              zoom: nextZoom
+            };
+            updateTransform();
+            setZoomDisplay(Math.round(nextZoom * 100));
+          };
+
           const handleZoomStep = (inOut) => {
             const cur = viewportRef.current;
             const factor = inOut ? 1.2 : 0.833;
@@ -2811,6 +3101,658 @@ $owner.Dispose()
             cur.zoom = nextZoom;
             updateTransform();
             setZoomDisplay(Math.round(nextZoom * 100));
+          };
+
+          // 统一快捷键管理器 (CANVAS-M1 1.1): 画布全部键盘快捷键在此单一注册；
+          // 输入控件聚焦时统一失效 (决策 D4)，后续 V/H/Del/框选等按键只需在此追加分支
+          const isEditableTarget = (target) => {
+            if (!target) return false;
+            const tag = (target.tagName || '').toUpperCase();
+            return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(target.isContentEditable);
+          };
+
+          // 依赖 panels/characters/selectedIds/activeTool 以刷新闭包 (撤销栈与选择集操作)
+          React.useEffect(() => {
+            const handleCanvasShortcut = (e) => {
+              if (isEditableTarget(e.target)) return;
+              if (e.code === 'Space' && !e.repeat) {
+                isSpacePressedRef.current = true;
+                if (canvasLayerRef.current) canvasLayerRef.current.style.cursor = 'grab';
+                return;
+              }
+              // 无修饰键: 工具切换、选择集操作与节点创建 (CANVAS-M1 1.4/1.7, CANVAS-M2 2.5)
+              if (!(e.ctrlKey || e.metaKey)) {
+                const k = e.key.toLowerCase();
+                // Alt 组合: 成组/解组 (LibTV Ctrl/Alt+G 双绑定) 与整理画布 Alt+Shift+F (CANVAS-M3 3.1/3.2)
+                if (e.altKey) {
+                  if (k === 'g') {
+                    e.preventDefault();
+                    if (e.shiftKey) ungroupSelection(); else groupSelection();
+                  } else if (k === 'f') {
+                    e.preventDefault();
+                    tidyCanvas();
+                  }
+                  return;
+                }
+                if (k === 'v') {
+                  setActiveTool('select');
+                } else if (k === 'h') {
+                  setActiveTool('grab');
+                } else if (e.key === 'Escape') {
+                  setConnectMode(null);
+                  setNodeMenu(null);
+                  setSearchOpen(false);
+                  setSelectedIds(new Set());
+                } else if (e.key === 'Tab') {
+                  e.preventDefault();
+                  const rect = canvasLayerRef.current?.parentElement?.getBoundingClientRect();
+                  if (!rect) return;
+                  const zoom = viewportRef.current.zoom || 1;
+                  setNodeMenu({
+                    screenX: rect.width / 2,
+                    screenY: rect.height / 2,
+                    worldX: (rect.width / 2 - viewportRef.current.x) / zoom,
+                    worldY: (rect.height / 2 - viewportRef.current.y) / zoom
+                  });
+                } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                  if (!selectedIds.size) return;
+                  e.preventDefault();
+                  if (typeof confirm !== 'undefined' && !confirm('确定要删除选中的内容吗？关联连线将一并移除，此操作可按 Ctrl+Z 撤销。')) return;
+                  if (canvasHistoryManager) {
+                    canvasHistoryManager.pushState(snapshotState());
+                  }
+                  setPanels(prev => prev.filter(x => !selectedIds.has(x.id)));
+                  setCanvasItems(prev => prev.filter(x => !selectedIds.has(x.id)));
+                  setEdges(prev => prev.filter(x => !selectedIds.has(x.id) && !selectedIds.has(x.from.id) && !selectedIds.has(x.to.id)));
+                  setSelectedIds(new Set());
+                }
+                return;
+              }
+              // 修饰键组合 (LibTV 对标快捷键)
+              const key = e.key.toLowerCase();
+              if (key === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) handleRedo(); else handleUndo();
+              } else if (key === 'y') {
+                e.preventDefault();
+                handleRedo();
+              } else if (key === 'a') {
+                e.preventDefault();
+                setSelectedIds(new Set([...panels.map(p => p.id), ...canvasItems.map(it => it.id)]));
+              } else if (key === 'l') {
+                e.preventDefault();
+                setConnectMode(prev => prev ? null : { from: null });
+              } else if (key === 'd') {
+                e.preventDefault();
+                duplicateSelection();
+              } else if (key === 'g') {
+                // CANVAS-M3 3.1: Ctrl+G 成组 / Ctrl+Shift+G 解组 / Ctrl+Alt+G 合并分镜组
+                e.preventDefault();
+                if (e.altKey) mergeSelectedGroups();
+                else if (e.shiftKey) ungroupSelection();
+                else groupSelection();
+              } else if (key === 'f') {
+                // CANVAS-M3 3.2/3.3: Ctrl+F 节点搜索 / Ctrl+Shift+F 整理画布
+                e.preventDefault();
+                if (e.shiftKey) tidyCanvas(); else setSearchOpen(true);
+              } else if (key === 'enter') {
+                e.preventDefault();
+                // CANVAS-M2 2.7: 批量生成所选分镜 (受控间隔入队，防并发击穿)
+                const targetIds = panels.filter(p => selectedIds.has(p.id)).map(p => p.id);
+                if (!targetIds.length) return;
+                targetIds.forEach((id, i) => setTimeout(() => handleGeneratePanel(id), i * 350));
+              } else if (key === '=' || key === '+') {
+                e.preventDefault();
+                handleZoomStep(true);
+              } else if (key === '-') {
+                e.preventDefault();
+                handleZoomStep(false);
+              } else if (key === '0') {
+                e.preventDefault();
+                handleFitToContent();
+              }
+            };
+            const handleCanvasShortcutKeyUp = (e) => {
+              if (e.code === 'Space') {
+                isSpacePressedRef.current = false;
+                if (canvasLayerRef.current) canvasLayerRef.current.style.cursor = activeTool === 'grab' ? 'grab' : 'default';
+              }
+            };
+            window.addEventListener('keydown', handleCanvasShortcut);
+            window.addEventListener('keyup', handleCanvasShortcutKeyUp);
+            return () => {
+              window.removeEventListener('keydown', handleCanvasShortcut);
+              window.removeEventListener('keyup', handleCanvasShortcutKeyUp);
+            };
+          }, [panels, characters, canvasItems, edges, groups, selectedIds, activeTool]);
+
+          // ==========================================
+          // CANVAS-M2 核心辅助: 生成图落画布 / 连线 / 通用拖拽 / 复制三件套 / 新建节点
+          // ==========================================
+
+          // 2.2 生成图节点落地: 以源分镜右侧为锚, 同分镜多候选纵向错位, 按 URL 去重
+          const spawnImageNodeForPanel = (srcPanel, url) => {
+            if (!srcPanel || !url) return;
+            if (canvasItemsRef.current.some(it => it.type === 'image' && it.data && it.data.url === url)) return;
+            const countForPanel = canvasItemsRef.current.filter(it => it.sourcePanelId === srcPanel.id).length;
+            const stamp = Date.now();
+            const itemId = `item_${stamp}_${Math.floor(Math.random() * 1e4)}`;
+            const newItem = {
+              id: itemId,
+              type: 'image',
+              x: CanvasMathUtils ? CanvasMathUtils.snapToGrid((srcPanel.x || 0) + (srcPanel.width || 280) + 24, 8) : (srcPanel.x || 0) + (srcPanel.width || 280) + 24,
+              y: CanvasMathUtils ? CanvasMathUtils.snapToGrid((srcPanel.y || 0) + countForPanel * 32, 8) : (srcPanel.y || 0) + countForPanel * 32,
+              width: 240,
+              height: 320,
+              data: { url, prompt: srcPanel.prompt || '' },
+              sourcePanelId: srcPanel.id,
+              createdAt: stamp
+            };
+            const newEdge = {
+              id: `edge_${stamp}_${Math.floor(Math.random() * 1e4)}`,
+              from: { type: 'panel', id: srcPanel.id },
+              to: { type: 'item', id: itemId }
+            };
+            setCanvasItems(prev => [...prev, newItem]);
+            setEdges(prev => [...prev, newEdge]);
+          };
+
+          // 2.4 建边 (去重 + 撤销快照)
+          const createEdge = (from, to) => {
+            if (!from || !to || from.id === to.id) return;
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            setEdges(prev => prev.some(x => x.from.id === from.id && x.to.id === to.id)
+              ? prev
+              : [...prev, { id: `edge_${Date.now()}_${Math.floor(Math.random() * 1e4)}`, from, to }]);
+          };
+
+          // 2.4 Ctrl+L 连线模式: 两次点击 (源 → 目标)
+          const handleConnectNodeClick = (type, id) => {
+            if (!connectMode) return;
+            if (!connectMode.from) {
+              setConnectMode({ from: { type, id } });
+              return;
+            }
+            if (connectMode.from.id === id) {
+              setConnectMode({ from: null });
+              return;
+            }
+            createEdge(connectMode.from, { type, id });
+            setConnectMode({ from: null });
+          };
+
+          // 2.4 锚点拖出连线: 指针释放时以 elementFromPoint 命中 data-node-id 目标
+          const beginConnectDrag = (e, type, id) => {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            e.preventDefault();
+            const worldOf = (clientX, clientY) => {
+              const rect = canvasLayerRef.current?.parentElement?.getBoundingClientRect();
+              if (!rect) return { x: 0, y: 0 };
+              const zoom = viewportRef.current.zoom || 1;
+              return {
+                x: (clientX - rect.left - viewportRef.current.x) / zoom,
+                y: (clientY - rect.top - viewportRef.current.y) / zoom
+              };
+            };
+            const start = worldOf(e.clientX, e.clientY);
+            const cd = { from: { type, id }, x: start.x, y: start.y };
+            connectDragRef.current = cd;
+            setConnectDrag(cd);
+            const move = (ev) => {
+              const p = worldOf(ev.clientX, ev.clientY);
+              const next = { ...(connectDragRef.current || cd), x: p.x, y: p.y };
+              connectDragRef.current = next;
+              setConnectDrag(next);
+            };
+            const up = (ev) => {
+              window.removeEventListener('pointermove', move);
+              window.removeEventListener('pointerup', up);
+              const cur = connectDragRef.current;
+              connectDragRef.current = null;
+              setConnectDrag(null);
+              if (!cur) return;
+              const el = document.elementFromPoint(ev.clientX, ev.clientY);
+              const holder = el && el.closest ? el.closest('[data-node-id]') : null;
+              const targetId = holder ? holder.getAttribute('data-node-id') : null;
+              if (targetId && targetId !== id) {
+                const targetType = holder.getAttribute('data-node-type') === 'panel' ? 'panel' : 'item';
+                createEdge({ type, id }, { type: targetType, id: targetId });
+              }
+            };
+            window.addEventListener('pointermove', move);
+            window.addEventListener('pointerup', up);
+          };
+
+          // 2.6 克隆器: Alt+拖动=克隆(不带线); Ctrl+Alt+拖动=克隆并保留对外连线 (决策 D3 语义待 LibTV 视频核实)
+          const cloneCanvasObject = (kind, obj, withEdges) => {
+            const stamp = Date.now();
+            const rand = Math.floor(Math.random() * 1e4);
+            if (kind === 'panel') {
+              const data = {
+                ...obj,
+                id: `shot_${stamp}_${rand}`,
+                num: panels.reduce((m, p) => Math.max(m, p.num || 0), 0) + 1,
+                x: obj.x + 24,
+                y: obj.y + 24,
+                isGenerating: false,
+                stagingCandidateUrl: null
+              };
+              const newEdges = withEdges
+                ? edges
+                    .filter(ed => (ed.from.id === obj.id) !== (ed.to.id === obj.id))
+                    .map(ed => ({
+                      ...ed,
+                      id: `edge_${stamp}_${rand}_${Math.floor(Math.random() * 1e4)}`,
+                      from: ed.from.id === obj.id ? { ...ed.from, id: data.id } : ed.from,
+                      to: ed.to.id === obj.id ? { ...ed.to, id: data.id } : ed.to
+                    }))
+                : [];
+              return { kind: 'panel', data, edges: newEdges };
+            }
+            const data = { ...obj, id: `item_${stamp}_${rand}`, x: obj.x + 24, y: obj.y + 24 };
+            return { kind: 'item', data, edges: [] };
+          };
+
+          // 2.3/2.6 通用画布对象拖拽启动器: 分镜卡与通用节点共用 (多选整体移动 + Alt 克隆 + 连线模式接管)
+          const beginObjectDrag = (e, kind, obj) => {
+            // 仅左键进入拖拽; 中键/右键放行给容器 (中键漫游 / 右键菜单)
+            if (e.button !== 0) return;
+            if (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'OPTION' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            e.stopPropagation();
+            if (connectMode) {
+              handleConnectNodeClick(kind === 'panel' ? 'panel' : 'item', obj.id);
+              return;
+            }
+            if (e.shiftKey) {
+              toggleSelectId(obj.id);
+              return;
+            }
+            let dragObj = obj;
+            if (e.altKey && e.button === 0) {
+              const clone = cloneCanvasObject(kind, dragObj, e.ctrlKey || e.metaKey);
+              if (!clone) return;
+              if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+              if (clone.kind === 'panel') setPanels(prev => [...prev, clone.data]);
+              else setCanvasItems(prev => [...prev, clone.data]);
+              if (clone.edges.length) setEdges(prev => [...prev, ...clone.edges]);
+              setSelectedIds(new Set([clone.data.id]));
+              dragObj = clone.data;
+            }
+            const dragIds = (selectedIds.has(dragObj.id) && selectedIds.size > 1)
+              ? Array.from(selectedIds)
+              : [dragObj.id];
+            if (!selectedIds.has(dragObj.id) || selectedIds.size !== 1) {
+              setSelectedIds(new Set([dragObj.id]));
+            }
+            // CANVAS-M3 3.1: 拖动组成员时整组随动 (Figma 惯例)
+            const preSet = new Set(dragIds);
+            groups.forEach(g => {
+              const ids = g.memberIds || [];
+              if (ids.some(id => preSet.has(id))) {
+                ids.forEach(id => {
+                  if (!preSet.has(id)) {
+                    preSet.add(id);
+                    dragIds.push(id);
+                  }
+                });
+              }
+            });
+            const dragIdSet = new Set(dragIds);
+            const originals = [];
+            for (const id of dragIds) {
+              const ps = panels.find(x => x.id === id);
+              if (ps) {
+                originals.push({ kind: 'panel', id, x: ps.x, y: ps.y, w: ps.width || 280, h: ps.height || 420 });
+                continue;
+              }
+              const it = canvasItems.find(x => x.id === id);
+              if (it) originals.push({ kind: 'item', id, x: it.x, y: it.y, w: it.width || 240, h: it.height || 320 });
+            }
+            const startX = e.clientX;
+            const startY = e.clientY;
+            let hasMoved = false;
+
+            const handleDragMove = (moveEvt) => {
+              const zoom = viewportRef.current.zoom || 1;
+              const dx = (moveEvt.clientX - startX) / zoom;
+              const dy = (moveEvt.clientY - startY) / zoom;
+              if (!hasMoved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+                hasMoved = true;
+                if (canvasHistoryManager) {
+                  canvasHistoryManager.pushState(snapshotState());
+                }
+              }
+              if (hasMoved && originals.length) {
+                const primary = originals[0];
+                const rawX = primary.x + dx;
+                const rawY = primary.y + dy;
+                const snappedX = CanvasMathUtils ? CanvasMathUtils.snapToGrid(rawX, 8) : Math.round(rawX);
+                const snappedY = CanvasMathUtils ? CanvasMathUtils.snapToGrid(rawY, 8) : Math.round(rawY);
+                const others = [];
+                panels.forEach(x => { if (!dragIdSet.has(x.id)) others.push({ x: x.x, y: x.y, w: x.width || 280, h: x.height || 420 }); });
+                canvasItems.forEach(x => { if (!dragIdSet.has(x.id)) others.push({ x: x.x, y: x.y, w: x.width || 240, h: x.height || 320 }); });
+                const guided = (CanvasMathUtils && CanvasMathUtils.computeAlignGuides)
+                  ? CanvasMathUtils.computeAlignGuides({ x: snappedX, y: snappedY, w: primary.w, h: primary.h }, others, 6)
+                  : { dx: 0, dy: 0, guides: [] };
+                const fixX = snappedX + guided.dx - rawX;
+                const fixY = snappedY + guided.dy - rawY;
+                setAlignGuides(guided.guides || []);
+                setPanels(prev => prev.map(item => {
+                  const o = originals.find(t => t.kind === 'panel' && t.id === item.id);
+                  return o ? { ...item, x: o.x + dx + fixX, y: o.y + dy + fixY } : item;
+                }));
+                setCanvasItems(prev => prev.map(item => {
+                  const o = originals.find(t => t.kind === 'item' && t.id === item.id);
+                  return o ? { ...item, x: o.x + dx + fixX, y: o.y + dy + fixY } : item;
+                }));
+              }
+            };
+
+            const handleDragUp = () => {
+              window.removeEventListener('pointermove', handleDragMove);
+              window.removeEventListener('pointerup', handleDragUp);
+              setAlignGuides([]);
+            };
+
+            window.addEventListener('pointermove', handleDragMove);
+            window.addEventListener('pointerup', handleDragUp);
+          };
+
+          // 2.6 Ctrl+D 复制所选节点和连线 (内部连线随副本复制, 对外连线不复制)
+          const duplicateSelection = () => {
+            if (!selectedIds.size) return;
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            const stamp = Date.now();
+            const rand = () => Math.floor(Math.random() * 1e4);
+            const idMap = new Map();
+            const newPanels = [];
+            const newItems = [];
+            panels.forEach(p => {
+              if (!selectedIds.has(p.id)) return;
+              const nid = `shot_${stamp}_${rand()}`;
+              idMap.set(p.id, nid);
+              newPanels.push({ ...p, id: nid, num: 0, x: p.x + 24, y: p.y + 24, isGenerating: false, stagingCandidateUrl: null });
+            });
+            let baseNum = panels.reduce((m, p) => Math.max(m, p.num || 0), 0);
+            newPanels.forEach(np => { baseNum += 1; np.num = baseNum; });
+            canvasItems.forEach(it => {
+              if (!selectedIds.has(it.id)) return;
+              const nid = `item_${stamp}_${rand()}`;
+              idMap.set(it.id, nid);
+              newItems.push({ ...it, id: nid, x: it.x + 24, y: it.y + 24 });
+            });
+            if (!newPanels.length && !newItems.length) return;
+            const newEdges = edges
+              .filter(ed => idMap.has(ed.from.id) && idMap.has(ed.to.id))
+              .map(ed => ({ ...ed, id: `edge_${stamp}_${rand()}`, from: { ...ed.from, id: idMap.get(ed.from.id) }, to: { ...ed.to, id: idMap.get(ed.to.id) } }));
+            if (newPanels.length) setPanels(prev => [...prev, ...newPanels]);
+            if (newItems.length) setCanvasItems(prev => [...prev, ...newItems]);
+            if (newEdges.length) setEdges(prev => [...prev, ...newEdges]);
+            setSelectedIds(new Set(idMap.values()));
+          };
+
+          // ==========================================
+          // CANVAS-M3 组织力: 成组 / 解组 / 合并分镜组 / 整理画布 / 节点搜索
+          // ==========================================
+
+          // 3.1 成组所选 (分镜卡与通用节点通用)
+          const groupSelection = () => {
+            const members = [...panels.map(p => p.id), ...canvasItems.map(it => it.id)].filter(id => selectedIds.has(id));
+            if (!members.length) return;
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            setGroups(prev => [...prev, {
+              id: `grp_${Date.now()}_${Math.floor(Math.random() * 1e4)}`,
+              name: `组 ${prev.length + 1}`,
+              memberIds: members,
+              createdAt: Date.now()
+            }]);
+          };
+
+          // 3.1 解组: 所选成员从所属组移除, 空组自动清除
+          const ungroupSelection = () => {
+            if (!selectedIds.size) return;
+            const affected = groups.filter(g => (g.memberIds || []).some(id => selectedIds.has(id)));
+            if (!affected.length) return;
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            setGroups(prev => prev
+              .map(g => ({ ...g, memberIds: (g.memberIds || []).filter(id => !selectedIds.has(id)) }))
+              .filter(g => (g.memberIds || []).length > 0));
+          };
+
+          // 3.1 合并分镜组: 所有含所选成员的组并入第一个组 (Ctrl+Alt+G)
+          const mergeSelectedGroups = () => {
+            const affected = groups.filter(g => (g.memberIds || []).some(id => selectedIds.has(id)));
+            if (affected.length < 2) return;
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            const mergedIds = [];
+            affected.forEach(g => (g.memberIds || []).forEach(id => {
+              if (!mergedIds.includes(id)) mergedIds.push(id);
+            }));
+            const keepId = affected[0].id;
+            const removeIds = affected.slice(1).map(a => a.id);
+            setGroups(prev => prev
+              .map(g => g.id === keepId ? { ...g, memberIds: mergedIds } : g)
+              .filter(g => !removeIds.includes(g.id)));
+          };
+
+          // 3.2 整理画布 (Alt+Shift+F / Ctrl+Shift+F): 自动布局 + 适应画布
+          const tidyCanvas = () => {
+            if (!CanvasMathUtils || !CanvasMathUtils.layoutCanvas) return;
+            const { panelMoves, itemMoves } = CanvasMathUtils.layoutCanvas(panels, canvasItems, groups);
+            if (!panelMoves.length && !itemMoves.length) return;
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            const pm = new Map(panelMoves.map(m => [m.id, m]));
+            const im = new Map(itemMoves.map(m => [m.id, m]));
+            setPanels(prev => prev.map(p => pm.has(p.id) ? { ...p, x: pm.get(p.id).x, y: pm.get(p.id).y } : p));
+            setCanvasItems(prev => prev.map(it => im.has(it.id) ? { ...it, x: im.get(it.id).x, y: im.get(it.id).y } : it));
+            setTimeout(() => handleFitToContent(), 60);
+          };
+
+          // 3.3 将节点居中到视口中央
+          const centerViewportOn = (box) => {
+            const rect = canvasLayerRef.current?.parentElement?.getBoundingClientRect();
+            if (!rect || !box) return;
+            const zoom = viewportRef.current.zoom || 1;
+            viewportRef.current.x = rect.width / 2 - (box.x + (box.width || 280) / 2) * zoom;
+            viewportRef.current.y = rect.height / 2 - (box.y + (box.height || 420) / 2) * zoom;
+            updateTransform();
+            setViewportTick(t => t + 1);
+          };
+
+          // 3.3 搜索结果应用: 选中 + 定位居中 (组结果选中全体成员)
+          const applySearchResult = (r) => {
+            setSearchOpen(false);
+            if (!r) return;
+            if (r.kind === 'group') {
+              const g = groups.find(x => x.id === r.id);
+              if (!g) return;
+              const ids = (g.memberIds || []).filter(id => panels.some(p => p.id === id) || canvasItems.some(it => it.id === id));
+              setSelectedIds(new Set(ids));
+              return;
+            }
+            setSelectedIds(new Set([r.id]));
+            if (r.box) centerViewportOn(r.box);
+          };
+
+          // 3.3 搜索结果集 (镜号/景别/提示词/台词/角色名/节点文本/组名)
+          const searchResults = React.useMemo(() => {
+            const q = searchQuery.trim().toLowerCase();
+            if (!searchOpen || !q) return [];
+            const out = [];
+            panels.forEach(p => {
+              const char = characters.find(c => c.id === p.characterId);
+              const hay = [`#${p.num}`, p.shotLabel || '', p.prompt || '', p.dialogue || '', char ? char.name : ''].join(' ').toLowerCase();
+              if (hay.includes(q)) {
+                out.push({
+                  kind: 'panel',
+                  id: p.id,
+                  label: `分镜 #${p.num} · ${p.shotLabel || ''}${char ? ` · ${char.name}` : ''}`,
+                  snippet: (p.prompt || '').slice(0, 48),
+                  box: { x: p.x, y: p.y, width: p.width || 280, height: p.height || 420 }
+                });
+              }
+            });
+            canvasItems.forEach(it => {
+              const hay = [it.data && it.data.prompt, it.data && it.data.text].filter(Boolean).join(' ').toLowerCase();
+              if (hay.includes(q)) {
+                out.push({
+                  kind: it.type || 'item',
+                  id: it.id,
+                  label: it.type === 'image' ? '图片节点' : '文本便签',
+                  snippet: ((it.data && (it.data.prompt || it.data.text)) || '').slice(0, 48),
+                  box: { x: it.x, y: it.y, width: it.width || 240, height: it.height || 320 }
+                });
+              }
+            });
+            groups.forEach(g => {
+              if ((g.name || '').toLowerCase().includes(q)) {
+                out.push({ kind: 'group', id: g.id, label: `分镜组 · ${g.name || '未命名'}`, snippet: `${(g.memberIds || []).length} 个成员`, box: null });
+              }
+            });
+            return out.slice(0, 8);
+          }, [searchOpen, searchQuery, panels, canvasItems, groups, characters]);
+
+          // ==========================================
+          // CANVAS-M4 客户端部分: AI 剧本拆镜自动铺图
+          // (对标 LibTV 脚本生成器: 粘贴剧本 → 对话模型结构化拆解 → 分镜卡阵列自动落画布)
+          // ==========================================
+
+          const runAiSplit = async () => {
+            if (aiSplitBusy) return;
+            const script = aiSplitText.trim();
+            if (!script) {
+              alert('请先粘贴剧本文本');
+              return;
+            }
+            const apiKey = getKey();
+            if (!apiKey) {
+              alert('未检测到 API Key，请先点击顶栏钥匙图标输入');
+              return;
+            }
+            const chatModels = (WineTokenManifestManager.getChatModels ? WineTokenManifestManager.getChatModels() : []) || [];
+            const usable = chatModels.filter(m => m && m.id && m.enabled !== false);
+            const chosen = (usable[0] || {}).id || 'deepseek-v4.1-flash';
+            const count = Math.max(2, Math.min(12, Number(aiSplitCount) || 6));
+            setAiSplitBusy(true);
+            try {
+              const systemPrompt = '你是资深漫剧分镜师。把用户给出的剧本文本拆解为指定数量的分镜。只输出 JSON 数组，禁止输出任何解释文字。数组每个元素形如 {"shot":"CU|MS|WS|FS","shotLabel":"特写|中景|远景|全景","prompt":"画面提示词，包含角色外貌DNA、构图与光影","dialogue":"该镜台词，没有则为空字符串"}。';
+              const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                  model: chosen,
+                  messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: `拆解为 ${count} 个分镜：\n\n${script}` }
+                  ],
+                  temperature: 0.7
+                })
+              });
+              if (!res.ok) {
+                const errJson = await res.json().catch(() => ({}));
+                throw new Error(errJson.error?.message || `HTTP ${res.status}`);
+              }
+              const data = await res.json();
+              const content = data.choices?.[0]?.message?.content || '';
+              const shots = CanvasMathUtils && CanvasMathUtils.parseStoryboardJSON
+                ? CanvasMathUtils.parseStoryboardJSON(content)
+                : [];
+              if (!shots.length) throw new Error('模型未返回可解析的分镜 JSON，请重试或更换对话模型');
+
+              if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+              // 起排位置: 现有内容下方空带，从角色列右侧 360px 起
+              let maxY = 60;
+              panels.forEach(p => { maxY = Math.max(maxY, (p.y || 0) + (p.height || 420)); });
+              canvasItems.forEach(it => { maxY = Math.max(maxY, (it.y || 0) + (it.height || 320)); });
+              const baseNum = panels.reduce((m, p) => Math.max(m, p.num || 0), 0);
+              const startY = CanvasMathUtils ? CanvasMathUtils.snapToGrid(maxY + 40, 8) : maxY + 40;
+              const newPanels = shots.map((s, i) => ({
+                id: `shot_${Date.now()}_${i}`,
+                num: baseNum + i + 1,
+                x: CanvasMathUtils ? CanvasMathUtils.snapToGrid(360 + i * (280 + 40), 8) : 360 + i * 320,
+                y: startY,
+                width: 280,
+                height: 420,
+                aspectRatio: '2:3',
+                shot: s.shot,
+                shotLabel: s.shotLabel,
+                prompt: s.prompt,
+                dialogue: s.dialogue,
+                characterId: characters[0]?.id || '',
+                imageUrl: '',
+                isGenerating: false,
+                stagingCandidateUrl: null
+              }));
+              setPanels(prev => [...prev, ...newPanels]);
+              setSelectedIds(new Set(newPanels.map(p => p.id)));
+              setAiSplitOpen(false);
+              setAiSplitText('');
+              setTimeout(() => handleFitToContent(), 60);
+            } catch (err) {
+              alert(`AI 拆镜失败: ${err.message}`);
+            } finally {
+              setAiSplitBusy(false);
+            }
+          };
+
+          // 2.5 新建节点菜单分发 (Tab / 双击空白)
+          const createNodeFromMenu = (type) => {
+            if (!nodeMenu) return;
+            const { worldX, worldY } = nodeMenu;
+            setNodeMenu(null);
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            const snap = (v) => (CanvasMathUtils ? CanvasMathUtils.snapToGrid(v, 8) : Math.round(v));
+            if (type === 'panel') {
+              const nextNum = panels.reduce((m, p) => Math.max(m, p.num || 0), 0) + 1;
+              const newP = {
+                id: `shot_${Date.now()}`,
+                num: nextNum,
+                x: snap(worldX),
+                y: snap(worldY),
+                width: 280,
+                height: 420,
+                aspectRatio: '2:3',
+                shot: 'CU',
+                shotLabel: '特写',
+                prompt: `镜头 #${nextNum}，人物画面，专业漫剧光影，构图严谨`,
+                dialogue: '',
+                characterId: characters[0]?.id || '',
+                imageUrl: '',
+                isGenerating: false,
+                stagingCandidateUrl: null
+              };
+              setPanels(prev => [...prev, newP]);
+              setSelectedIds(new Set([newP.id]));
+            } else if (type === 'character') {
+              handleAddCharacter();
+            } else if (type === 'image') {
+              const it = { id: `item_${Date.now()}`, type: 'image', x: snap(worldX), y: snap(worldY), width: 240, height: 320, data: { url: '', prompt: '' }, sourcePanelId: null, createdAt: Date.now() };
+              setCanvasItems(prev => [...prev, it]);
+              setSelectedIds(new Set([it.id]));
+            } else if (type === 'text') {
+              const it = { id: `item_${Date.now()}`, type: 'text', x: snap(worldX), y: snap(worldY), width: 220, height: 140, data: { text: '' }, sourcePanelId: null, createdAt: Date.now() };
+              setCanvasItems(prev => [...prev, it]);
+              setSelectedIds(new Set([it.id]));
+            }
+          };
+
+          // 2.5 双击空白处新建节点 (LibTV 惯例)
+          const handleCanvasDoubleClick = (e) => {
+            if (activeTool !== 'select' || connectMode) return;
+            const startedOnBackground = e.target === canvasLayerRef.current || e.target === e.currentTarget;
+            if (!startedOnBackground) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const zoom = viewportRef.current.zoom || 1;
+            setNodeMenu({
+              screenX: e.clientX - rect.left,
+              screenY: e.clientY - rect.top,
+              worldX: (e.clientX - rect.left - viewportRef.current.x) / zoom,
+              worldY: (e.clientY - rect.top - viewportRef.current.y) / zoom
+            });
           };
 
           // 添加新角色锚点卡
@@ -3004,6 +3946,9 @@ $owner.Dispose()
                 stagingCandidateUrl: url
               } : p));
 
+              // CANVAS-M2 2.2: 生成图作为独立节点落画布并连线到源分镜
+              spawnImageNodeForPanel(target, url);
+
               updateBilling();
             } catch (err) {
               alert(`分镜 #${target.num} 生成失败: ${err.message}`);
@@ -3123,6 +4068,15 @@ $owner.Dispose()
             }
           };
 
+          // CANVAS-M3 3.4: 视口虚拟化裁剪盒 (世界坐标, 含 200px 边缘缓冲; 滚轮缩放与平移结束均触发重算)
+          const zoomNow = viewportRef.current.zoom || 1;
+          const viewWorldBox = {
+            x: -viewportRef.current.x / zoomNow - 200,
+            y: -viewportRef.current.y / zoomNow - 200,
+            width: ((typeof window !== 'undefined' ? window.innerWidth : 1920) / zoomNow) + 400,
+            height: ((typeof window !== 'undefined' ? window.innerHeight : 1080) / zoomNow) + 400
+          };
+
           return h('div', {
             id: 'winetoken-canvas-viewport',
             style: {
@@ -3135,13 +4089,246 @@ $owner.Dispose()
                 ? 'radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px)'
                 : 'radial-gradient(rgba(0, 0, 0, 0.08) 1px, transparent 1px)',
               backgroundSize: '24px 24px',
-              userSelect: 'none'
+              userSelect: 'none',
+              cursor: activeTool === 'grab' ? 'grab' : 'default'
             },
-            onWheel: handleWheel,
             onPointerDown: handlePointerDown,
             onPointerMove: handlePointerMove,
-            onPointerUp: handlePointerUp
+            onPointerUp: handlePointerUp,
+            onDoubleClick: handleCanvasDoubleClick
           }, [
+            // 0. 框选橡皮筋覆盖层 (屏幕坐标, CANVAS-M1 1.4)
+            marqueeRect ? h('div', {
+              style: {
+                position: 'absolute',
+                left: `${Math.min(marqueeRect.x0, marqueeRect.x1)}px`,
+                top: `${Math.min(marqueeRect.y0, marqueeRect.y1)}px`,
+                width: `${Math.abs(marqueeRect.x1 - marqueeRect.x0)}px`,
+                height: `${Math.abs(marqueeRect.y1 - marqueeRect.y0)}px`,
+                border: '1px solid #06b6d4',
+                backgroundColor: 'rgba(6, 182, 212, 0.12)',
+                pointerEvents: 'none',
+                zIndex: 200
+              }
+            }) : null,
+            h(CanvasShortcutsPanel, { isOpen: showShortcuts, onClose: () => setShowShortcuts(false) }),
+            // 0.5 Ctrl+L 连线模式提示条 (CANVAS-M2 2.4)
+            connectMode ? h('div', {
+              style: {
+                position: 'absolute',
+                top: '16px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 300,
+                padding: '6px 14px',
+                borderRadius: '8px',
+                backgroundColor: theme.popoverBg,
+                border: `1px solid ${theme.borderSubtle}`,
+                color: theme.textPrimary,
+                fontSize: '12px',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
+                pointerEvents: 'none'
+              }
+            }, connectMode.from ? '已选源节点，点击目标节点完成连线 (Esc 取消)' : '连线模式：点击源节点 (Esc 取消)') : null,
+            // 0.6 新建节点菜单 (Tab / 双击空白, CANVAS-M2 2.5)
+            nodeMenu ? h('div', {
+              onPointerDown: (e) => e.stopPropagation(),
+              onClick: () => setNodeMenu(null),
+              style: {
+                position: 'absolute',
+                left: `${nodeMenu.screenX}px`,
+                top: `${nodeMenu.screenY}px`,
+                zIndex: 300,
+                minWidth: '132px',
+                padding: '6px',
+                borderRadius: '10px',
+                backgroundColor: theme.popoverBg,
+                border: `1px solid ${theme.borderSubtle}`,
+                boxShadow: '0 12px 30px rgba(0, 0, 0, 0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px'
+              }
+            }, [
+              h('div', { style: { fontSize: '10.5px', color: theme.textMuted, padding: '4px 8px 6px' } }, '新建节点'),
+              [
+                { type: 'panel', label: '分镜卡' },
+                { type: 'character', label: '角色卡' },
+                { type: 'image', label: '图片节点' },
+                { type: 'text', label: '文本便签' }
+              ].map(opt => h('button', {
+                key: opt.type,
+                type: 'button',
+                onClick: (e) => {
+                  e.stopPropagation();
+                  createNodeFromMenu(opt.type);
+                },
+                style: {
+                  background: 'none',
+                  border: 'none',
+                  color: theme.textPrimary,
+                  fontSize: '12px',
+                  textAlign: 'left',
+                  padding: '6px 8px',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                },
+                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = theme.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'; },
+                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; }
+              }, opt.label))
+            ]) : null,
+            // 0.7 节点搜索面板 (Ctrl+F, CANVAS-M3 3.3)
+            searchOpen ? h('div', {
+              onPointerDown: (e) => e.stopPropagation(),
+              style: {
+                position: 'absolute',
+                top: '56px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 320,
+                width: '440px',
+                maxWidth: '80%',
+                borderRadius: '12px',
+                backgroundColor: theme.popoverBg,
+                border: `1px solid ${theme.borderSubtle}`,
+                boxShadow: '0 16px 40px rgba(0, 0, 0, 0.35)',
+                overflow: 'hidden'
+              }
+            }, [
+              h('input', {
+                autoFocus: true,
+                value: searchQuery,
+                onChange: (e) => setSearchQuery(e.target.value),
+                onKeyDown: (e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter' && searchResults.length) {
+                    applySearchResult(searchResults[0]);
+                  }
+                },
+                placeholder: '搜索分镜 / 提示词 / 台词 / 角色名 / 组名…',
+                style: {
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '10px 14px',
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: theme.textPrimary,
+                  fontSize: '13px'
+                }
+              }),
+              searchResults.length ? h('div', {
+                style: { maxHeight: '280px', overflowY: 'auto', borderTop: `1px solid ${theme.borderSubtle}` }
+              }, searchResults.map((r, i) => h('div', {
+                key: `${r.kind}_${r.id}`,
+                onClick: () => applySearchResult(r),
+                style: {
+                  padding: '8px 14px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                  backgroundColor: i === 0 ? (theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)') : 'transparent'
+                },
+                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = theme.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'; },
+                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = i === 0 ? (theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)') : 'transparent'; }
+              }, [
+                h('div', { style: { fontSize: '12px', color: theme.textPrimary } }, r.label),
+                r.snippet ? h('div', { style: { fontSize: '11px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, r.snippet) : null
+              ]))) : (searchQuery.trim() ? h('div', { style: { padding: '10px 14px', fontSize: '11.5px', color: theme.textMuted, borderTop: `1px solid ${theme.borderSubtle}` } }, '没有匹配的节点') : null)
+            ]) : null,
+            // 0.8 AI 剧本拆镜对话框 (CANVAS-M4 客户端部分)
+            aiSplitOpen ? h('div', {
+              onClick: () => { if (!aiSplitBusy) setAiSplitOpen(false); },
+              style: {
+                position: 'fixed',
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                zIndex: 9100,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px'
+              }
+            }, [
+              h('div', {
+                onClick: (e) => e.stopPropagation(),
+                onPointerDown: (e) => e.stopPropagation(),
+                onDoubleClick: (e) => e.stopPropagation(),
+                style: {
+                  width: '560px',
+                  maxWidth: '92%',
+                  backgroundColor: theme.bgCard,
+                  border: `1px solid ${theme.borderSubtle}`,
+                  borderRadius: '14px',
+                  boxShadow: '0 24px 60px rgba(0, 0, 0, 0.45)',
+                  padding: '20px 22px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }
+              }, [
+                h('div', { style: { fontSize: '15px', fontWeight: 700, color: theme.textPrimary } }, 'AI 剧本拆镜 · 自动铺图'),
+                h('div', { style: { fontSize: '11.5px', color: theme.textSecondary, lineHeight: 1.6 } }, '粘贴剧本文本，AI 自动拆解为分镜卡阵列铺上画布。调用一次对话模型（消耗少量额度）；出图仍需逐镜手动触发或选中后 Ctrl+Enter。'),
+                h('textarea', {
+                  value: aiSplitText,
+                  onChange: (e) => setAiSplitText(e.target.value),
+                  placeholder: '在此粘贴剧本 / 故事梗概…',
+                  rows: 10,
+                  style: {
+                    resize: 'vertical',
+                    border: `1px solid ${theme.borderSubtle}`,
+                    borderRadius: '8px',
+                    background: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                    color: theme.textPrimary,
+                    fontSize: '12.5px',
+                    padding: '10px 12px',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    lineHeight: 1.6
+                  }
+                }),
+                h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
+                  h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: theme.textSecondary } }, [
+                    '目标分镜数 (2~12)',
+                    h('input', {
+                      type: 'number',
+                      min: 2,
+                      max: 12,
+                      value: aiSplitCount,
+                      onChange: (e) => setAiSplitCount(Number(e.target.value)),
+                      style: {
+                        width: '60px',
+                        padding: '4px 8px',
+                        border: `1px solid ${theme.borderSubtle}`,
+                        borderRadius: '6px',
+                        background: 'transparent',
+                        color: theme.textPrimary,
+                        outline: 'none'
+                      }
+                    })
+                  ]),
+                  h('button', {
+                    type: 'button',
+                    onClick: runAiSplit,
+                    disabled: aiSplitBusy,
+                    style: {
+                      padding: '8px 18px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: aiSplitBusy ? theme.borderSubtle : '#06b6d4',
+                      color: '#ffffff',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      cursor: aiSplitBusy ? 'not-allowed' : 'pointer'
+                    }
+                  }, aiSplitBusy ? 'AI 拆解中…' : '开始拆镜铺图')
+                ])
+              ])
+            ]) : null,
             // 1. 顶部悬浮工具栏 (黑白极简纯文字与矢量图标)
             h('div', {
               style: {
@@ -3289,7 +4476,7 @@ $owner.Dispose()
                   if (isFree) {
                     priceText = '限免 ¥0.00';
                   } else if (isSvip && m.vipPrice != null) {
-                    priceText = `SVIP ¥${formatCNY(m.vipPrice)}/张`;
+                    priceText = `${isSuper ? 'SUPER' : 'SVIP'} ¥${formatCNY(m.vipPrice)}/张`;
                   } else if (isVip) {
                     const vipP = m.vipPrice != null ? m.vipPrice : (m.price != null ? Number((m.price * 0.9).toFixed(2)) : null);
                     priceText = vipP != null ? `VIP ¥${formatCNY(vipP)}/张` : (m.vipPriceText || '');
@@ -3362,7 +4549,45 @@ $owner.Dispose()
                 onClick: () => handleZoomStep(true),
                 style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '13px', padding: '2px 6px' }
               }, '+'),
+              h('button', {
+                type: 'button',
+                onClick: handleFitToContent,
+                style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '11px', padding: '2px 6px' },
+                title: '适应画布：缩放至刚好容纳全部内容 (Ctrl+0)'
+              }, '适应'),
               h('div', { style: { width: '1px', height: '14px', backgroundColor: theme.borderSubtle, margin: '0 4px' } }),
+              h('button', {
+                type: 'button',
+                onClick: () => setShowShortcuts(true),
+                style: {
+                  background: 'none',
+                  border: 'none',
+                  color: theme.textSecondary,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11.5px',
+                  padding: '2px 6px'
+                },
+                title: '查看画布快捷键速查面板'
+              }, [h(Icon, { name: 'help', size: 13 }), h('span', {}, '快捷键')]),
+              h('button', {
+                type: 'button',
+                onClick: () => setAiSplitOpen(true),
+                style: {
+                  background: 'none',
+                  border: 'none',
+                  color: theme.textSecondary,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11.5px',
+                  padding: '2px 6px'
+                },
+                title: 'AI 剧本拆镜：粘贴剧本自动生成分镜卡阵列 (调用一次对话模型)'
+              }, [h(Icon, { name: 'sparkles', size: 13 }), h('span', {}, 'AI拆镜')]),
               h('button', {
                 type: 'button',
                 onClick: onOpenTutorial,
@@ -3392,6 +4617,73 @@ $owner.Dispose()
                 willChange: 'transform'
               }
             }, [
+              // 2.95 分镜组底框层 (CANVAS-M3 3.1): 组成员 AABB 虚线框 + 可点击标题
+              groups.map(g => {
+                const memberBoxes = (g.memberIds || []).map(id => {
+                  const p = panels.find(x => x.id === id);
+                  if (p) return { x: p.x, y: p.y, width: p.width || 280, height: p.height || 420 };
+                  const it = canvasItems.find(x => x.id === id);
+                  return it ? { x: it.x, y: it.y, width: it.width || 240, height: it.height || 320 } : null;
+                }).filter(Boolean);
+                if (!memberBoxes.length) return null;
+                const minX = Math.min(...memberBoxes.map(b => b.x)) - 16;
+                const minY = Math.min(...memberBoxes.map(b => b.y)) - 30;
+                const maxX = Math.max(...memberBoxes.map(b => b.x + b.width)) + 16;
+                const maxY = Math.max(...memberBoxes.map(b => b.y + b.height)) + 16;
+                return h('div', { key: g.id }, [
+                  h('div', {
+                    style: {
+                      position: 'absolute',
+                      left: `${minX}px`,
+                      top: `${minY}px`,
+                      width: `${maxX - minX}px`,
+                      height: `${maxY - minY}px`,
+                      border: '1.5px dashed rgba(6, 182, 212, 0.55)',
+                      borderRadius: '12px',
+                      backgroundColor: 'rgba(6, 182, 212, 0.04)',
+                      pointerEvents: 'none'
+                    }
+                  }),
+                  h('div', {
+                    onClick: (ev) => {
+                      ev.stopPropagation();
+                      setSelectedIds(new Set((g.memberIds || []).filter(id => panels.some(p => p.id === id) || canvasItems.some(it => it.id === id))));
+                    },
+                    title: '点击选中整组成员',
+                    style: {
+                      position: 'absolute',
+                      left: `${minX + 10}px`,
+                      top: `${minY + 6}px`,
+                      padding: '1px 8px',
+                      borderRadius: '6px',
+                      fontSize: '10.5px',
+                      fontWeight: 600,
+                      color: '#06b6d4',
+                      backgroundColor: theme.isDark ? 'rgba(6, 182, 212, 0.14)' : 'rgba(6, 182, 212, 0.1)',
+                      cursor: 'pointer',
+                      pointerEvents: 'auto',
+                      userSelect: 'none',
+                      width: 'fit-content'
+                    }
+                  }, g.name || '未命名组')
+                ]);
+              }),
+
+              // 3.0 拖拽对齐参考线层 (CANVAS-M1 1.8, 世界坐标直绘于变换层内)
+              alignGuides.map((g, i) => h('div', {
+                key: `guide_${g.orientation}_${g.pos}_${i}`,
+                style: {
+                  position: 'absolute',
+                  left: g.orientation === 'v' ? `${g.pos}px` : '0px',
+                  top: g.orientation === 'v' ? '0px' : `${g.pos}px`,
+                  width: g.orientation === 'v' ? '1px' : '5000px',
+                  height: g.orientation === 'v' ? '5000px' : '1px',
+                  backgroundColor: '#f97316',
+                  opacity: 0.85,
+                  pointerEvents: 'none',
+                  zIndex: 60
+                }
+              })),
               // 3.1 贝塞尔拓扑流光连线层 (智能精确定位对应角色的锚点位置)
               h('svg', {
                 style: {
@@ -3427,6 +4719,68 @@ $owner.Dispose()
                   opacity: 0.65
                 });
               })),
+
+              // 3.1b 显式连线层 (CANVAS-M2 2.4): edges 数据驱动的贝塞尔连线, 可点击选中后 Del 删除
+              edges.map(e => {
+                const resolveNode = (end) => {
+                  if (!end) return null;
+                  if (end.type === 'panel') {
+                    const p = panels.find(x => x.id === end.id);
+                    return p ? { x: p.x, y: p.y, width: p.width || 280, height: p.height || 420 } : null;
+                  }
+                  const it = canvasItems.find(x => x.id === end.id);
+                  return it ? { x: it.x, y: it.y, width: it.width || 240, height: it.height || 320 } : null;
+                };
+                const nodeA = resolveNode(e.from);
+                const nodeB = resolveNode(e.to);
+                if (!nodeA || !nodeB) return null;
+                const pa = CanvasMathUtils && CanvasMathUtils.anchorFor
+                  ? CanvasMathUtils.anchorFor(nodeA, 'right')
+                  : { x: nodeA.x + nodeA.width, y: nodeA.y + nodeA.height / 2 };
+                const pb = CanvasMathUtils && CanvasMathUtils.anchorFor
+                  ? CanvasMathUtils.anchorFor(nodeB, 'left')
+                  : { x: nodeB.x, y: nodeB.y + nodeB.height / 2 };
+                const d = CanvasMathUtils && CanvasMathUtils.calculateBezierPath
+                  ? CanvasMathUtils.calculateBezierPath(pa, pb)
+                  : `M ${pa.x} ${pa.y} L ${pb.x} ${pb.y}`;
+                const isEdgeSelected = selectedIds.has(e.id);
+                return h('path', {
+                  key: e.id,
+                  d,
+                  fill: 'none',
+                  stroke: isEdgeSelected ? '#f97316' : '#10b981',
+                  strokeWidth: isEdgeSelected ? 3 : 2,
+                  strokeDasharray: '6 4',
+                  opacity: 0.8,
+                  style: { pointerEvents: 'stroke', cursor: 'pointer' },
+                  onPointerDown: (ev) => {
+                    ev.stopPropagation();
+                    setSelectedIds(new Set([e.id]));
+                  }
+                });
+              }),
+
+              // 3.1c 连线拖拽临时线 (CANVAS-M2 2.4)
+              connectDrag ? (() => {
+                const srcNode = connectDrag.from.type === 'panel'
+                  ? panels.find(x => x.id === connectDrag.from.id)
+                  : canvasItems.find(x => x.id === connectDrag.from.id);
+                if (!srcNode) return null;
+                const box = { x: srcNode.x, y: srcNode.y, width: srcNode.width || 280, height: srcNode.height || (srcNode.type === 'image' ? 320 : 140) };
+                const pa = CanvasMathUtils && CanvasMathUtils.anchorFor
+                  ? CanvasMathUtils.anchorFor(box, 'right')
+                  : { x: box.x + box.width, y: box.y + box.height / 2 };
+                return h('path', {
+                  key: 'connect_drag_tmp',
+                  d: `M ${pa.x} ${pa.y} L ${connectDrag.x} ${connectDrag.y}`,
+                  fill: 'none',
+                  stroke: '#10b981',
+                  strokeWidth: 2,
+                  strokeDasharray: '4 4',
+                  opacity: 0.9,
+                  pointerEvents: 'none'
+                });
+              })() : null,
 
               // 3.2 角色资产库锚点卡
               h('div', {
@@ -3601,6 +4955,106 @@ $owner.Dispose()
                 })
               ]))),
 
+              // 3.25 通用画布节点 (CANVAS-M2 2.2/2.3): 生成图/文本对象, 万物皆节点
+              h('div', { id: 'winetoken-canvas-items-area' }, canvasItems.map(item => {
+                const isItemSelected = selectedIds.has(item.id);
+                const isItemOnScreen = (CanvasMathUtils && CanvasMathUtils.isIntersectingAABB)
+                  ? CanvasMathUtils.isIntersectingAABB({ x: item.x, y: item.y, width: item.width || 240, height: item.height || 320 }, viewWorldBox)
+                  : true;
+                return h('div', {
+                  key: item.id,
+                  'data-node-id': item.id,
+                  'data-node-type': 'item',
+                  onPointerDown: (e) => beginObjectDrag(e, 'item', item),
+                  style: {
+                    position: 'absolute',
+                    left: `${item.x}px`,
+                    top: `${item.y}px`,
+                    width: `${item.width || 240}px`,
+                    height: `${item.height || 320}px`,
+                    backgroundColor: theme.bgCard,
+                    border: `1px solid ${isItemSelected ? '#06b6d4' : theme.borderSubtle}`,
+                    borderRadius: '10px',
+                    boxShadow: isItemSelected
+                      ? '0 0 0 2px rgba(6, 182, 212, 0.45), 0 10px 24px rgba(0, 0, 0, 0.25)'
+                      : '0 10px 24px rgba(0, 0, 0, 0.22)',
+                    overflow: 'hidden',
+                    display: isItemOnScreen ? 'flex' : 'none',
+                    flexDirection: 'column',
+                    zIndex: isItemSelected ? 30 : 10
+                  }
+                }, [
+                  h('div', {
+                    style: {
+                      padding: '5px 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '6px',
+                      borderBottom: `1px solid ${theme.borderSubtle}`,
+                      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                      cursor: 'grab',
+                      userSelect: 'none'
+                    }
+                  }, [
+                    h('span', {
+                      style: { fontSize: '10px', color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }
+                    }, item.type === 'image' ? (item.data.prompt || '生成图像') : '文本便签'),
+                    // 连线锚点 (拖出连线) CANVAS-M2 2.4
+                    h('div', {
+                      onPointerDown: (ev) => beginConnectDrag(ev, 'item', item.id),
+                      title: '拖出连线到目标节点',
+                      style: { width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', border: '1.5px solid #ffffff', boxShadow: '0 0 5px rgba(16, 185, 129, 0.6)', cursor: 'crosshair', flexShrink: 0 }
+                    }),
+                    h('button', {
+                      type: 'button',
+                      title: '删除该节点',
+                      onPointerDown: (ev) => ev.stopPropagation(),
+                      onClick: () => {
+                        if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+                        setCanvasItems(prev => prev.filter(x => x.id !== item.id));
+                        setEdges(prev => prev.filter(x => x.from.id !== item.id && x.to.id !== item.id));
+                        setSelectedIds(prev => {
+                          const n = new Set(prev);
+                          n.delete(item.id);
+                          return n;
+                        });
+                      },
+                      style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '12px', lineHeight: 1, flexShrink: 0 }
+                    }, '×')
+                  ]),
+                  item.type === 'image' ? (
+                    item.data.url
+                      ? h('img', {
+                          src: item.data.url,
+                          draggable: false,
+                          style: { width: '100%', flex: 1, minHeight: 0, objectFit: 'cover' }
+                        })
+                      : h('div', {
+                          onDoubleClick: () => {
+                            const input = document.createElement('input');
+                            input.type = 'file';
+                            input.accept = 'image/png,image/jpeg,image/webp';
+                            input.onchange = () => {
+                              const f = input.files && input.files[0];
+                              if (!f) return;
+                              const reader = new FileReader();
+                              reader.onload = () => setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, url: String(reader.result) } } : x));
+                              reader.readAsDataURL(f);
+                            };
+                            input.click();
+                          },
+                          style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: theme.textMuted, cursor: 'pointer', minHeight: 0 }
+                        }, '双击上传图片')
+                  ) : h('textarea', {
+                      value: item.data.text || '',
+                      onChange: (ev) => setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, text: ev.target.value } } : x)),
+                      placeholder: '输入文本内容…',
+                      style: { flex: 1, resize: 'none', border: 'none', outline: 'none', background: 'transparent', color: theme.textPrimary, fontSize: '12px', padding: '8px 10px', fontFamily: 'inherit', minHeight: 0 }
+                    })
+                ]);
+              })),
+
               // 3.3 分镜格卡片群
               h('div', {
                 id: 'winetoken-canvas-panels-area'
@@ -3608,22 +5062,31 @@ $owner.Dispose()
                 const char = characters.find(c => c.id === p.characterId);
                 const isCandidate = Boolean(p.stagingCandidateUrl);
                 const displayUrl = p.stagingCandidateUrl || p.imageUrl;
+                const isSelected = selectedIds.has(p.id);
+                // CANVAS-M3 3.4: AABB 视口剔除, 离屏节点不进渲染树
+                const isOnScreen = (CanvasMathUtils && CanvasMathUtils.isIntersectingAABB)
+                  ? CanvasMathUtils.isIntersectingAABB({ x: p.x, y: p.y, width: p.width || 280, height: p.height || 420 }, viewWorldBox)
+                  : true;
 
                 return h('div', {
                   key: p.id,
+                  'data-node-id': p.id,
+                  'data-node-type': 'panel',
                   style: {
                     position: 'absolute',
                     left: `${p.x}px`,
                     top: `${p.y}px`,
                     width: `${p.width}px`,
                     backgroundColor: theme.bgCard,
-                    border: `1px solid ${isCandidate ? '#f59e0b' : theme.borderSubtle}`,
+                    border: `1px solid ${isCandidate ? '#f59e0b' : (isSelected ? '#06b6d4' : theme.borderSubtle)}`,
                     borderRadius: '10px',
-                    boxShadow: isCandidate
-                      ? '0 12px 30px rgba(245, 158, 11, 0.25)'
-                      : '0 12px 28px rgba(0, 0, 0, 0.25)',
+                    boxShadow: isSelected
+                      ? '0 0 0 2px rgba(6, 182, 212, 0.45), 0 12px 28px rgba(0, 0, 0, 0.25)'
+                      : (isCandidate
+                        ? '0 12px 30px rgba(245, 158, 11, 0.25)'
+                        : '0 12px 28px rgba(0, 0, 0, 0.25)'),
                     overflow: 'hidden',
-                    display: 'flex',
+                    display: isOnScreen ? 'flex' : 'none',
                     flexDirection: 'column'
                   }
                 }, [
@@ -3639,42 +5102,7 @@ $owner.Dispose()
                       cursor: 'grab',
                       userSelect: 'none'
                     },
-                    onPointerDown: (e) => {
-                      if (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'OPTION') return;
-                      e.stopPropagation();
-                      const startX = e.clientX;
-                      const startY = e.clientY;
-                      const originX = p.x;
-                      const originY = p.y;
-                      let hasMoved = false;
-
-                      const handleDragMove = (moveEvt) => {
-                        const zoom = viewportRef.current.zoom || 1;
-                        const dx = (moveEvt.clientX - startX) / zoom;
-                        const dy = (moveEvt.clientY - startY) / zoom;
-                        if (!hasMoved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
-                          hasMoved = true;
-                          if (canvasHistoryManager) {
-                            canvasHistoryManager.pushState({ characters, panels });
-                          }
-                        }
-                        if (hasMoved) {
-                          const rawX = originX + dx;
-                          const rawY = originY + dy;
-                          const nextX = CanvasMathUtils ? CanvasMathUtils.snapToGrid(rawX, 8) : Math.round(rawX);
-                          const nextY = CanvasMathUtils ? CanvasMathUtils.snapToGrid(rawY, 8) : Math.round(rawY);
-                          setPanels(prev => prev.map(item => item.id === p.id ? { ...item, x: nextX, y: nextY } : item));
-                        }
-                      };
-
-                      const handleDragUp = () => {
-                        window.removeEventListener('pointermove', handleDragMove);
-                        window.removeEventListener('pointerup', handleDragUp);
-                      };
-
-                      window.addEventListener('pointermove', handleDragMove);
-                      window.addEventListener('pointerup', handleDragUp);
-                    }
+                    onPointerDown: (e) => beginObjectDrag(e, 'panel', p)
                   }, [
                     h('div', { style: { display: 'flex', alignItems: 'center', gap: '5px' } }, [
                       h('span', { style: { fontSize: '12px', fontWeight: 700, color: theme.textPrimary } }, `#${p.num}`),
@@ -3712,24 +5140,49 @@ $owner.Dispose()
                         style: { background: theme.bgSidebar, color: theme.textPrimary }
                       }, c.name)))
                     ]),
-                    h('button', {
-                      type: 'button',
-                      title: '删除分镜卡片 (支持 Ctrl+Z 撤销 CANVAS-04)',
-                      onClick: () => {
-                        if (typeof confirm !== 'undefined' && !confirm(`确定要删除分镜 #${p.num} 及其关联画面吗？此操作可按 Ctrl+Z 撤销。`)) {
-                          return;
-                        }
-                        if (canvasHistoryManager) {
-                          canvasHistoryManager.pushState({ characters, panels });
-                        }
-                        setPanels(prev => prev.filter(x => x.id !== p.id));
-                      },
-                      style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '11px' }
-                    }, '删除')
+                    h('div', { style: { display: 'flex', alignItems: 'center', gap: '5px' } }, [
+                      // 连线锚点 (拖出连线到目标节点) CANVAS-M2 2.4
+                      h('div', {
+                        onPointerDown: (ev) => beginConnectDrag(ev, 'panel', p.id),
+                        title: '拖出连线到目标节点',
+                        style: { width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', border: '1.5px solid #ffffff', boxShadow: '0 0 5px rgba(16, 185, 129, 0.6)', cursor: 'crosshair', flexShrink: 0 }
+                      }),
+                      h('button', {
+                        type: 'button',
+                        title: '删除分镜卡片 (支持 Ctrl+Z 撤销 CANVAS-04)',
+                        onClick: () => {
+                          if (typeof confirm !== 'undefined' && !confirm(`确定要删除分镜 #${p.num} 及其关联画面吗？此操作可按 Ctrl+Z 撤销。`)) {
+                            return;
+                          }
+                          if (canvasHistoryManager) {
+                            canvasHistoryManager.pushState(snapshotState());
+                          }
+                          setPanels(prev => prev.filter(x => x.id !== p.id));
+                          setEdges(prev => prev.filter(x => x.from.id !== p.id && x.to.id !== p.id));
+                        },
+                        style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '11px' }
+                      }, '删除')
+                    ])
                   ]),
 
                   // 画面展示区 (支持 InvokeAI 幽灵暂存层 + 亚像素高清渲染)
                   h('div', {
+                    onPointerDown: (e) => {
+                      // 点击画面区选中该分镜; Shift+点击加选/减选 (控件按钮除外) CANVAS-M1 1.4
+                      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+                      e.stopPropagation();
+                      if (connectMode) {
+                        handleConnectNodeClick('panel', p.id);
+                        return;
+                      }
+                      if (e.shiftKey) {
+                        toggleSelectId(p.id);
+                        return;
+                      }
+                      if (!selectedIds.has(p.id) || selectedIds.size !== 1) {
+                        setSelectedIds(new Set([p.id]));
+                      }
+                    },
                     style: {
                       width: '100%',
                       height: `${p.height}px`,
@@ -4810,7 +6263,7 @@ $owner.Dispose()
                               }
                             }, [
                               h(Icon, { name: 'crown', size: 12 }),
-                              h('span', {}, `${isSvip ? 'SVIP' : 'VIP'} ¥${formatCNY(effectiveSinglePrice)}/张`)
+                              h('span', {}, `${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')} ¥${formatCNY(effectiveSinglePrice)}/张`)
                             ]) : h('span', { style: { fontSize: '11px', color: theme.textSecondary } }, `¥${formatCNY(effectiveSinglePrice)}/张`),
                             isVip && currentModelObj.vipPrice != null && currentModelObj.price > currentModelObj.vipPrice && h('span', {
                               style: {
@@ -4835,7 +6288,7 @@ $owner.Dispose()
                             }
                           }, [
                             h(Icon, { name: 'crown', size: 12 }),
-                            h('span', {}, `${isSvip ? 'SVIP' : 'VIP'} ¥${formatCNY(estCost)}/${duration}秒 (¥${formatCNY(effectiveSecPrice)}/秒)`)
+                            h('span', {}, `${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')} ¥${formatCNY(estCost)}/${duration}秒 (¥${formatCNY(effectiveSecPrice)}/秒)`)
                           ]) : h('span', { style: { fontSize: '11px', color: theme.textSecondary } }, `¥${formatCNY(estCost)}/${duration}秒 (¥${formatCNY(effectiveSecPrice)}/秒)`),
                           isVip && currentModelObj.pricePerSecond && (currentModelObj.pricePerSecond > effectiveSecPrice) && h('span', {
                             style: {
@@ -4864,7 +6317,7 @@ $owner.Dispose()
                       isItemFree = effP === 0 || (m.tag && m.tag.includes('限免'));
                       if (effP != null) {
                         if (effP === 0) priceDisplay = '限免 ¥0.00';
-                        else if (isVip && m.vipPrice != null) priceDisplay = `${isSvip ? 'SVIP' : 'VIP'} ¥${formatCNY(effP)}/张`;
+                        else if (isVip && m.vipPrice != null) priceDisplay = `${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')} ¥${formatCNY(effP)}/张`;
                         else priceDisplay = `¥${formatCNY(effP)}/张`;
                       } else {
                         priceDisplay = (isVip && m.vipPriceText) ? m.vipPriceText : m.priceText;
@@ -4878,7 +6331,7 @@ $owner.Dispose()
                       isItemFree = secP === 0 || (m.tag && m.tag.includes('限免'));
                       priceDisplay = isItemFree
                         ? '限免 ¥0.00'
-                        : (isVip ? `${isSvip ? 'SVIP' : 'VIP'} ¥${formatCNY(secP)}/秒` : `¥${formatCNY(secP)}/秒`);
+                        : (isVip ? `${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')} ¥${formatCNY(secP)}/秒` : `¥${formatCNY(secP)}/秒`);
                     }
 
                     return h('div', {
@@ -5487,11 +6940,11 @@ $owner.Dispose()
                     h(Icon, { name: 'sparkles', size: 14 }),
                     h('span', {}, mode === 'image'
                       ? (referenceSlots.length > 0
-                          ? `立即垫图生成 · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSvip ? 'SVIP' : 'VIP'}优先扣套餐)` : ''}`
-                          : `立即生成 · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSvip ? 'SVIP' : 'VIP'}优先扣套餐)` : ''}`)
+                          ? `立即垫图生成 · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
+                          : `立即生成 · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`)
                       : (referenceSlots.length > 0
-                          ? `提交首帧生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSvip ? 'SVIP' : 'VIP'}优先扣套餐)` : ''}`
-                          : `提交文生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSvip ? 'SVIP' : 'VIP'}优先扣套餐)` : ''}`)
+                          ? `提交首帧生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
+                          : `提交文生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`)
                     )
                   ])
                 ])
