@@ -1401,6 +1401,28 @@ $owner.Dispose()
           return isDark ? THEME_DARK : THEME_LIGHT;
         }
 
+        // 窄屏/移动端感知 Hook：≤640px 视口视为手机布局（matchMedia 监听，旋转/分屏实时响应）
+        function useNarrowViewport(breakpoint = 640) {
+          const query = (typeof window !== 'undefined' && window.matchMedia)
+            ? window.matchMedia('(max-width: ' + breakpoint + 'px)')
+            : null;
+          const [isNarrow, setIsNarrow] = React.useState(() => (query ? query.matches : false));
+          React.useEffect(() => {
+            if (!query) return undefined;
+            const onChange = (e) => setIsNarrow(e.matches);
+            try { query.addEventListener('change', onChange); } catch (_) {
+              try { query.addListener(onChange); } catch (_) {}
+            }
+            setIsNarrow(query.matches);
+            return () => {
+              try { query.removeEventListener('change', onChange); } catch (_) {
+                try { query.removeListener(onChange); } catch (_) {}
+              }
+            };
+          }, [query]);
+          return isNarrow;
+        }
+
         // DataURL 转标准 File 对象 (用于将工坊图片挂载到 DSH 对话框)
         function dataURLtoFile(dataurl, filename = 'artwork.png') {
           try {
@@ -1599,6 +1621,7 @@ $owner.Dispose()
         // 2. 原生账户与密钥管理中心 Popover
         function WineTokenAccountPopover({ onClose, positionTop = false }) {
           const theme = useTheme();
+          const isNarrowViewport = useNarrowViewport();
           const [currentKey, setCurrentKey] = React.useState(getKey());
           const [keyInput, setKeyInput] = React.useState('');
           const [showKeyInput, setShowKeyInput] = React.useState(!currentKey);
@@ -1688,11 +1711,8 @@ $owner.Dispose()
             setTimeout(() => setStatusTip(''), 3000);
           };
 
-          const popoverStyle = {
-            position: 'absolute',
-            ...(positionTop ? { top: 'calc(100% + 8px)' } : { bottom: 'calc(100% + 10px)' }),
-            right: 0,
-            width: '320px',
+          // 桌面端：锚定胶囊的绝对定位弹层；窄屏（手机）：切换为视口居中固定面板，杜绝越界出屏
+          const popoverBase = {
             background: theme.popoverBg,
             border: `1px solid ${theme.popoverBorder}`,
             borderRadius: '12px',
@@ -1705,6 +1725,27 @@ $owner.Dispose()
             userSelect: 'none',
             lineHeight: 1.5,
             cursor: 'default'
+          };
+          const popoverStyle = isNarrowViewport ? {
+            ...popoverBase,
+            position: 'fixed',
+            left: '12px',
+            right: '12px',
+            top: '50%',
+            bottom: 'auto',
+            transform: 'translateY(-50%)',
+            width: 'auto',
+            maxWidth: 'none',
+            maxHeight: '76vh',
+            overflowY: 'auto',
+            borderRadius: '16px',
+            padding: '14px'
+          } : {
+            ...popoverBase,
+            position: 'absolute',
+            ...(positionTop ? { top: 'calc(100% + 8px)' } : { bottom: 'calc(100% + 10px)' }),
+            right: 0,
+            width: '320px'
           };
 
           return h('div', {
@@ -2344,7 +2385,7 @@ $owner.Dispose()
               title: '万物皆节点 · 生成图落画布与自由连线',
               desc: '生成的每一张图都会作为独立节点落在画布上并自动连到源分镜；节点之间可自由连线表达创作关系。',
               tips: [
-                { key: 'Tab / 双击空白处', text: '呼出新建节点菜单 (分镜 / 角色 / 图片 / 文本)' },
+                { key: 'Tab / 右键空白处', text: '呼出新建节点菜单 (分镜 / 角色 / 图片 / 文本)' },
                 { key: '拖动节点上的绿色锚点', text: '拖出连线到目标节点；Ctrl+L 进入连续连线模式' },
                 { key: 'Ctrl + D / Alt + 拖动', text: '复制节点和连线 / 快速克隆节点' },
                 { key: '点击连线再按 Del', text: '删除连线；Esc 退出连线模式' }
@@ -2455,10 +2496,11 @@ $owner.Dispose()
             if (!targetRect) {
               return { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
             }
-            const cardW = 480;
-            const cardH = 320;
             const vh = window.innerHeight;
             const vw = window.innerWidth;
+            // 窄屏钳制：卡片按视口收缩，避免手机上左边界钳制公式失效导致越界（样式层另有 92vw 兜底）
+            const cardW = Math.min(480, Math.max(200, vw - 40));
+            const cardH = 320;
 
             let left = targetRect.left + (targetRect.width - cardW) / 2;
             left = Math.max(20, Math.min(vw - cardW - 20, left));
@@ -2656,7 +2698,7 @@ $owner.Dispose()
             {
               title: '节点与连线',
               items: [
-                ['Tab / 双击空白', '新建节点菜单'],
+                ['Tab / 右键空白', '新建节点菜单'],
                 ['Ctrl + L', '连线模式 (点源 → 点目标)'],
                 ['拖动绿色锚点', '拖出连线到目标节点'],
                 ['点击连线 + Del', '选中并删除连线'],
@@ -2879,6 +2921,7 @@ $owner.Dispose()
           const [connectMode, setConnectMode] = React.useState(null); // null | {from: {type,id}|null} — Ctrl+L 连线模式
           const [connectDrag, setConnectDrag] = React.useState(null); // {from, x, y} — 锚点拖出临时线
           const [nodeMenu, setNodeMenu] = React.useState(null); // {screenX, screenY, worldX, worldY}
+          const nodeMenuRef = React.useRef(null); // 菜单元素引用：供"点击菜单外任意处自动收起"判定
           const connectDragRef = React.useRef(null);
           const panelsRef = React.useRef(panels);
           const canvasItemsRef = React.useRef(canvasItems);
@@ -3753,7 +3796,7 @@ $owner.Dispose()
             }
           };
 
-          // 2.5 新建节点菜单分发 (Tab / 双击空白)
+          // 2.5 新建节点菜单分发 (Tab / 右键空白)
           const createNodeFromMenu = (type) => {
             if (!nodeMenu) return;
             const { worldX, worldY } = nodeMenu;
@@ -3794,8 +3837,9 @@ $owner.Dispose()
             }
           };
 
-          // 2.5 双击空白处新建节点 (LibTV 惯例)
-          const handleCanvasDoubleClick = (e) => {
+          // 2.5 右键空白处新建节点 (对标桌面软件右键菜单惯例；Tab 快捷键保留)
+          const handleCanvasContextMenu = (e) => {
+            e.preventDefault(); // 画布右键语义专属"新建节点"，任何工具下均压制浏览器原生菜单
             if (activeTool !== 'select' || connectMode) return;
             const startedOnBackground = e.target === canvasLayerRef.current || e.target === e.currentTarget;
             if (!startedOnBackground) return;
@@ -4149,7 +4193,13 @@ $owner.Dispose()
             onPointerDown: handlePointerDown,
             onPointerMove: handlePointerMove,
             onPointerUp: handlePointerUp,
-            onDoubleClick: handleCanvasDoubleClick
+            onContextMenu: handleCanvasContextMenu,
+            // 捕获阶段先于画布交互判定：点击/右按菜单外任意处自动收起新建节点菜单
+            onPointerDownCapture: (e) => {
+              if (nodeMenu && nodeMenuRef.current && !nodeMenuRef.current.contains(e.target)) {
+                setNodeMenu(null);
+              }
+            }
           }, [
             // 0. 框选橡皮筋覆盖层 (屏幕坐标, CANVAS-M1 1.4)
             marqueeRect ? h('div', {
@@ -4184,8 +4234,9 @@ $owner.Dispose()
                 pointerEvents: 'none'
               }
             }, connectMode.from ? '已选源节点，点击目标节点完成连线 (Esc 取消)' : '连线模式：点击源节点 (Esc 取消)') : null,
-            // 0.6 新建节点菜单 (Tab / 双击空白, CANVAS-M2 2.5)
+            // 0.6 新建节点菜单 (Tab / 右键空白, CANVAS-M2 2.5)
             nodeMenu ? h('div', {
+              ref: nodeMenuRef,
               onPointerDown: (e) => e.stopPropagation(),
               onClick: () => setNodeMenu(null),
               style: {

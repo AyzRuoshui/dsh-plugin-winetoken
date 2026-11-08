@@ -195,7 +195,7 @@ async function publish(token) {
   });
 
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
-  const commitMsg = process.argv[3] || `fix: v${pkg.version} - sandboxed desktop compatibility (official credentials remote channel + auto model sync)`;
+  const commitMsg = process.argv[3] || `fix: v${pkg.version} - mobile responsive account card + canvas right-click node menu`;
 
   const newCommit = await requestGithub(token, `/repos/${user.login}/${REPO_NAME}/git/commits`, 'POST', {
     message: commitMsg,

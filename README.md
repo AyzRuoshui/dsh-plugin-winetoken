@@ -1,7 +1,7 @@
 # DeepSeek Harness (DSH) - WineToken 原生聚合插件
 
 [![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-v0.2.1--rc.5-blue)](https://github.com/deepseek-ai/deepseek-harness)
-[![Version](https://img.shields.io/badge/version-2.1.5-green.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-2.1.6-green.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/AyzRuoshui/dsh-plugin-winetoken)](https://github.com/AyzRuoshui/dsh-plugin-winetoken/releases)
 
@@ -51,11 +51,11 @@
 4. 粘贴安装地址：
    - **国内免魔法高速镜像**：
      ```text
-     https://ghproxy.net/https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/v2.1.5.tar.gz
+     https://ghproxy.net/https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/v2.1.6.tar.gz
      ```
    - **GitHub 官方直链**：
      ```text
-     https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/v2.1.5.tar.gz
+     https://github.com/AyzRuoshui/dsh-plugin-winetoken/archive/refs/tags/v2.1.6.tar.gz
      ```
 5. 点击确认完成安全增量安装；首次在底部点击状态胶囊配置 API Key 即可！
 
@@ -103,7 +103,7 @@ dsh-plugin-winetoken/
 │   └── publish_to_github.cjs   # 基于 GitHub REST API 的免 Git CLI 发布引擎 (带脱敏审计)
 ├── cordis.patch.yml            # 官方 Bundle 补丁定义
 ├── icon.svg                    # 官方规范矢量图标
-└── package.json                # 插件元数据与依赖定义 (v2.1.5)
+└── package.json                # 插件元数据与依赖定义 (v2.1.6)
 ```
 
 ---
