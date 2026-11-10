@@ -39,7 +39,7 @@ function fetchModels(baseUrl, apiKey) {
     const req = client.get(url, {
       headers: {
         'Authorization': 'Bearer ' + apiKey.trim(),
-        'User-Agent': 'WineToken-DSH-Plugin/2.1.6',
+        'User-Agent': 'WineToken-DSH-Plugin/2.1.7',
         'Accept': 'application/json'
       },
       timeout: 10000
@@ -78,7 +78,7 @@ function loadConfig() {
     baseUrl: DEFAULT_BASE_URL,
     providerId: 'winetoken',
     providerDisplayName: 'WineToken (全平台推理模型)',
-    syncIntervalHours: 1,
+    syncIntervalMinutes: 5,
     filterNonChatModels: true
   };
 
@@ -112,6 +112,23 @@ function loadConfig() {
   }
 
   return cfg;
+}
+
+/**
+ * 解析定时同步轮询间隔 (分钟)
+ * 优先级: syncIntervalMinutes > 兼容旧 syncIntervalHours > 默认 5 分钟; 最小 1 分钟
+ */
+function resolveSyncIntervalMinutes(cfg) {
+  const source = cfg || {};
+  const minutes = Number(source.syncIntervalMinutes);
+  if (Number.isFinite(minutes) && minutes > 0) {
+    return Math.max(1, Math.floor(minutes));
+  }
+  const legacyHours = Number(source.syncIntervalHours);
+  if (Number.isFinite(legacyHours) && legacyHours > 0) {
+    return Math.max(1, Math.round(legacyHours * 60));
+  }
+  return 5;
 }
 
 /**
@@ -291,5 +308,7 @@ module.exports = {
   runSync,
   syncWithHarness,
   updateCordisPatch,
-  ensureBaselineProviderInPatch
+  ensureBaselineProviderInPatch,
+  loadConfig,
+  resolveSyncIntervalMinutes
 };

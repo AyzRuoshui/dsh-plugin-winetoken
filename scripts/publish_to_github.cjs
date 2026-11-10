@@ -84,6 +84,7 @@ function getAllFiles(dir, baseDir = '') {
       file === 'PLUGIN_HANDOVER.md' ||
       file === 'AGENT.md' ||
       file === 'agent.md' ||
+      file === 'MAGPIE_MODEL_SYNC_EVALUATION.md' ||
       file === '.gitignore' ||
       file.endsWith('.bak') ||
       file.startsWith('.credentials') ||
@@ -120,7 +121,7 @@ function runSecurityAudit(filesToCommit) {
   for (const relPath of filesToCommit) {
     const normPath = relPath.replace(/\\/g, '/');
     // 文件名黑名单校验
-    if (/HANDOVER/i.test(normPath) || /AGENT\.md/i.test(normPath) || /\.credentials/i.test(normPath)) {
+    if (/HANDOVER/i.test(normPath) || /AGENT\.md/i.test(normPath) || /MAGPIE_MODEL_SYNC_EVALUATION/i.test(normPath) || /\.credentials/i.test(normPath)) {
       violations.push({ file: relPath, rule: '禁止上传内部交接文档或凭据' });
       continue;
     }
