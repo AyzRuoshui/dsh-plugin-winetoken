@@ -17,8 +17,8 @@ function serializeProviderYaml(providerConfig, indent = '      ') {
     `${indent}  api: ${providerConfig.api || 'openai-completions'}`,
     `${indent}  baseURL: ${providerConfig.baseURL || 'https://www.winetoken.asia/v1'}`,
     `${indent}  apiKeyEnv: ${providerConfig.apiKeyEnv || 'WINETOKEN_API_KEY'}`,
-    `${indent}  defaultContextWindow: ${providerConfig.defaultContextWindow || 262144}`,
-    `${indent}  defaultMaxTokens: ${providerConfig.defaultMaxTokens || 65536}`,
+    `${indent}  defaultContextWindow: ${providerConfig.defaultContextWindow || 1000000}`,
+    `${indent}  defaultMaxTokens: ${providerConfig.defaultMaxTokens || 128000}`,
     `${indent}  models:`
   ];
 

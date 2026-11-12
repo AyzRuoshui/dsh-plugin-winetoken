@@ -10,8 +10,8 @@
         api: openai-completions
         baseURL: https://www.winetoken.asia/v1
         apiKeyEnv: WINETOKEN_API_KEY
-        defaultContextWindow: 262144
-        defaultMaxTokens: 65536
+        defaultContextWindow: 1000000
+        defaultMaxTokens: 128000
         models:
           - id: 王者荣耀灵宝
             name: 王者荣耀灵宝 (推理官渠)

@@ -3,6 +3,6 @@
   "baseUrl": "https://www.winetoken.asia/v1",
   "providerId": "winetoken",
   "providerDisplayName": "WineToken (全平台推理模型)",
-  "syncIntervalMinutes": 5,
+  "syncIntervalMinutes": 1,
   "filterNonChatModels": true
 }

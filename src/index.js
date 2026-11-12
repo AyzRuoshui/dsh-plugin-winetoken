@@ -3,7 +3,7 @@ const { homedir } = require('os');
 const { join } = require('path');
 
 const { resolveApiKey } = require('./credentials.js');
-const { syncWithHarness, ensureBaselineProviderInPatch } = require('./sync.js');
+const { buildManifestModels, syncWithHarness, ensureBaselineProviderInPatch } = require('./sync.js');
 
 const name = 'dsh-plugin-winetoken';
 const inject = ['tools', 'systemPrompt'];
@@ -12,24 +12,25 @@ const inject = ['tools', 'systemPrompt'];
  * 后台模型同步：优先 Manifest 热更新中枢，超时平滑回退 /v1/models
  * 开机与定时轮询共用；写盘由 patch-engine 文本幂等保证，模型无变化时不产生任何扰动
  */
-async function backgroundModelSync(apiKey) {
+async function backgroundModelSync(apiKey, ctx = null) {
   try {
     const fs = require('fs');
+    const manifestUrl = 'https://www.winetoken.asia/api/subscription/models/manifest';
+    const gatewayUrl = 'https://www.winetoken.asia/v1/models';
+    const cacheFile = join(homedir(), '.dsh', 'storages', 'winetoken_manifest.json');
 
     // 1. 优先尝试拉取高精度 Manifest (包含精准 tags、上下文、视觉/推理标记与 Super 隔离)
     try {
-      const mfRes = await fetch('https://www.winetoken.asia/api/subscription/models/manifest', {
+      const mfRes = await fetch(manifestUrl, {
         headers: { Authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined
       });
       if (mfRes.ok) {
         const mfData = await mfRes.json();
         if (mfData && mfData.ok && Array.isArray(mfData.chatModels) && mfData.chatModels.length > 0) {
-          // 写入本地持久化缓存 ~/.dsh/storages/winetoken_manifest.json (内容无变化跳过写盘，避免无谓磁盘扰动)
           try {
             const storagesDir = join(homedir(), '.dsh', 'storages');
             if (!existsSync(storagesDir)) fs.mkdirSync(storagesDir, { recursive: true });
-            const cacheFile = join(storagesDir, 'winetoken_manifest.json');
             const cacheText = JSON.stringify(mfData, null, 2);
             let existingText = '';
             try { existingText = fs.readFileSync(cacheFile, 'utf8'); } catch (_) {}
@@ -38,44 +39,42 @@ async function backgroundModelSync(apiKey) {
             }
           } catch (_) {}
 
-          // 将 chatModels 映射为 DSH 标准 Provider 模型列表
-          const models = mfData.chatModels.map(m => {
-            const item = {
-              id: m.id,
-              name: m.name || m.id,
-              contextWindow: m.contextWindow || 65536,
-              maxTokens: m.maxTokens || 8192,
-              input: m.vision ? ['text', 'image'] : ['text']
-            };
-            if (m.reasoning) {
-              item.reasoningEfforts = { low: 'low', medium: 'medium', high: 'high', max: 'max' };
-            }
-            return item;
-          });
-
-          syncWithHarness(models, { quiet: true, apiKey });
+          const models = buildManifestModels(mfData.chatModels);
+          syncWithHarness(models, { quiet: true, apiKey, ctx });
           console.log(`[WineToken Plugin] Manifest dynamic sync: ${models.length} chat models active.`);
           return;
         }
       }
     } catch (mfErr) {
-      // Manifest 接口若遇超时，平滑回退至 v1/models
+      console.warn('[WineToken Plugin] Manifest 拉取失败，尝试读取本地缓存:', mfErr.message);
     }
 
-    // 2. 回退机制：通过 /v1/models 检查
-    const res = await fetch('https://www.winetoken.asia/v1/models', {
-      headers: { Authorization: `Bearer ${apiKey}` }
-    });
-    if (!res.ok) return;
+    try {
+      const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      if (cached && cached.ok && Array.isArray(cached.chatModels) && cached.chatModels.length > 0) {
+        const models = buildManifestModels(cached.chatModels);
+        syncWithHarness(models, { quiet: true, apiKey, ctx });
+        console.log(`[WineToken Plugin] Manifest cache fallback: ${models.length} chat models active.`);
+        return;
+      }
+    } catch (_) {}
 
-    const data = await res.json();
-    if (!data.data || !Array.isArray(data.data)) return;
-
-    const { parseModels } = require('./parser.js');
-    const models = parseModels(data.data);
-    if (models && models.length > 0) {
-      syncWithHarness(models, { quiet: true, apiKey });
-      console.log(`[WineToken Plugin] Startup model verification: ${models.length} reasoning models active.`);
+    try {
+      const res = await fetch(gatewayUrl, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.data || !Array.isArray(data.data)) return;
+      const { parseModels } = require('./parser.js');
+      const models = parseModels(data.data);
+      if (models && models.length > 0) {
+        syncWithHarness(models, { quiet: true, apiKey, ctx });
+        console.log(`[WineToken Plugin] Gateway model fallback: ${models.length} reasoning models active.`);
+      }
+    } catch (fallbackErr) {
+      console.warn('[WineToken Plugin] Gateway model fallback failed:', fallbackErr.message);
     }
   } catch (err) {
     console.warn('[WineToken Plugin] Background model check skipped:', err.message);
@@ -178,7 +177,7 @@ function apply(ctx) {
   console.log(`[WineToken Plugin] 成功识别凭据 (来源: ${keyInfo.keyName})，准备启动后台动态模型同步...`);
 
   // 延后 2 秒在后台静默检查模型 (优先对接 Manifest 热更新中枢，断网自动回退)
-  const modelTimer = setTimeout(() => { backgroundModelSync(apiKey); }, 2000);
+  const modelTimer = setTimeout(() => { backgroundModelSync(apiKey, ctx); }, 2000);
   timers.push(modelTimer);
 
   // 定时模型同步轮询：New-API 上架/下架 -> 服务端 Manifest 变化 -> 一个周期内自动同步至用户侧
@@ -186,7 +185,7 @@ function apply(ctx) {
   try {
     const { loadConfig, resolveSyncIntervalMinutes } = require('./sync.js');
     const intervalMinutes = resolveSyncIntervalMinutes(loadConfig());
-    const syncInterval = setInterval(() => { backgroundModelSync(apiKey); }, intervalMinutes * 60 * 1000);
+    const syncInterval = setInterval(() => { backgroundModelSync(apiKey, ctx); }, intervalMinutes * 60 * 1000);
     intervals.push(syncInterval);
     console.log(`[WineToken Plugin] 定时模型同步轮询已启动 (每 ${intervalMinutes} 分钟)，New-API 上架/下架将自动同步至用户侧。`);
   } catch (intervalErr) {

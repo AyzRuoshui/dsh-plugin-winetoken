@@ -29,6 +29,54 @@ const CONFIG_PATH = path.join(BASE_DIR, 'config.json');
 
 const { parseModelList } = require('./parser');
 
+function buildManifestModels(chatModels) {
+  return (Array.isArray(chatModels) ? chatModels : [])
+    .filter(m => m && typeof m.id === 'string' && m.enabled !== false)
+    .map(m => {
+      const item = {
+        id: m.id,
+        name: m.name || m.id,
+        contextWindow: m.contextWindow || 1000000,
+        maxTokens: m.maxTokens || 128000,
+        input: m.vision ? ['text', 'image'] : ['text']
+      };
+      if (m.reasoning) {
+        item.reasoningEfforts = { low: 'low', medium: 'medium', high: 'high', max: 'max' };
+      }
+      return item;
+    });
+}
+
+function resolveLlmPiAiEntry(ctx) {
+  const editor = ctx && typeof ctx.get === 'function' ? ctx.get('configEditor') : null;
+  if (!editor || typeof editor.entries !== 'function') return null;
+  return editor.entries().find(entry => entry && entry.options && entry.options.id === 'llm-pi-ai') || null;
+}
+
+async function applyProviderModelsWithConfigEditor(ctx, models) {
+  if (!ctx || typeof ctx.get !== 'function') return false;
+  const editor = ctx.get('configEditor');
+  const entry = resolveLlmPiAiEntry(ctx);
+  if (!editor || typeof editor.edit !== 'function' || !entry || !entry.fiber) return false;
+
+  await editor.edit(entry, (current) => {
+    const providers = { ...(current.providers || {}) };
+    const existing = providers.winetoken || {};
+    providers.winetoken = {
+      ...existing,
+      displayName: 'WineToken (全平台推理模型)',
+      api: 'openai-completions',
+      baseURL: DEFAULT_BASE_URL,
+      apiKeyEnv: 'WINETOKEN_API_KEY',
+      defaultContextWindow: 1000000,
+      defaultMaxTokens: 128000,
+      models
+    };
+    return { ...current, providers };
+  });
+  return true;
+}
+
 /**
  * 原生请求 WineToken 网关模型列表
  */
@@ -39,7 +87,7 @@ function fetchModels(baseUrl, apiKey) {
     const req = client.get(url, {
       headers: {
         'Authorization': 'Bearer ' + apiKey.trim(),
-        'User-Agent': 'WineToken-DSH-Plugin/2.1.7',
+        'User-Agent': 'WineToken-DSH-Plugin/2.1.8',
         'Accept': 'application/json'
       },
       timeout: 10000
@@ -78,7 +126,7 @@ function loadConfig() {
     baseUrl: DEFAULT_BASE_URL,
     providerId: 'winetoken',
     providerDisplayName: 'WineToken (全平台推理模型)',
-    syncIntervalMinutes: 5,
+    syncIntervalMinutes: 1,
     filterNonChatModels: true
   };
 
@@ -128,7 +176,7 @@ function resolveSyncIntervalMinutes(cfg) {
   if (Number.isFinite(legacyHours) && legacyHours > 0) {
     return Math.max(1, Math.round(legacyHours * 60));
   }
-  return 5;
+  return 1;
 }
 
 /**
@@ -175,8 +223,8 @@ function updateCordisPatch(providerConfig) {
     api: 'openai-completions',
     baseURL: providerConfig.baseURL || DEFAULT_BASE_URL,
     apiKeyEnv: providerConfig.apiKeyEnv || 'WINETOKEN_API_KEY',
-    defaultContextWindow: providerConfig.defaultContextWindow || 262144,
-    defaultMaxTokens: providerConfig.defaultMaxTokens || 65536,
+    defaultContextWindow: providerConfig.defaultContextWindow || 1000000,
+    defaultMaxTokens: providerConfig.defaultMaxTokens || 128000,
     models: providerConfig.models || []
   };
 
@@ -289,13 +337,27 @@ function syncWithHarness(parsedModels, options = {}) {
   if (options.apiKey) {
     updateCredentials(options.apiKey, envKeyName);
   }
-  updateCordisPatch({
+  const providerConfig = {
     id: cfg.providerId || 'winetoken',
     displayName: cfg.providerDisplayName || 'WineToken 聚合平台',
     baseURL: cfg.baseUrl || DEFAULT_BASE_URL,
     apiKeyEnv: envKeyName,
     models: parsedModels
-  });
+  };
+
+  if (options.ctx) {
+    applyProviderModelsWithConfigEditor(options.ctx, parsedModels)
+      .then(used => {
+        if (!used) updateCordisPatch(providerConfig);
+      })
+      .catch(err => {
+        console.warn('[WineToken Sync] configEditor 写入失败，回退增量补丁:', err.message);
+        updateCordisPatch(providerConfig);
+      });
+    return true;
+  }
+
+  updateCordisPatch(providerConfig);
   return true;
 }
 
@@ -305,6 +367,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildManifestModels,
   runSync,
   syncWithHarness,
   updateCordisPatch,

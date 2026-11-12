@@ -111,6 +111,7 @@ function runSecurityAudit(filesToCommit) {
     { name: '敏感凭据模式 (password/secret)', pattern: /(?:password|passwd|secret)\s*[:=]\s*['"][^'"]{4,}['"]/i },
     { name: '生产环境公网 IP', pattern: /\b(?:152\.32\.|36\.163\.)\d+\.\d+\b/ },
     { name: '内部 API Key (sk-...)', pattern: /sk-[a-zA-Z0-9]{32,}/ },
+    { name: 'GitHub 个人访问令牌 (ghp_/github_pat_)', pattern: /gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}/ },
     { name: '受限免费通道模型', pattern: /deepseek[a-zA-Z0-9._-]*-free\b/i },
     { name: '开发者个人系统绝对路径', pattern: /[C-Z]:\\Users\\[a-zA-Z0-9_.-]+/i },
     { name: '内部交接文档漏入', pattern: /(?:HANDOVER|AGENT\.md)/i }
@@ -196,7 +197,7 @@ async function publish(token) {
   });
 
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
-  const commitMsg = process.argv[3] || `fix: v${pkg.version} - mobile responsive account card + canvas right-click node menu`;
+  const commitMsg = process.argv[3] || `release: v${pkg.version}`;
 
   const newCommit = await requestGithub(token, `/repos/${user.login}/${REPO_NAME}/git/commits`, 'POST', {
     message: commitMsg,

@@ -61,24 +61,27 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 模型列表定时自动同步 (上下架免重启跟随)`;
+  const releaseTitle = `Release ${version} - Harness 0.2.2-rc.2 兼容与模型同步增强`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-本版聚焦一项核心能力：**模型列表定时自动同步**。
+本版完成 DeepSeek Harness 0.2.2-rc.2 兼容适配，并进一步加固模型同步链路。
 
-### 1. 模型上下架自动跟随，无需重启
-- 插件宿主侧新增定时同步轮询：开机后 2 秒首查，此后默认每 5 分钟自动拉取最新模型清单；
-- 运营在中转站上架或下架模型后，DSH 模型选择器将在一个同步周期内自动增删，无需重启 DSH、无需手动操作；
-- 模型无变化时零写盘、零扰动（增量引擎文本级幂等比对，完整保护用户自定义 provider 与 YAML 注释）；
-- 拉取失败或返回空清单时自动保留现有模型列表，绝不误清空选择器。
+### 1. Harness 0.2.2-rc.2 兼容
+- 新增 ESM Host 入口并保留 CommonJS 条件导出，兼容新版 Loader 加载形态；
+- 补齐本地化资源导出与 \`dsh.engines.dsh >=0.2.2-rc.2\` 版本声明；
+- 模型容量默认值对齐 0.2.2 的 1M 上下文与 128K 最大输出；
+- 运行时优先通过 \`configEditor\` 更新 \`llm-pi-ai\` provider 配置，失败时回退到既有增量补丁引擎。
 
-### 2. 同步间隔可配置
-- \`src/config.json\` 新增 \`syncIntervalMinutes\`（默认 5，最小 1），兼容旧 \`syncIntervalHours\` 配置自动换算；
-- 客户端创作工坊与画布的模型列表沿用既有 120 秒 SWR 热刷新，本轮无需任何操作。
+### 2. 模型同步增强
+- 默认同步间隔从 5 分钟提速到 1 分钟，继续兼容旧 \`syncIntervalHours\` 配置；
+- Manifest 拉取失败时优先读取本地 Manifest 缓存，再回退网关 \`/v1/models\`；
+- 新增 \`enabled: false\` 过滤，避免已停用模型继续出现在选择器；
+- 模型无变化时零写盘，完整保护用户自定义 provider 与 YAML 注释。
 
 ### 3. 工程状态
+- CommonJS 与 ESM 双入口导入验证通过；
 - 全部源码 \`node --check\` 通过；
-- 自动化测试 **27 / 27 全绿**（新增 4 项同步间隔契约测试）；
+- 自动化测试 **27 / 27 全绿**；
 - 发布脱敏门禁 **0 违规**。全程未发起任何真实生成调用。
 
 ---
