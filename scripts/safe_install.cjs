@@ -25,7 +25,7 @@ function backupFile(filePath) {
     const timestamp = Date.now();
     const bakPath = `${filePath}.bak.${timestamp}`;
     fs.copyFileSync(filePath, bakPath);
-    console.log(`  🛡️  已创建安全备份: ${path.basename(bakPath)}`);
+    console.log(`  [OK]  已创建安全备份: ${path.basename(bakPath)}`);
     return bakPath;
   }
   return null;
@@ -33,7 +33,7 @@ function backupFile(filePath) {
 
 function safeInstall() {
   console.log('='.repeat(65));
-  console.log('🚀 DeepSeek Harness - WineToken 插件安全增量安装器');
+  console.log('[OK] DeepSeek Harness - WineToken 插件安全增量安装器');
   console.log('='.repeat(65));
 
   if (!fs.existsSync(PROFILE_DIR)) {
@@ -43,7 +43,7 @@ function safeInstall() {
   // -------------------------------------------------------------
   // 1. 安全增量合并 ~/.dsh/profiles/desktop/package.json
   // -------------------------------------------------------------
-  console.log('\n📦 [步骤 1/2] 安全合并 package.json 依赖与 bundles 清单...');
+  console.log('\n[OK] [步骤 1/2] 安全合并 package.json 依赖与 bundles 清单...');
   backupFile(PKG_FILE);
 
   let pkgDoc = {
@@ -77,12 +77,12 @@ function safeInstall() {
         }
       }
     } catch (e) {
-      console.warn('  ⚠️ 解析既有 package.json 异常，将安全合并保全:', e.message);
+      console.warn('  [WARN] 解析既有 package.json 异常，将安全合并保全:', e.message);
     }
   }
 
   const existingDepsCount = Object.keys(pkgDoc.dependencies).length;
-  console.log(`  ℹ️  检测到用户当前已安装 ${existingDepsCount} 个第三方依赖，全部原样保留。`);
+  console.log(`  ℹ  检测到用户当前已安装 ${existingDepsCount} 个第三方依赖，全部原样保留。`);
 
   // 仅增量追加 WineToken 依赖 (以 link 本地路径或当前包)
   pkgDoc.dependencies["@winetoken/dsh-plugin-winetoken"] = `link:${PLUGIN_DIR}`;
@@ -93,12 +93,12 @@ function safeInstall() {
   }
 
   fs.writeFileSync(PKG_FILE, JSON.stringify(pkgDoc, null, 2), 'utf-8');
-  console.log('  ✅ package.json 增量注入完成 (已有插件 100% 完整保留)。');
+  console.log('  [OK] package.json 增量注入完成 (已有插件 100% 完整保留)。');
 
   // -------------------------------------------------------------
   // 2. 安全增量合并 ~/.dsh/profiles/desktop/cordis.patch.yml
   // -------------------------------------------------------------
-  console.log('\n⚙️  [步骤 2/2] 安全合并 cordis.patch.yml 模块与模型补丁...');
+  console.log('\n[WineToken]  [步骤 2/2] 安全合并 cordis.patch.yml 模块与模型补丁...');
   backupFile(PATCH_FILE);
 
   let patches = [];
@@ -110,11 +110,11 @@ function safeInstall() {
         patches = parsed;
       }
     } catch (e) {
-      console.warn('  ⚠️ 读取 cordis.patch.yml 异常:', e.message);
+      console.warn('  [WARN] 读取 cordis.patch.yml 异常:', e.message);
     }
   }
 
-  console.log(`  ℹ️  检测到用户当前包含 ${patches.length} 个 Cordis 补丁配置项，全部原样保留。`);
+  console.log(`  ℹ  检测到用户当前包含 ${patches.length} 个 Cordis 补丁配置项，全部原样保留。`);
 
   // 确保 winetoken-plugin 实例声明存在
   const hasPluginEntry = patches.some(p => p && (p.id === 'winetoken-plugin' || p.name === '@winetoken/dsh-plugin-winetoken'));
@@ -148,10 +148,10 @@ function safeInstall() {
 
   const newYaml = YAML.stringify(patches, { indent: 2 });
   fs.writeFileSync(PATCH_FILE, newYaml, 'utf-8');
-  console.log('  ✅ cordis.patch.yml 增量注入完成 (已有其它插件补丁 100% 完整保留)。');
+  console.log('  [OK] cordis.patch.yml 增量注入完成 (已有其它插件补丁 100% 完整保留)。');
 
   console.log('\n' + '='.repeat(65));
-  console.log('🎉 [安装成功] WineToken 插件已成功增量安装到 DeepSeek Harness！');
+  console.log('[OK] [安装成功] WineToken 插件已成功增量安装到 DeepSeek Harness！');
   console.log('   - 现有插件状态: 100% 完好无损保留');
   console.log('   - 客户端核心包: 100% 官方原版 (绝不篡改 app.asar)');
   console.log('   - 请重启 DeepSeek Harness 客户端即可尽享全平台推理模型与创作工坊！');

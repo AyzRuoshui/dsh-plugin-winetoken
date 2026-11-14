@@ -61,28 +61,33 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - Harness 0.2.2-rc.2 兼容与模型同步增强`;
+  const releaseTitle = `Release ${version} - 画布对标 infinite-canvas 全面升级`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-本版完成 DeepSeek Harness 0.2.2-rc.2 兼容适配，并进一步加固模型同步链路。
+本版按 basketikun/infinite-canvas 的做法重构漫剧 AI 画布，交互与能力全面对标无限画布工作台，并接入 DSH 原生画布协作工具。
 
-### 1. Harness 0.2.2-rc.2 兼容
-- 新增 ESM Host 入口并保留 CommonJS 条件导出，兼容新版 Loader 加载形态；
-- 补齐本地化资源导出与 \`dsh.engines.dsh >=0.2.2-rc.2\` 版本声明；
-- 模型容量默认值对齐 0.2.2 的 1M 上下文与 128K 最大输出；
-- 运行时优先通过 \`configEditor\` 更新 \`llm-pi-ai\` provider 配置，失败时回退到既有增量补丁引擎。
+### 1. 画布架构与交互
+- 多工程管理：新建 / 切换 / 重命名 / 回收站恢复 / 工程导入导出，旧单文件工程零迁移接入；
+- 小地图：按节点类型着色的缩略图、视口矩形、点击或拖拽快速定位；
+- 视口缩放范围对齐上游 5%~500%；全部写盘原子化 + 双备份 + 物理回读强校验；
+- 保留三级水合与 WAL 任务队列，切 Tab / 刷新不丢草稿与资产。
 
-### 2. 模型同步增强
-- 默认同步间隔从 5 分钟提速到 1 分钟，继续兼容旧 \`syncIntervalHours\` 配置；
-- Manifest 拉取失败时优先读取本地 Manifest 缓存，再回退网关 \`/v1/models\`；
-- 新增 \`enabled: false\` 过滤，避免已停用模型继续出现在选择器；
-- 模型无变化时零写盘，完整保护用户自定义 provider 与 YAML 注释。
+### 2. 节点即生成器
+- 连线成为生成输入：上游图片节点作参考图、文本节点补充提示词、参数节点覆盖模型与尺寸；
+- 图片节点可直接编辑提示词并「重跑」，生成结果落本地资产库，节点只持引用键；
+- 视频节点：新建 / 重跑 / 取消，3 秒长轮询（最长 120 秒）与状态机，上游图片连线作首帧，产物本地落盘；
+- 提示词库：收藏 / 搜索 / 插入 / 删除 / 导入导出，快捷键面板与新手引导同步补齐。
 
-### 3. 工程状态
-- CommonJS 与 ESM 双入口导入验证通过；
-- 全部源码 \`node --check\` 通过；
-- 自动化测试 **27 / 27 全绿**；
-- 发布脱敏门禁 **0 违规**。全程未发起任何真实生成调用。
+### 3. DSH 原生画布协作工具
+- 新增 winetoken_canvas_get_storyboard（只读）、winetoken_canvas_add_panel（写入不扣费）、winetoken_canvas_generate（付费入队）；
+- 宿主工具经磁盘工程文件桥读写画布，生成任务只写 WAL 存根、由画布前端执行，杜绝宿主与前端双花扣费；
+- 沿用 sensitive 权限确认、会话级熔断器与结构化返回。
+
+### 4. 工程状态
+- 全量源码 node --check 通过；
+- 自动化测试 113 / 113 全绿（含脏环境破坏性契约测试）；
+- 宿主桩加载探针通过；发布脱敏门禁 0 违规；零 Emoji 工业风；
+- 本次为本地实现与自动化验证闭环，真实视频生成等模型调用请在 DSH 客户端内按需使用（会消耗额度）。
 
 ---
 

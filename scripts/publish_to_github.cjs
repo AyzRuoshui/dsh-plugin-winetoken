@@ -39,7 +39,7 @@ function requestGithub(token, endpoint, method = 'GET', data = null, retries = 3
             resolve(body);
           }
         } else if (res.statusCode >= 500 && retries > 0) {
-          console.log(`    ⚠️ GitHub 服务器 5xx 波动 (${endpoint})，1.5 秒后自动重试 (剩余 ${retries} 次)...`);
+          console.log(`    [WARN] GitHub 服务器 5xx 波动 (${endpoint})，1.5 秒后自动重试 (剩余 ${retries} 次)...`);
           setTimeout(() => {
             requestGithub(token, endpoint, method, data, retries - 1).then(resolve).catch(reject);
           }, 1500);
@@ -51,7 +51,7 @@ function requestGithub(token, endpoint, method = 'GET', data = null, retries = 3
 
     req.on('error', (err) => {
       if (retries > 0) {
-        console.log(`    ⚠️ 网络重试中 (${endpoint}, 剩余 ${retries} 次)...`);
+        console.log(`    [WARN] 网络重试中 (${endpoint}, 剩余 ${retries} 次)...`);
         setTimeout(() => {
           requestGithub(token, endpoint, method, data, retries - 1).then(resolve).catch(reject);
         }, 1500);
@@ -78,6 +78,7 @@ function getAllFiles(dir, baseDir = '') {
       file === 'ENGINEERING_REVIEW_REPORT.md' ||
       file === 'PHASED_IMPLEMENTATION_PLAN.md' ||
       file === 'CANVAS_INTERACTION_PARITY_PLAN.md' ||
+      file === 'INFINITE_CANVAS_PARITY_PLAN.md' ||
       file === 'package-lock.json' ||
       file === '.package-lock.json' ||
       file === 'HANDOVER.md' ||
@@ -85,6 +86,7 @@ function getAllFiles(dir, baseDir = '') {
       file === 'AGENT.md' ||
       file === 'agent.md' ||
       file === 'MAGPIE_MODEL_SYNC_EVALUATION.md' ||
+      file === "console.log('" ||
       file === '.gitignore' ||
       file.endsWith('.bak') ||
       file.startsWith('.credentials') ||
@@ -183,7 +185,7 @@ async function publish(token) {
       type: 'blob',
       sha: blob.sha
     });
-    console.log(`  ✓ 上传: ${relPath}`);
+    console.log(`  [OK] 上传: ${relPath}`);
   }
 
   const ref = await requestGithub(token, `/repos/${user.login}/${REPO_NAME}/git/refs/heads/main`).catch(() => 

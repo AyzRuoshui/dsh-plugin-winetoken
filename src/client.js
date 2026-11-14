@@ -1,5 +1,5 @@
 /**
- * WineToken DSH Client Module (v1.3.6)
+ * WineToken DSH Client Module (v2.2.0)
  * 1. 消除鼠标悬停余额按钮上的原生提示浮层 (Zero-Distraction Tooltip Removal)
  *    - 移除底部状态栏与工坊顶栏余额按钮原生 title 提示，呈现极简纯净的交互体验
  * 2. 订阅限时额度与钱包永久余额双账轨分离 (Dual-Track Balance Engine)
@@ -33,10 +33,18 @@
   }
 
   // 引入并挂载独立持久化存储驱动、WAL任务队列、几何计算与命令模式历史栈
+  // 对标 infinite-canvas: 多工程注册表 / 小地图几何 / 统一节点视图 / 工程导入导出 / 本地资产库
   let CanvasProjectStorageClass = null;
   let CanvasJobQueueSingleton = null;
   let CanvasMathUtils = null;
   let CanvasHistoryManagerClass = null;
+  let CanvasProjectStoreClass = null;
+  let CanvasMiniMapUtils = null;
+  let CanvasNodeUtils = null;
+  let CanvasExportUtils = null;
+  let CanvasAssetsClass = null;
+  let CanvasVideoUtils = null;
+  let CanvasPromptUtils = null;
   try {
     const storageMod = require('./canvas-storage.js');
     CanvasProjectStorageClass = storageMod.CanvasProjectStorage;
@@ -52,9 +60,32 @@
     const histMod = require('./canvas-history.js');
     CanvasHistoryManagerClass = histMod.CanvasHistoryManager;
   } catch (_) {}
+  try {
+    CanvasProjectStoreClass = require('./canvas-project-store.js').CanvasProjectStore;
+  } catch (_) {}
+  try {
+    CanvasMiniMapUtils = require('./canvas-minimap.js');
+  } catch (_) {}
+  try {
+    CanvasNodeUtils = require('./canvas-nodes.js');
+  } catch (_) {}
+  try {
+    CanvasExportUtils = require('./canvas-export.js');
+  } catch (_) {}
+  try {
+    CanvasAssetsClass = require('./canvas-assets.js').CanvasAssets;
+  } catch (_) {}
+  try {
+    CanvasVideoUtils = require('./canvas-video.js');
+  } catch (_) {}
+  try {
+    CanvasPromptUtils = require('./canvas-prompts.js');
+  } catch (_) {}
 
   const canvasStorageDriver = CanvasProjectStorageClass ? new CanvasProjectStorageClass() : null;
   const canvasHistoryManager = CanvasHistoryManagerClass ? new CanvasHistoryManagerClass(30) : null;
+  const canvasProjectStore = CanvasProjectStoreClass ? new CanvasProjectStoreClass() : null;
+  const canvasAssetsDriver = CanvasAssetsClass ? new CanvasAssetsClass() : null;
 
   /**
    * WineToken 跨进程凭据同步中枢 (WineTokenCredentialBridge)
@@ -2352,7 +2383,7 @@ $owner.Dispose()
 
           const STEPS = [
             {
-              badge: '01 / 05',
+              badge: '01 / 06',
               tag: '视口操控',
               targetSelector: '#winetoken-canvas-viewport',
               title: '无限画布 · 平移缩放与适应视图',
@@ -2365,7 +2396,7 @@ $owner.Dispose()
               ]
             },
             {
-              badge: '02 / 05',
+              badge: '02 / 06',
               tag: '选择与批量',
               targetSelector: '#winetoken-canvas-panels-area',
               title: '选择集 · 框选多选与批量操作',
@@ -2379,7 +2410,7 @@ $owner.Dispose()
               ]
             },
             {
-              badge: '03 / 05',
+              badge: '03 / 06',
               tag: '节点与连线',
               targetSelector: '#winetoken-canvas-items-area',
               title: '万物皆节点 · 生成图落画布与自由连线',
@@ -2392,7 +2423,7 @@ $owner.Dispose()
               ]
             },
             {
-              badge: '04 / 05',
+              badge: '04 / 06',
               tag: '角色定妆',
               targetSelector: '#winetoken-canvas-char-deck',
               title: '角色锚点 · 连线锁定五官与画风',
@@ -2404,7 +2435,7 @@ $owner.Dispose()
               ]
             },
             {
-              badge: '05 / 05',
+              badge: '05 / 06',
               tag: '分镜出图',
               targetSelector: '#winetoken-canvas-panels-area',
               title: '景别运镜 · 对白气泡与条漫拼版',
@@ -2413,6 +2444,21 @@ $owner.Dispose()
                 { key: '标准景别切换', text: '特写 CU、中景 MS、全景 WS 一键注入运镜提示词' },
                 { key: '矢量漫画对白', text: '输入角色台词，自动排布标准漫画对白气泡框' },
                 { key: 'Ctrl + Enter (选中分镜)', text: '批量生成所选分镜；生成图自动落画布' }
+              ]
+            },
+            {
+              badge: '06 / 06',
+              tag: '进阶能力',
+              targetSelector: '#winetoken-canvas-items-area',
+              title: '多工程 · 视频节点 · 提示词库 · 画布助手',
+              desc: '画布对标无限画布工作台：工程可切换与导入导出，连线驱动生成，视频节点、提示词库与大模型画布工具协同。',
+              tips: [
+                { key: '多工程', text: '顶栏可新建/切换/重命名工程，导出 .wtcanvas.json 后再导入' },
+                { key: '连线即输入', text: '把图片或文本节点连到分镜，自动成为参考图与提示词补充' },
+                { key: '视频节点 / 重跑', text: 'Tab 新建视频节点，点击「重跑」生成，可随时取消轮询' },
+                { key: '提示词库', text: '右下「提示词」收藏选中节点提示词，随时搜索复用' },
+                { key: '小地图', text: '右下「小地图」开关，点击或拖拽可快速定位视口' },
+                { key: '对话协作', text: '聊天中可让大模型读取故事板、追加分镜或排队生成' }
               ]
             }
           ];
@@ -2742,6 +2788,18 @@ $owner.Dispose()
                 ['拖动时自动', '8px 网格磁吸'],
                 ['靠近邻卡边缘', '对齐参考线自动吸附']
               ]
+            },
+            {
+              title: '进阶能力',
+              items: [
+                ['Tab / 右键空白', '新建分镜 / 图片 / 文本 / 视频节点'],
+                ['节点顶栏「重跑」', '按提示词与上游连线重新生成'],
+                ['连线到分镜', '图片作参考图、文本补充提示词'],
+                ['右下「小地图」', '开关缩略图，拖拽定位视口'],
+                ['右下「提示词」', '收藏 / 搜索 / 插入节点提示词'],
+                ['顶栏「工程」', '切换 / 新建 / 导入导出工程'],
+                ['聊天对话', '让大模型读取故事板 / 追加分镜 / 排队生成']
+              ]
             }
           ];
 
@@ -2812,16 +2870,116 @@ $owner.Dispose()
         }
 
         // ==========================================
+        // 4.6 画布小地图 (对标 infinite-canvas canvas-mini-map.tsx)
+        // 纯几何由 src/canvas-minimap.js 提供，节点着色由 src/canvas-nodes.js 注册表提供
+        // ==========================================
+        function CanvasMiniMapPanel({ theme, project, viewport, tick, onViewportChange, onToggle }) {
+          const defaults = CanvasMiniMapUtils.MINIMAP_DEFAULTS;
+          const containerRef = React.useRef(null);
+          const nodes = React.useMemo(() => CanvasNodeUtils.listNodes(project), [tick]);
+          const bounds = React.useMemo(() => CanvasMiniMapUtils.computeWorldBounds(nodes, defaults.padding), [nodes]);
+          const transform = React.useMemo(() => CanvasMiniMapUtils.createMinimapTransform(bounds, defaults.width, defaults.height), [bounds]);
+          const rects = React.useMemo(() => CanvasMiniMapUtils.computeNodeRects(nodes, transform), [nodes, transform]);
+          const [screenSize, setScreenSize] = React.useState({ width: 800, height: 600 });
+
+          React.useEffect(() => {
+            const el = containerRef.current?.parentElement;
+            if (!el) return;
+            const measure = () => {
+              const r = el.getBoundingClientRect();
+              if (r.width && r.height) setScreenSize({ width: r.width, height: r.height });
+            };
+            measure();
+            window.addEventListener('resize', measure);
+            return () => window.removeEventListener('resize', measure);
+          }, []);
+
+          const viewportRect = CanvasMiniMapUtils.computeViewportRect(viewport, screenSize, transform);
+          const handlePointer = (e) => {
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            const next = CanvasMiniMapUtils.minimapPanToViewport(point, screenSize, transform, viewport.zoom);
+            onViewportChange(next);
+          };
+
+          return h('div', {
+            ref: containerRef,
+            onPointerDown: (e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              handlePointer(e);
+            },
+            onPointerMove: (e) => {
+              if (e.buttons === 1) handlePointer(e);
+            },
+            title: '小地图：点击或拖拽定位视口',
+            style: {
+              position: 'absolute', bottom: '64px', right: '20px', zIndex: 100,
+              width: `${defaults.width}px`, height: `${defaults.height}px`,
+              borderRadius: '8px', overflow: 'hidden',
+              backgroundColor: theme.isDark ? 'rgba(18,18,21,0.92)' : 'rgba(245,245,247,0.94)',
+              border: `1px solid ${theme.popoverBorder}`,
+              boxShadow: '0 6px 18px rgba(0,0,0,0.2)', cursor: 'crosshair'
+            }
+          }, [
+            ...rects.map((r, i) => h('div', {
+              key: 'n' + i,
+              style: {
+                position: 'absolute', left: `${r.x}px`, top: `${r.y}px`,
+                width: `${r.width}px`, height: `${r.height}px`,
+                backgroundColor: CanvasNodeUtils.getNodeDefinition(nodes[i] && nodes[i].type).minimapColor,
+                opacity: 0.85, borderRadius: '1px', pointerEvents: 'none'
+              }
+            })),
+            h('div', {
+              style: {
+                position: 'absolute', left: `${viewportRect.x}px`, top: `${viewportRect.y}px`,
+                width: `${viewportRect.width}px`, height: `${viewportRect.height}px`,
+                border: `1.5px solid ${theme.isDark ? '#e5e7eb' : '#111827'}`,
+                backgroundColor: theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                pointerEvents: 'none', boxSizing: 'border-box'
+              }
+            }),
+            h('button', {
+              type: 'button',
+              onPointerDown: (e) => e.stopPropagation(),
+              onClick: (e) => { e.stopPropagation(); onToggle(); },
+              title: '关闭小地图',
+              style: {
+                position: 'absolute', top: '2px', right: '2px', padding: '0 5px',
+                background: 'none', border: 'none', color: theme.textMuted,
+                cursor: 'pointer', fontSize: '12px', lineHeight: '16px'
+              }
+            }, '×')
+          ]);
+        }
+
+        // ==========================================
         // 5. 漫剧 AI 画布全景工作台组件 (CanvasWorkspace)
         // ==========================================
         function CanvasWorkspace({ theme: propTheme, isVip, isSvip, isSuper, onOpenTutorial }) {
           const hookTheme = useTheme();
           const theme = propTheme || hookTheme;
           // 三级水合恢复机制：全局内存单例 -> CanvasProjectStorage 磁盘备份 -> localStorage 镜像 -> 初始模板 (CANVAS-01)
+          // 对标 infinite-canvas: 多工程注册表冷启动接入 (旧单文件零迁移，内存单例仍最优先)
+          // 三级水合机制保持不变，仅在磁盘层之前插入"当前激活工程"这一层数据源
           const initialProject = React.useMemo(() => {
             const mem = (typeof window !== 'undefined') ? window.__WINETOKEN_CANVAS_MEMORY_STORE__ : null;
             if (mem && mem.characters && mem.panels && mem.characters.length > 0) {
               return mem;
+            }
+            if (canvasProjectStore) {
+              try {
+                canvasProjectStore.ensureLegacyMigration();
+                const activeId = canvasProjectStore.getActiveId();
+                if (activeId) {
+                  const active = canvasProjectStore.loadProject(activeId);
+                  if (active && active.characters && active.panels) return active;
+                }
+              } catch (err) {
+                console.warn('[WineToken Canvas] 激活工程读取失败，回退单文件磁盘备份:', err.message);
+              }
             }
             if (canvasStorageDriver) {
               try {
@@ -2862,6 +3020,31 @@ $owner.Dispose()
           const [selectedIds, setSelectedIds] = React.useState(() => new Set());
           const [activeTool, setActiveTool] = React.useState('select'); // 'select' | 'grab'
           const [showShortcuts, setShowShortcuts] = React.useState(false);
+          // 对标 infinite-canvas: 多工程管理态 / 小地图开关 / 工程导入导出错误透传
+          const [projectList, setProjectList] = React.useState(() => canvasProjectStore ? canvasProjectStore.listProjects() : []);
+          const [activeProjectId, setActiveProjectId] = React.useState(() => initialProject.id || (canvasProjectStore ? canvasProjectStore.getActiveId() : null));
+          const [projectError, setProjectError] = React.useState('');
+          const [showMiniMap, setShowMiniMap] = React.useState(() => {
+            try { return localStorage.getItem('WINETOKEN_CANVAS_MINIMAP') !== 'off'; } catch (_) { return true; }
+          });
+          const [minimapTick, setMinimapTick] = React.useState(0);
+          // 对标 infinite-canvas 提示词库: localStorage 持久化，脏数据由纯模块归一化
+          const PROMPT_LIB_KEY = 'WINETOKEN_CANVAS_PROMPT_LIBRARY_V1';
+          const [promptLibrary, setPromptLibrary] = React.useState(() => {
+            try {
+              const raw = localStorage.getItem(PROMPT_LIB_KEY);
+              return CanvasPromptUtils
+                ? CanvasPromptUtils.normalizeLibrary(raw ? JSON.parse(raw) : {})
+                : { version: 1, items: [] };
+            } catch (_) { return { version: 1, items: [] }; }
+          });
+          const [promptLibOpen, setPromptLibOpen] = React.useState(false);
+          const [promptLibQuery, setPromptLibQuery] = React.useState('');
+          const persistPromptLibrary = (lib) => {
+            setPromptLibrary(lib);
+            try { localStorage.setItem(PROMPT_LIB_KEY, JSON.stringify(lib)); }
+            catch (err) { setProjectError(`提示词库保存失败: ${err.message}`); }
+          };
           // CANVAS-M4 客户端部分: AI 剧本拆镜
           const [aiSplitOpen, setAiSplitOpen] = React.useState(false);
           const [aiSplitText, setAiSplitText] = React.useState('');
@@ -2931,6 +3114,252 @@ $owner.Dispose()
           // 撤销/重做统一快照 (含节点、连线与组)
           const snapshotState = () => ({ characters, panels, canvasItems, edges, groups });
 
+          // ==========================================
+          // 5.0 多工程管理 (对标 infinite-canvas: create/open/rename/delete/import/export)
+          // 任何写盘失败都向 UI 真实透传，绝不静默吞错 (工程铁律 3)
+          // ==========================================
+          const refreshProjectList = () => {
+            if (!canvasProjectStore) return;
+            try {
+              setProjectList(canvasProjectStore.listProjects());
+            } catch (err) {
+              setProjectError(`工程列表读取失败: ${err.message}`);
+            }
+          };
+
+          const applyProjectToCanvas = (project, id) => {
+            setCharacters(project.characters || []);
+            setPanels(project.panels || []);
+            setCanvasItems(project.canvasItems || []);
+            setEdges(project.edges || []);
+            setGroups(project.groups || []);
+            if (project.viewport) {
+              viewportRef.current = { ...project.viewport };
+              // 直接更新变换层，不依赖后面声明的 updateTransform (规避闭包声明顺序耦合)
+              if (canvasLayerRef.current) {
+                const vp = viewportRef.current;
+                canvasLayerRef.current.style.transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+              }
+              setZoomDisplay(Math.round((project.viewport.zoom || 1) * 100));
+            }
+            if (project.activeModel) setCanvasModel(project.activeModel);
+            setSelectedIds(new Set());
+            if (canvasHistoryManager) canvasHistoryManager.clear();
+            setActiveProjectId(id || null);
+            setMinimapTick(t => t + 1);
+          };
+
+          const handleSwitchProject = (id) => {
+            if (!canvasProjectStore || !id || id === activeProjectId) return;
+            try {
+              const project = canvasProjectStore.loadProject(id);
+              if (canvasProjectStore.setActiveId(id)) {
+                applyProjectToCanvas(project, id);
+                setProjectError('');
+              }
+            } catch (err) {
+              setProjectError(`工程切换失败: ${err.message}`);
+            }
+          };
+
+          const handleCreateProject = () => {
+            if (!canvasProjectStore) return;
+            const name = window.prompt('新建工程名称', `未命名工程 ${new Date().toLocaleDateString()}`);
+            if (name === null) return;
+            try {
+              const meta = canvasProjectStore.createProject(name);
+              const project = canvasProjectStore.loadProject(meta.id);
+              canvasProjectStore.setActiveId(meta.id);
+              applyProjectToCanvas(project, meta.id);
+              refreshProjectList();
+              setProjectError('');
+            } catch (err) {
+              setProjectError(`新建工程失败: ${err.message}`);
+            }
+          };
+
+          const handleRenameProject = () => {
+            if (!canvasProjectStore || !activeProjectId) return;
+            const current = projectList.find(p => p.id === activeProjectId);
+            const name = window.prompt('重命名当前工程', current ? current.name : '未命名工程');
+            if (name === null) return;
+            try {
+              canvasProjectStore.renameProject(activeProjectId, name);
+              refreshProjectList();
+              setProjectError('');
+            } catch (err) {
+              setProjectError(`重命名失败: ${err.message}`);
+            }
+          };
+
+          const handleDeleteProject = () => {
+            if (!canvasProjectStore || !activeProjectId) return;
+            if (!window.confirm('确定要把当前工程移入回收站吗？工程内容不会立即删除，可在回收站恢复。')) return;
+            try {
+              canvasProjectStore.deleteProject(activeProjectId);
+              const rest = canvasProjectStore.listProjects();
+              refreshProjectList();
+              if (rest.length) {
+                const nextId = rest[0].id;
+                canvasProjectStore.setActiveId(nextId);
+                applyProjectToCanvas(canvasProjectStore.loadProject(nextId), nextId);
+              } else {
+                setActiveProjectId(null);
+              }
+              setProjectError('');
+            } catch (err) {
+              setProjectError(`删除工程失败: ${err.message}`);
+            }
+          };
+
+          const handleRestoreProject = () => {
+            if (!canvasProjectStore) return;
+            const deleted = canvasProjectStore.listDeleted();
+            if (!deleted.length) { setProjectError('回收站为空'); return; }
+            const label = deleted.map((p, i) => `${i + 1}. ${p.name}`).join('\n');
+            const pick = window.prompt(`输入要恢复的工程序号:\n${label}`, '1');
+            if (pick === null) return;
+            const idx = Number(pick) - 1;
+            if (!Number.isInteger(idx) || idx < 0 || idx >= deleted.length) { setProjectError('序号无效'); return; }
+            try {
+              const id = deleted[idx].id;
+              canvasProjectStore.restoreProject(id);
+              refreshProjectList();
+              setProjectError(`已恢复工程: ${deleted[idx].name}`);
+            } catch (err) {
+              setProjectError(`恢复工程失败: ${err.message}`);
+            }
+          };
+
+          // ==========================================
+          // 5.1 提示词库操作 (对标 infinite-canvas prompt library)
+          // ==========================================
+          const findSelectedPromptTarget = () => {
+            const ids = Array.from(selectedIds);
+            if (!ids.length) return null;
+            const panel = panels.find(p => ids.includes(p.id));
+            if (panel) return { kind: 'panel', id: panel.id, get: () => panel.prompt || '', set: (v) => setPanels(prev => prev.map(x => x.id === panel.id ? { ...x, prompt: v } : x)) };
+            const item = canvasItems.find(it => ids.includes(it.id) && (it.type === 'image' || it.type === 'video' || it.type === 'text'));
+            if (item) return {
+              kind: 'item', id: item.id,
+              get: () => (item.type === 'text' ? (item.data?.text || '') : (item.data?.prompt || '')),
+              set: (v) => setCanvasItems(prev => prev.map(x => x.id === item.id ? {
+                ...x, data: { ...(x.data || {}), [item.type === 'text' ? 'text' : 'prompt']: v }
+              } : x))
+            };
+            return null;
+          };
+
+          const handleCollectPrompt = () => {
+            if (!CanvasPromptUtils) { setProjectError('提示词库模块不可用'); return; }
+            const target = findSelectedPromptTarget();
+            if (!target) { setProjectError('请先选中一个分镜或图片/视频/文本节点'); return; }
+            const text = target.get();
+            if (!text || !text.trim()) { setProjectError('所选节点没有可收藏的提示词'); return; }
+            const r = CanvasPromptUtils.addPrompt(promptLibrary, { text, title: text.slice(0, 24), tags: [target.kind] });
+            if (r.added) persistPromptLibrary(r.library);
+            setProjectError(r.added ? '已收藏到提示词库' : r.reason);
+          };
+
+          const handleApplyPrompt = (text) => {
+            const target = findSelectedPromptTarget();
+            if (!target) { setProjectError('请先选中一个节点，再把提示词插入其中'); return; }
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            target.set(text);
+            setPromptLibOpen(false);
+            setProjectError('提示词已插入所选节点');
+          };
+
+          const handleRemovePrompt = (id) => {
+            if (!CanvasPromptUtils) return;
+            persistPromptLibrary(CanvasPromptUtils.removePrompt(promptLibrary, id).library);
+          };
+
+          const handleExportPromptLibrary = async () => {
+            if (!CanvasPromptUtils) { setProjectError('提示词库模块不可用'); return; }
+            try {
+              const manifest = CanvasPromptUtils.buildExport(promptLibrary);
+              const targetPath = await WineTokenFileUtil.promptSaveLocation({
+                title: '导出提示词库', defaultName: `WineToken_提示词库_${Date.now()}.json`,
+                type: 'image', ext: '.json', filters: 'JSON 文件 (*.json)|*.json'
+              });
+              if (!targetPath) return;
+              const fs = require('fs');
+              fs.writeFileSync(targetPath, JSON.stringify(manifest, null, 2), 'utf8');
+              const readBack = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
+              if (readBack.app !== manifest.app || readBack.items.length !== manifest.items.length) {
+                throw new Error('导出文件回读校验失败');
+              }
+              WineTokenFileUtil.revealFile(targetPath);
+              setProjectError(`提示词库已导出 (${manifest.items.length} 条)`);
+            } catch (err) { setProjectError(`提示词库导出失败: ${err.message}`); }
+          };
+
+          const handleImportPromptLibrary = async (ev) => {
+            const file = ev.target.files && ev.target.files[0];
+            ev.target.value = '';
+            if (!file || !CanvasPromptUtils) return;
+            try {
+              const text = await file.text();
+              const r = CanvasPromptUtils.parseImport(text, promptLibrary);
+              if (!r.ok) throw new Error(r.error);
+              persistPromptLibrary(r.library);
+              setProjectError(`已导入 ${r.added} 条提示词${r.warnings.length ? ' (含兼容提示)' : ''}`);
+            } catch (err) { setProjectError(`提示词库导入失败: ${err.message}`); }
+          };
+
+          // 工程导出: 版本化清单 + 资产清单，走 Windows 原生另存为；失败真实报错
+          const handleExportProject = async () => {
+            if (!CanvasExportUtils) { setProjectError('工程导出模块不可用'); return; }
+            try {
+              const manifest = CanvasExportUtils.buildExportManifest(snapshotState());
+              const targetPath = await WineTokenFileUtil.promptSaveLocation({
+                title: '导出画布工程',
+                defaultName: `WineToken_工程_${Date.now()}.wtcanvas.json`,
+                type: 'image',
+                ext: '.json',
+                filters: '画布工程 (*.wtcanvas.json)|*.wtcanvas.json|JSON 文件 (*.json)|*.json'
+              });
+              if (!targetPath) return;
+              const fs = require('fs');
+              fs.writeFileSync(targetPath, JSON.stringify(manifest, null, 2), 'utf8');
+              // 物理回读强校验
+              const readBack = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
+              if (readBack.app !== manifest.app || readBack.version !== manifest.version) {
+                throw new Error('导出文件回读校验失败');
+              }
+              WineTokenFileUtil.revealFile(targetPath);
+              setProjectError(`工程已导出 (${manifest.assets.length} 项资产引用)`);
+            } catch (err) {
+              setProjectError(`工程导出失败: ${err.message}`);
+            }
+          };
+
+          const handleImportProject = async (ev) => {
+            const file = ev.target.files && ev.target.files[0];
+            ev.target.value = '';
+            if (!file || !CanvasExportUtils || !canvasProjectStore) return;
+            if (!window.confirm('导入将新建一个工程，当前画布内容会先自动保存到现有工程。是否继续？')) return;
+            try {
+              const text = await file.text();
+              const parsed = CanvasExportUtils.parseImportManifest(text);
+              if (!parsed.ok) throw new Error(parsed.error);
+              const meta = canvasProjectStore.createProject(`${parsed.manifest.project.panels?.length || 0} 镜 · 导入工程`);
+              const imported = {
+                ...parsed.manifest.project,
+                viewport: parsed.manifest.project.viewport || { x: 40, y: 30, zoom: 1 },
+                activeModel: parsed.manifest.project.activeModel || canvasModel
+              };
+              canvasProjectStore.saveProject(meta.id, imported);
+              canvasProjectStore.setActiveId(meta.id);
+              applyProjectToCanvas(imported, meta.id);
+              refreshProjectList();
+              setProjectError(`导入成功${parsed.warnings.length ? ' (含 ' + parsed.warnings.length + ' 条兼容提示)' : ''}`);
+            } catch (err) {
+              setProjectError(`工程导入失败: ${err.message}`);
+            }
+          };
+
           // 状态变更双轨同步写盘与内存保活 (CANVAS-01, CANVAS-02)
           React.useEffect(() => {
             const snapshot = {
@@ -2953,7 +3382,16 @@ $owner.Dispose()
                 localStorage.setItem('__winetoken_canvas_snapshot__', JSON.stringify(snapshot));
               }
             } catch (_) {}
-          }, [characters, panels, canvasItems, edges, groups, canvasModel]);
+            // 对标 infinite-canvas: 状态变更同步写入当前激活工程 (失败必须向 UI 真实报错，铁律 3)
+            if (canvasProjectStore && activeProjectId) {
+              try {
+                canvasProjectStore.saveProject(activeProjectId, snapshot);
+                setProjectError(prev => prev ? '' : prev);
+              } catch (err) {
+                setProjectError(`工程保存失败: ${err.message}`);
+              }
+            }
+          }, [characters, panels, canvasItems, edges, groups, canvasModel, activeProjectId, viewportTick]);
 
           // 更新视图 Transform
           const updateTransform = () => {
@@ -3032,7 +3470,7 @@ $owner.Dispose()
               if (e.deltaMode === 1) delta *= 16;
               const clampedDelta = Math.max(-80, Math.min(80, delta));
               const factor = 1 - clampedDelta * 0.0018;
-              const nextZoom = Math.min(3.0, Math.max(0.2, cur.zoom * factor));
+              const nextZoom = Math.min(5.0, Math.max(0.05, cur.zoom * factor));
               const ratio = nextZoom / cur.zoom;
               cur.x = mouseX - (mouseX - cur.x) * ratio;
               cur.y = mouseY - (mouseY - cur.y) * ratio;
@@ -3180,7 +3618,7 @@ $owner.Dispose()
             const contentW = Math.max(...boxes.map(b => b.x + b.w)) + pad - minX;
             const contentH = Math.max(...boxes.map(b => b.y + b.h)) + pad - minY;
 
-            const nextZoom = Math.min(3.0, Math.max(0.2, Math.min(rect.width / contentW, rect.height / contentH)));
+            const nextZoom = Math.min(5.0, Math.max(0.05, Math.min(rect.width / contentW, rect.height / contentH)));
             viewportRef.current = {
               x: (rect.width - contentW * nextZoom) / 2 - minX * nextZoom,
               y: (rect.height - contentH * nextZoom) / 2 - minY * nextZoom,
@@ -3193,7 +3631,7 @@ $owner.Dispose()
           const handleZoomStep = (inOut) => {
             const cur = viewportRef.current;
             const factor = inOut ? 1.2 : 0.833;
-            const nextZoom = Math.min(3.0, Math.max(0.2, cur.zoom * factor));
+            const nextZoom = Math.min(5.0, Math.max(0.05, cur.zoom * factor));
             cur.zoom = nextZoom;
             updateTransform();
             setZoomDisplay(Math.round(nextZoom * 100));
@@ -3834,6 +4272,17 @@ $owner.Dispose()
               const it = { id: `item_${Date.now()}`, type: 'text', x: snap(worldX), y: snap(worldY), width: 220, height: 140, data: { text: '' }, sourcePanelId: null, createdAt: Date.now() };
               setCanvasItems(prev => [...prev, it]);
               setSelectedIds(new Set([it.id]));
+            } else if (type === 'video') {
+              // 对标 infinite-canvas 视频节点: 初始为 idle 状态机，首帧可由上游图片节点连线提供
+              const vs = CanvasVideoUtils ? CanvasVideoUtils.createVideoNodeState() : { status: 'idle', videoUrl: '', error: '' };
+              const it = {
+                id: `item_${Date.now()}`, type: 'video', x: snap(worldX), y: snap(worldY),
+                width: 320, height: 220,
+                data: { url: '', prompt: '', videoState: vs },
+                sourcePanelId: null, createdAt: Date.now()
+              };
+              setCanvasItems(prev => [...prev, it]);
+              setSelectedIds(new Set([it.id]));
             }
           };
 
@@ -3989,6 +4438,20 @@ $owner.Dispose()
             const target = panels.find(p => p.id === panelId);
             if (!target || target.isGenerating) return;
 
+            // 对标 infinite-canvas: 连线是生成输入。收集指向该分镜的上游文本/图片/参数覆盖
+            // (纯函数，脏数据绝不抛错)；无上游节点时行为与旧版完全一致，保证零回归。
+            const projectSnapshot = { characters, panels, canvasItems, edges, groups };
+            const genContext = CanvasNodeUtils && CanvasNodeUtils.buildGenerationContext
+              ? CanvasNodeUtils.buildGenerationContext(projectSnapshot, panelId)
+              : { prompt: '', referenceImages: [], texts: [], params: {}, warnings: [] };
+            const upstreamRefs = genContext.referenceImages.filter(r => typeof r === 'string' && r.trim());
+            const resolveRef = (ref) => {
+              if (ref.startsWith('asset:') && canvasAssetsDriver && canvasAssetsDriver.exists(ref.slice(6))) {
+                try { return canvasAssetsDriver.readAsDataUrl(ref.slice(6)); } catch (_) { return null; }
+              }
+              return ref.startsWith('asset:') ? null : ref;
+            };
+
             setPanels(prev => prev.map(p => p.id === panelId ? { ...p, isGenerating: true } : p));
 
             try {
@@ -3997,26 +4460,43 @@ $owner.Dispose()
               if (char) {
                 fullPrompt = `${char.dna}，${target.prompt}，${target.shotLabel}镜头，画面张力`;
               }
+              // 上游文本节点作为提示词补充 (去重与 4000 字上限由纯函数保证)
+              if (genContext.prompt && genContext.prompt !== target.prompt) {
+                fullPrompt = genContext.prompt.includes(target.prompt)
+                  ? genContext.prompt
+                  : `${fullPrompt}，${genContext.prompt}`;
+              }
 
-              // 尺寸对齐
+              // 尺寸对齐: 上游参数覆盖优先，但一律 clamp 到 32 倍数 (沿用既有铁律)
               let reqSize = '1024x1024';
               if (target.aspectRatio === '2:3') reqSize = '1024x1536';
               else if (target.aspectRatio === '16:9') reqSize = '1536x1024';
+              if (typeof genContext.params.size === 'string' && /^\d{2,5}x\d{2,5}$/.test(genContext.params.size)) {
+                reqSize = genContext.params.size;
+              }
 
               const apiKey = getKey();
               if (!apiKey) throw new Error('未检测到 API Key，请先点击顶栏钥匙图标输入');
 
-              const chosenModel = canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
+              const chosenModel = genContext.params.model || canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
               const payload = {
                 model: chosenModel,
                 prompt: fullPrompt,
                 size: reqSize,
                 n: 1
               };
-              if (char && char.avatar) {
-                payload.image = char.avatar;
-                payload.image_url = char.avatar;
+              // 参考图优先级: 连到分镜的上游节点 > 角色定妆照 (对齐上游 referenceImages 语义)
+              const primaryRef = upstreamRefs.length ? resolveRef(upstreamRefs[0]) : (char && char.avatar ? char.avatar : '');
+              if (primaryRef) {
+                payload.image = primaryRef;
+                payload.image_url = primaryRef;
               }
+
+              // WAL 预写日志: 发包前先落盘任务存根，切 Tab / F5 后仍可水合 (工程铁律: 资产绝不丢)
+              const walJob = CanvasJobQueueSingleton ? CanvasJobQueueSingleton.createJob({
+                panelId, prompt: fullPrompt, model: chosenModel, size: reqSize,
+                characterId: target.characterId || null
+              }) : null;
 
               // 优先使用当前激活的限免 4K 模型
               const res = await fetch(`${BASE_URL}/v1/images/generations`, {
@@ -4036,6 +4516,7 @@ $owner.Dispose()
               const data = await res.json();
               const url = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : '');
               if (!url) throw new Error('接口未返回有效图像');
+              if (walJob && CanvasJobQueueSingleton) CanvasJobQueueSingleton.completeJob(walJob.id, url);
 
               // 采用 InvokeAI 风格的幽灵暂存层
               setPanels(prev => prev.map(p => p.id === panelId ? {
@@ -4051,6 +4532,214 @@ $owner.Dispose()
             } catch (err) {
               alert(`分镜 #${target.num} 生成失败: ${err.message}`);
               setPanels(prev => prev.map(p => p.id === panelId ? { ...p, isGenerating: false } : p));
+            }
+          };
+
+          // 对标 infinite-canvas: 节点即生成器。image 节点自带 prompt/params，
+          // 上游连线的文本/图片节点自动成为生成上下文，结果落本地资产后写回 assetKey。
+          const handleGenerateItem = async (itemId) => {
+            const item = canvasItems.find(x => x.id === itemId && x.type === 'image');
+            if (!item || item.data?.generating) return;
+            const projectSnapshot = { characters, panels, canvasItems, edges, groups };
+            const ctx = CanvasNodeUtils && CanvasNodeUtils.buildGenerationContext
+              ? CanvasNodeUtils.buildGenerationContext(projectSnapshot, itemId)
+              : { prompt: '', referenceImages: [], params: {}, warnings: [] };
+            const prompt = (item.data?.prompt || ctx.prompt || '电影感画面，精致光影').trim().slice(0, 4000);
+            const refs = ctx.referenceImages.filter(r => typeof r === 'string' && r.trim());
+            const resolveRef = (ref) => {
+              if (ref.startsWith('asset:') && canvasAssetsDriver && canvasAssetsDriver.exists(ref.slice(6))) {
+                try { return canvasAssetsDriver.readAsDataUrl(ref.slice(6)); } catch (_) { return null; }
+              }
+              return ref.startsWith('asset:') ? null : ref;
+            };
+            const primaryRef = refs.length ? resolveRef(refs[0]) : '';
+
+            setCanvasItems(prev => prev.map(x => x.id === itemId ? { ...x, data: { ...x.data, generating: true, error: '' } } : x));
+            try {
+              const apiKey = getKey();
+              if (!apiKey) throw new Error('未检测到 API Key，请先点击顶栏钥匙图标输入');
+              const chosenModel = (item.data?.params?.model) || ctx.params.model || canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
+              const payload = {
+                model: chosenModel,
+                prompt,
+                size: typeof ctx.params.size === 'string' && /^\d{2,5}x\d{2,5}$/.test(ctx.params.size) ? ctx.params.size : '1024x1024',
+                n: 1
+              };
+              if (primaryRef) { payload.image = primaryRef; payload.image_url = primaryRef; }
+
+              const res = await fetch(`${BASE_URL}/v1/images/generations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                body: JSON.stringify(payload)
+              });
+              if (!res.ok) {
+                const errJson = await res.json().catch(() => ({}));
+                throw new Error(errJson.error?.message || `HTTP ${res.status}`);
+              }
+              const data = await res.json();
+              const url = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : '');
+              if (!url) throw new Error('接口未返回有效图像');
+
+              // 优先把结果落本地资产 (节点只持 assetKey)，失败真实透传，绝不静默吞错
+              let finalUrl = url;
+              let assetKey = '';
+              if (url.startsWith('data:') && canvasAssetsDriver) {
+                const saved = canvasAssetsDriver.saveDataUrl(url);
+                assetKey = saved.assetKey;
+                finalUrl = `asset:${assetKey}`;
+              }
+              if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+              setCanvasItems(prev => prev.map(x => x.id === itemId ? {
+                ...x,
+                data: { ...x.data, url: finalUrl, assetKey, prompt, generating: false, error: '' }
+              } : x));
+              updateBilling();
+            } catch (err) {
+              setCanvasItems(prev => prev.map(x => x.id === itemId ? {
+                ...x, data: { ...x.data, generating: false, error: err.message }
+              } : x));
+              setProjectError(`节点生成失败: ${err.message}`);
+            }
+          };
+
+          // 对标 infinite-canvas 视频节点: 提交 + 3 秒长轮询 + 状态机 + 本地资产落盘
+          // 协议与 StudioPage 已验证链路完全一致，轮询状态判定由 canvas-video.js 纯函数承担
+          const videoPollAbortRef = React.useRef(new Map());
+
+          const updateVideoItem = (itemId, statePatch) => {
+            setCanvasItems(prev => prev.map(x => {
+              if (x.id !== itemId) return x;
+              const base = CanvasVideoUtils ? CanvasVideoUtils.createVideoNodeState() : { status: 'idle' };
+              const prevState = (x.data && x.data.videoState) || {};
+              const nextState = { ...base, ...prevState, ...statePatch };
+              return {
+                ...x,
+                data: {
+                  ...(x.data || {}),
+                  url: nextState.videoUrl || x.data?.url || '',
+                  assetKey: nextState.assetKey || x.data?.assetKey || '',
+                  videoState: nextState
+                }
+              };
+            }));
+          };
+
+          const handleCancelVideoItem = (itemId) => {
+            const ctrl = videoPollAbortRef.current.get(itemId);
+            if (ctrl) { try { ctrl.abort(); } catch (_) {} videoPollAbortRef.current.delete(itemId); }
+            updateVideoItem(itemId, { status: 'cancelled', error: '已由用户取消' });
+          };
+
+          const handleGenerateVideoItem = async (itemId) => {
+            const item = canvasItems.find(x => x.id === itemId && x.type === 'video');
+            if (!item || !CanvasVideoUtils) return;
+            const state = (item.data && item.data.videoState) || {};
+            if (CanvasVideoUtils.isBusy(state)) return;
+            const apiKey = getKey();
+            if (!apiKey) { setProjectError('未检测到 API Key，请先点击顶栏钥匙图标输入'); return; }
+
+            // 上游图片节点连线作为首帧参考图 (对齐上游 referenceImages 语义)
+            const projectSnapshot = { characters, panels, canvasItems, edges, groups };
+            const ctx = CanvasNodeUtils && CanvasNodeUtils.buildGenerationContext
+              ? CanvasNodeUtils.buildGenerationContext(projectSnapshot, itemId)
+              : { prompt: '', referenceImages: [], params: {}, warnings: [] };
+            const resolveRef = (ref) => {
+              if (ref.startsWith('asset:') && canvasAssetsDriver && canvasAssetsDriver.exists(ref.slice(6))) {
+                try { return canvasAssetsDriver.readAsDataUrl(ref.slice(6)); } catch (_) { return ''; }
+              }
+              return ref.startsWith('asset:') ? '' : ref;
+            };
+            const refs = ctx.referenceImages.filter(r => typeof r === 'string' && r.trim());
+            const firstFrame = refs.length ? resolveRef(refs[0]) : '';
+            const prompt = (item.data?.prompt || ctx.prompt || '电影感运镜，光线流动').trim().slice(0, 4000);
+            const payload = CanvasVideoUtils.buildVideoPayload({
+              model: ctx.params.model || '', prompt, duration: 5,
+              size: '1280x720', firstFrameUrl: firstFrame
+            });
+            const endpoint = `${BASE_URL}/v1/videos/generations`;
+            const controller = new AbortController();
+            videoPollAbortRef.current.set(itemId, controller);
+
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            updateVideoItem(itemId, { status: 'submitting', error: '', startedAt: Date.now() });
+            try {
+              const submitRes = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+              });
+              if (!submitRes.ok) {
+                const errText = await submitRes.text().catch(() => '');
+                let msg = `HTTP ${submitRes.status}`;
+                try { const p = JSON.parse(errText); msg = p.error?.message || msg; } catch (_) { if (errText) msg = errText.slice(0, 100); }
+                throw new Error(`创建视频任务失败: ${msg}`);
+              }
+              const submitData = await submitRes.json();
+              const parsed = CanvasVideoUtils.parseSubmitResponse(submitData);
+              if (parsed.error) throw new Error(parsed.error);
+              let videoUrl = parsed.directUrl;
+
+              if (!videoUrl && parsed.taskId) {
+                updateVideoItem(itemId, { status: 'polling', taskId: parsed.taskId });
+                const pollUrl = `${endpoint}/${parsed.taskId}`;
+                for (let attempt = 1; attempt <= CanvasVideoUtils.DEFAULT_MAX_ATTEMPTS; attempt++) {
+                  if (controller.signal.aborted) throw new Error('已由用户取消');
+                  await new Promise(r => setTimeout(r, CanvasVideoUtils.DEFAULT_POLL_INTERVAL_MS));
+                  if (controller.signal.aborted) throw new Error('已由用户取消');
+                  let pollData = {};
+                  try {
+                    const pollRes = await fetch(pollUrl, {
+                      headers: { 'Authorization': `Bearer ${apiKey}` }, signal: controller.signal
+                    });
+                    if (pollRes.ok) pollData = await pollRes.json();
+                  } catch (pollErr) {
+                    if (controller.signal.aborted) throw new Error('已由用户取消');
+                    pollData = {}; // 单次轮询网络异常不误判失败，继续等待
+                  }
+                  const reduced = CanvasVideoUtils.reducePollResponse(pollData, attempt, CanvasVideoUtils.DEFAULT_MAX_ATTEMPTS);
+                  updateVideoItem(itemId, {
+                    status: reduced.status, attempt, error: reduced.error, videoUrl: reduced.videoUrl
+                  });
+                  if (reduced.error && reduced.done && reduced.status === 'failed') throw new Error(reduced.error);
+                  if (reduced.done && reduced.status === 'timeout') throw new Error(reduced.error);
+                  if (reduced.done && reduced.videoUrl) { videoUrl = reduced.videoUrl; break; }
+                }
+              }
+              if (!videoUrl) throw new Error('视频生成已提交但未取得结果，稍后可在创作工坊历史中核对');
+
+              // 远程视频落地为本地资产 (节点只持 assetKey)，失败真实透传不静默吞
+              let finalUrl = videoUrl;
+              let assetKey = '';
+              if (canvasAssetsDriver) {
+                try {
+                  const binRes = await fetch(videoUrl, { signal: controller.signal });
+                  if (binRes.ok) {
+                    const buf = Buffer.from(await binRes.arrayBuffer());
+                    if (buf.length > 0) {
+                      const saved = canvasAssetsDriver.saveBuffer(buf, 'video/mp4');
+                      assetKey = saved.assetKey;
+                      finalUrl = `asset:${assetKey}`;
+                    }
+                  }
+                } catch (assetErr) {
+                  // 资产落盘失败不丢弃已付费的视频结果: 保留远程 URL 并如实告警
+                  console.warn('[WineToken Canvas] 视频资产落盘失败，保留远程 URL:', assetErr.message);
+                  setProjectError(`视频已生成但本地落盘失败: ${assetErr.message} (仍可用远程链接播放)`);
+                }
+              }
+              updateVideoItem(itemId, {
+                status: 'succeeded', error: '', videoUrl: finalUrl, assetKey
+              });
+              updateBilling();
+            } catch (err) {
+              const cancelled = controller.signal.aborted;
+              updateVideoItem(itemId, {
+                status: cancelled ? 'cancelled' : 'failed', error: err.message
+              });
+              if (!cancelled) setProjectError(`视频节点生成失败: ${err.message}`);
+            } finally {
+              videoPollAbortRef.current.delete(itemId);
             }
           };
 
@@ -4260,7 +4949,8 @@ $owner.Dispose()
                 { type: 'panel', label: '分镜卡' },
                 { type: 'character', label: '角色卡' },
                 { type: 'image', label: '图片节点' },
-                { type: 'text', label: '文本便签' }
+                { type: 'text', label: '文本便签' },
+                { type: 'video', label: '视频节点' }
               ].map(opt => h('button', {
                 key: opt.type,
                 type: 'button',
@@ -4602,6 +5292,50 @@ $owner.Dispose()
 
               h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 4px', flexShrink: 0 } }),
 
+              // 对标 infinite-canvas: 多工程选择器 + 新建/重命名/删除/恢复/导入/导出
+              canvasProjectStore ? h('select', {
+                value: activeProjectId || '',
+                onChange: (e) => handleSwitchProject(e.target.value),
+                title: '切换画布工程',
+                style: {
+                  padding: '4px 8px', borderRadius: '5px', maxWidth: '150px',
+                  border: `1px solid ${theme.borderSubtle}`, backgroundColor: theme.bgInput,
+                  color: theme.textPrimary, fontSize: '11.5px', cursor: 'pointer', flexShrink: 0
+                }
+              }, projectList.length
+                ? projectList.map(p => h('option', { key: p.id, value: p.id, style: { background: theme.bgSidebar, color: theme.textPrimary } }, p.name))
+                : [h('option', { key: '_none', value: '' }, '默认工程')]
+              ) : null,
+              canvasProjectStore ? h('button', {
+                type: 'button', onClick: handleCreateProject, title: '新建空白工程',
+                style: { padding: '4px 8px', borderRadius: '5px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: 'transparent', color: theme.textSecondary, fontSize: '11.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }
+              }, '新建') : null,
+              canvasProjectStore ? h('button', {
+                type: 'button', onClick: handleRenameProject, title: '重命名当前工程',
+                style: { padding: '4px 8px', borderRadius: '5px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: 'transparent', color: theme.textSecondary, fontSize: '11.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }
+              }, '重命名') : null,
+              canvasProjectStore ? h('button', {
+                type: 'button', onClick: handleDeleteProject, title: '把当前工程移入回收站',
+                style: { padding: '4px 8px', borderRadius: '5px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: 'transparent', color: theme.textSecondary, fontSize: '11.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }
+              }, '回收站') : null,
+              canvasProjectStore ? h('button', {
+                type: 'button', onClick: handleRestoreProject, title: '从回收站恢复工程',
+                style: { padding: '4px 8px', borderRadius: '5px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: 'transparent', color: theme.textSecondary, fontSize: '11.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }
+              }, '恢复') : null,
+              canvasProjectStore ? h('button', {
+                type: 'button', onClick: handleExportProject, title: '导出工程为 .wtcanvas.json',
+                style: { padding: '4px 8px', borderRadius: '5px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: 'transparent', color: theme.textSecondary, fontSize: '11.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }
+              }, '导出工程') : null,
+              canvasProjectStore ? h('label', {
+                title: '导入工程文件 (.wtcanvas.json)',
+                style: { padding: '4px 8px', borderRadius: '5px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: 'transparent', color: theme.textSecondary, fontSize: '11.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }
+              }, [
+                '导入工程',
+                h('input', { type: 'file', accept: '.json,.wtcanvas.json', onChange: handleImportProject, style: { display: 'none' } })
+              ]) : null,
+
+              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 4px', flexShrink: 0 } }),
+
               // 漫剧画布自主生图模型选择器 (同步 Manifest 动态矩阵与实时生效会员价格)
               h('div', {
                 style: {
@@ -4683,6 +5417,93 @@ $owner.Dispose()
               }, [h(Icon, { name: 'download', size: 13 }), h('span', {}, '导出条漫长图')])
             ]),
 
+            // 2.1 工程状态提示条: 保存/导入/导出/切换失败时向 UI 真实透传 (工程铁律 3)
+            projectError ? h('div', {
+              style: {
+                position: 'absolute', top: '52px', right: '20px', zIndex: 120,
+                maxWidth: '420px', padding: '8px 12px', borderRadius: '8px',
+                backgroundColor: theme.isDark ? 'rgba(120, 30, 30, 0.92)' : 'rgba(255, 235, 235, 0.96)',
+                border: `1px solid ${theme.isDark ? 'rgba(248,113,113,0.5)' : 'rgba(220,38,38,0.35)'}`,
+                color: theme.isDark ? '#fecaca' : '#991b1b', fontSize: '11.5px', lineHeight: 1.5
+              }
+            }, [
+              h('span', {}, projectError),
+              h('button', {
+                type: 'button', onClick: () => setProjectError(''),
+                style: { marginLeft: '10px', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '13px' }
+              }, '×')
+            ]) : null,
+
+            // 2.3 提示词库浮层 (对标 infinite-canvas prompt library)
+            promptLibOpen ? h('div', {
+              onClick: () => setPromptLibOpen(false),
+              style: {
+                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 8000,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'
+              }
+            }, [
+              h('div', {
+                onClick: (e) => e.stopPropagation(),
+                style: {
+                  width: '520px', maxWidth: '100%', maxHeight: '70vh', display: 'flex', flexDirection: 'column',
+                  backgroundColor: theme.bgCard, border: `1px solid ${theme.borderSubtle}`,
+                  borderRadius: '12px', boxShadow: '0 24px 60px rgba(0,0,0,0.4)', overflow: 'hidden'
+                }
+              }, [
+                h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${theme.borderSubtle}` } }, [
+                  h('div', { style: { fontSize: '14px', fontWeight: 700, color: theme.textPrimary } }, '提示词库'),
+                  h('button', { type: 'button', onClick: () => setPromptLibOpen(false), style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '18px' } }, '×')
+                ]),
+                h('div', { style: { display: 'flex', gap: '6px', padding: '10px 18px', flexWrap: 'wrap' } }, [
+                  h('input', {
+                    type: 'text', value: promptLibQuery,
+                    onChange: (e) => setPromptLibQuery(e.target.value),
+                    placeholder: '搜索提示词 / 标签…',
+                    style: { flex: 1, minWidth: '180px', padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: theme.bgInput, color: theme.textPrimary, fontSize: '12px', outline: 'none' }
+                  }),
+                  h('button', { type: 'button', onClick: handleCollectPrompt, title: '收藏当前选中节点的提示词', style: { padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: 'transparent', color: '#06b6d4', fontSize: '11.5px', cursor: 'pointer', whiteSpace: 'nowrap' } }, '收藏所选'),
+                  h('button', { type: 'button', onClick: handleExportPromptLibrary, style: { padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: 'transparent', color: theme.textSecondary, fontSize: '11.5px', cursor: 'pointer' } }, '导出'),
+                  h('label', { style: { padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.borderSubtle}`, color: theme.textSecondary, fontSize: '11.5px', cursor: 'pointer' } }, [
+                    '导入', h('input', { type: 'file', accept: '.json', onChange: handleImportPromptLibrary, style: { display: 'none' } })
+                  ])
+                ]),
+                h('div', { style: { flex: 1, overflowY: 'auto', padding: '4px 18px 14px' } }, (() => {
+                  const list = CanvasPromptUtils ? CanvasPromptUtils.searchPrompts(promptLibrary, promptLibQuery) : [];
+                  if (!list.length) return [h('div', { key: 'empty', style: { padding: '24px 0', textAlign: 'center', fontSize: '12px', color: theme.textMuted } }, '暂无提示词，选中节点后点击「收藏所选」')];
+                  return list.map(it => h('div', {
+                    key: it.id,
+                    style: { display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 0', borderBottom: `1px solid ${theme.borderSubtle}` }
+                  }, [
+                    h('div', { style: { flex: 1, minWidth: 0 } }, [
+                      h('div', { style: { fontSize: '12px', color: theme.textPrimary, wordBreak: 'break-all', lineHeight: 1.5 } }, it.text.slice(0, 160) + (it.text.length > 160 ? '…' : '')),
+                      h('div', { style: { fontSize: '10px', color: theme.textMuted, marginTop: '4px' } }, it.tags.length ? it.tags.join(' / ') : '未分类')
+                    ]),
+                    h('button', { type: 'button', onClick: () => handleApplyPrompt(it.text), style: { background: 'none', border: 'none', color: '#06b6d4', cursor: 'pointer', fontSize: '11px', flexShrink: 0 } }, '插入'),
+                    h('button', { type: 'button', onClick: () => handleRemovePrompt(it.id), style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '12px', flexShrink: 0 } }, '×')
+                  ]));
+                })())
+              ])
+            ]) : null,
+
+            // 2.2 小地图 (对标 infinite-canvas canvas-mini-map.tsx): 节点缩略 + 视口矩形 + 拖拽定位
+            (showMiniMap && CanvasMiniMapUtils && CanvasNodeUtils) ? h(CanvasMiniMapPanel, {
+              theme,
+              project: { characters, panels, canvasItems, groups },
+              viewport: viewportRef.current,
+              tick: minimapTick + viewportTick + zoomDisplay,
+              onViewportChange: (vp) => {
+                viewportRef.current = { ...vp };
+                updateTransform();
+                setZoomDisplay(Math.round(vp.zoom * 100));
+              },
+              onToggle: () => {
+                const next = !showMiniMap;
+                setShowMiniMap(next);
+                try { localStorage.setItem('WINETOKEN_CANVAS_MINIMAP', next ? 'on' : 'off'); } catch (_) {}
+              }
+            }) : null,
+
             // 2. 右下角视口浮岛 (平移缩放比 + 帮助入口)
             h('div', {
               style: {
@@ -4721,6 +5542,29 @@ $owner.Dispose()
                 style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '11px', padding: '2px 6px' },
                 title: '适应画布：缩放至刚好容纳全部内容 (Ctrl+0)'
               }, '适应'),
+              h('button', {
+                type: 'button',
+                onClick: () => {
+                  const next = !showMiniMap;
+                  setShowMiniMap(next);
+                  try { localStorage.setItem('WINETOKEN_CANVAS_MINIMAP', next ? 'on' : 'off'); } catch (_) {}
+                },
+                style: {
+                  background: 'none', border: 'none',
+                  color: showMiniMap ? '#06b6d4' : theme.textSecondary,
+                  cursor: 'pointer', fontSize: '11px', padding: '2px 6px'
+                },
+                title: '显示/隐藏小地图'
+              }, '小地图'),
+              h('button', {
+                type: 'button',
+                onClick: () => setPromptLibOpen(true),
+                style: {
+                  background: 'none', border: 'none', color: theme.textSecondary,
+                  cursor: 'pointer', fontSize: '11px', padding: '2px 6px'
+                },
+                title: '提示词库: 收藏/复用节点提示词'
+              }, '提示词'),
               h('div', { style: { width: '1px', height: '14px', backgroundColor: theme.borderSubtle, margin: '0 4px' } }),
               h('button', {
                 type: 'button',
@@ -5125,6 +5969,7 @@ $owner.Dispose()
               // 3.25 通用画布节点 (CANVAS-M2 2.2/2.3): 生成图/文本对象, 万物皆节点
               h('div', { id: 'winetoken-canvas-items-area' }, canvasItems.map(item => {
                 const isItemSelected = selectedIds.has(item.id);
+                const itemData = item.data || {}; // 脏工程兜底: 新增节点字段一律经此访问
                 const isItemOnScreen = (CanvasMathUtils && CanvasMathUtils.isIntersectingAABB)
                   ? CanvasMathUtils.isIntersectingAABB({ x: item.x, y: item.y, width: item.width || 240, height: item.height || 320 }, viewWorldBox)
                   : true;
@@ -5166,7 +6011,23 @@ $owner.Dispose()
                   }, [
                     h('span', {
                       style: { fontSize: '10px', color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }
-                    }, item.type === 'image' ? (item.data.prompt || '生成图像') : '文本便签'),
+                    }, item.type === 'image' ? (itemData.prompt || '生成图像')
+                      : (item.type === 'video' ? (itemData.prompt || '生成视频') : '文本便签')),
+                    // 节点即生成器 (对标 infinite-canvas): 重跑该节点，上游连线自动成为上下文
+                    (item.type === 'image' || item.type === 'video') ? h('button', {
+                      type: 'button',
+                      title: item.type === 'video' ? '按该节点提示词与上游首帧连线生成视频' : '按该节点提示词与上游连线重新生成',
+                      onPointerDown: (ev) => ev.stopPropagation(),
+                      onClick: () => (item.type === 'video' ? handleGenerateVideoItem(item.id) : handleGenerateItem(item.id)),
+                      style: { background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', color: (itemData.generating || (itemData.videoState && itemData.videoState.status === 'polling')) ? theme.textMuted : '#06b6d4', cursor: 'pointer', fontSize: '10px', padding: '1px 5px', flexShrink: 0 }
+                    }, (itemData.generating || (itemData.videoState && ['submitting', 'polling'].includes(itemData.videoState.status))) ? '生成中' : '重跑') : null,
+                    // 视频生成中提供取消入口，杜绝已扣费任务无法中止
+                    (item.type === 'video' && itemData.videoState && ['submitting', 'polling'].includes(itemData.videoState.status)) ? h('button', {
+                      type: 'button', title: '取消当前视频轮询',
+                      onPointerDown: (ev) => ev.stopPropagation(),
+                      onClick: () => handleCancelVideoItem(item.id),
+                      style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '10px', padding: '1px 4px', flexShrink: 0 }
+                    }, '取消') : null,
                     // 连线锚点 (拖出连线) CANVAS-M2 2.4
                     h('div', {
                       onPointerDown: (ev) => beginConnectDrag(ev, 'item', item.id),
@@ -5191,14 +6052,20 @@ $owner.Dispose()
                     }, '×')
                   ]),
                   item.type === 'image' ? (
-                    item.data.url
-                      ? h('img', {
-                          src: item.data.url,
-                          draggable: false,
-                          style: { width: '100%', flex: 1, minHeight: 0, objectFit: 'cover' }
-                        })
-                      : h('div', {
-                          onDoubleClick: () => {
+                    (() => {
+                      let displaySrc = item.data.url || '';
+                      if (displaySrc.startsWith('asset:') && canvasAssetsDriver) {
+                        try { displaySrc = canvasAssetsDriver.readAsDataUrl(displaySrc.slice(6)); }
+                        catch (_) { displaySrc = ''; }
+                      }
+                      return displaySrc
+                        ? h('img', {
+                            src: displaySrc,
+                            draggable: false,
+                            style: { width: '100%', flex: 1, minHeight: 0, objectFit: 'cover' }
+                          })
+                        : h('div', {
+                            onDoubleClick: () => {
                             const input = document.createElement('input');
                             input.type = 'file';
                             input.accept = 'image/png,image/jpeg,image/webp';
@@ -5212,13 +6079,53 @@ $owner.Dispose()
                             input.click();
                           },
                           style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: theme.textMuted, cursor: 'pointer', minHeight: 0 }
-                        }, '双击上传图片')
-                  ) : h('textarea', {
+                          }, itemData.error || '双击上传图片')
+                        })()
+                      ) : (item.type === 'video' ? (() => {
+                        const vState = itemData.videoState || { status: 'idle' };
+                        let videoSrc = itemData.url || '';
+                        if (videoSrc.startsWith('asset:') && canvasAssetsDriver) {
+                          try { videoSrc = canvasAssetsDriver.readAsDataUrl(videoSrc.slice(6)); }
+                          catch (_) { videoSrc = ''; }
+                        }
+                        if (videoSrc) {
+                          return h('video', {
+                            src: videoSrc, controls: true, loop: true,
+                            onPointerDown: (ev) => ev.stopPropagation(),
+                            style: { width: '100%', flex: 1, minHeight: 0, objectFit: 'contain', backgroundColor: '#000' }
+                          });
+                        }
+                        const busy = ['submitting', 'polling'].includes(vState.status);
+                        const label = busy
+                          ? `视频生成中 (第 ${vState.attempt || 1} 次轮询 / 最长 120 秒)`
+                          : (vState.status === 'failed' || vState.status === 'timeout'
+                            ? (vState.error || '生成失败，可点击重跑')
+                            : (vState.status === 'cancelled' ? '已取消，可点击重跑' : '点击顶栏「重跑」生成视频'));
+                        return h('div', {
+                          style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '6px', fontSize: '11px', color: theme.textMuted, textAlign: 'center', padding: '8px', minHeight: 0 }
+                        }, [
+                          h('div', {}, label),
+                          vState.taskId ? h('div', { style: { fontSize: '9.5px', opacity: 0.7 } }, `任务 ${String(vState.taskId).slice(0, 24)}`) : null
+                        ]);
+                      })() : h('textarea', {
                       value: item.data.text || '',
                       onChange: (ev) => setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, text: ev.target.value } } : x)),
                       placeholder: '输入文本内容…',
                       style: { flex: 1, resize: 'none', border: 'none', outline: 'none', background: 'transparent', color: theme.textPrimary, fontSize: '12px', padding: '8px 10px', fontFamily: 'inherit', minHeight: 0 }
-                    })
+                    })),
+                  // 节点生成参数: 提示词可编辑，作为该 image/video 节点的生成输入
+                  (item.type === 'image' || item.type === 'video') ? h('input', {
+                    type: 'text',
+                    value: itemData.prompt || '',
+                    onPointerDown: (ev) => ev.stopPropagation(),
+                    onChange: (ev) => setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, prompt: ev.target.value } } : x)),
+                    placeholder: '输入该节点的生成提示词…',
+                    style: {
+                      flexShrink: 0, border: 'none', borderTop: `1px solid ${theme.borderSubtle}`,
+                      outline: 'none', background: 'transparent', color: theme.textPrimary,
+                      fontSize: '10.5px', padding: '4px 10px', width: '100%', boxSizing: 'border-box'
+                    }
+                  }) : null
                 ]);
               })),
 
@@ -8128,3 +9035,4 @@ $owner.Dispose()
     module.exports = { updateBilling };
   }
 })();
+

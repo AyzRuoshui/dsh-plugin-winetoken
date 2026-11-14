@@ -10,6 +10,15 @@ const { homedir } = require('os');
 const { addHistoryItem } = require('./history.js');
 const { resolveApiKey, getResolvedBaseUrl } = require('./credentials.js');
 
+// 对标 infinite-canvas 的本地 Canvas Agent: 宿主侧画布状态桥 (磁盘工程文件为唯一权威)
+// 可选加载，模块缺失时画布工具自动禁用，绝不拖垮既有生图/生视频工具注册
+let CanvasStateBridgeClass = null;
+try {
+  CanvasStateBridgeClass = require('./canvas-state.js').CanvasStateBridge;
+} catch (err) {
+  console.warn('[WineToken Tool] 画布状态桥不可用，画布工具将禁用:', err.message);
+}
+
 const DEFAULT_BASE_URL = 'https://www.winetoken.asia/v1';
 
 /**
@@ -561,7 +570,161 @@ function registerWineTokenTools(ctx) {
       }
     });
 
-    // 3. 向会话注入动态 System Prompt 指令（严格遵循付费资产保护、用户明确授权与防暴走规范）
+    // ==========================================
+    // 3. 漫剧画布原生工具 (对标 infinite-canvas Canvas Agent / MCP)
+    // 宿主进程通过磁盘工程文件桥读写画布，绝不臆测渲染进程 IPC (铁律 1)
+    // ==========================================
+    const canvasBridge = CanvasStateBridgeClass ? new CanvasStateBridgeClass() : null;
+
+    if (canvasBridge) {
+      // 3.1 只读: 感知当前故事板 (safe，不触发付费熔断器)
+      toolsService.register({
+        name: 'winetoken_canvas_get_storyboard',
+        label: 'WineToken 漫剧画布·读取故事板',
+        category: 'canvas',
+        description: '【只读工具】读取当前漫剧画布工程的角色、分镜、节点、连线与模型摘要，用于在对话中感知用户正在创作的内容。不产生任何扣费，可随时调用。',
+        permission: 'safe',
+        parameters: { type: 'object', properties: {}, required: [] },
+        output: {
+          schema: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              totalPanels: { type: 'number' },
+              characters: { type: 'array' },
+              panels: { type: 'array' },
+              markdown: { type: 'string' },
+              error: { type: 'string' }
+            }
+          },
+          render: (args, value) => [{ type: 'text', text: value.markdown || (value.error ? `读取画布失败: ${value.error}` : JSON.stringify(value)) }]
+        },
+        isConcurrencySafe: () => true,
+        async execute() {
+          try {
+            const sb = canvasBridge.getStoryboard();
+            const panelLines = sb.panels.map(p =>
+              `- 镜${p.num === null ? '?' : p.num} [${p.shot || 'MS'}] ${p.prompt || '(空提示词)'}${p.hasImage ? ' (已出图)' : ''}${p.dialogue ? ' | 台词:' + p.dialogue : ''}`
+            ).join('\n');
+            const charLines = sb.characters.map(c => `- ${c.name} (${c.id})`).join('\n');
+            const markdown = [
+              `## 当前漫剧画布故事板 (工程 ${sb.projectId || 'legacy'})`,
+              '',
+              `分镜 ${sb.totalPanels} 格 | 通用节点 ${sb.totalItems} 个 | 连线 ${sb.totalEdges} 条 | 分组 ${sb.totalGroups} 个 | 生图模型: ${sb.activeModel || '默认'}`,
+              '',
+              '### 角色', charLines || '(暂无角色)',
+              '',
+              '### 分镜', panelLines || '(暂无分镜)'
+            ].join('\n');
+            return { success: true, totalPanels: sb.totalPanels, characters: sb.characters, panels: sb.panels, markdown };
+          } catch (err) {
+            return { success: false, error: err.message };
+          }
+        }
+      });
+
+      // 3.2 写入: 追加分镜 (写工程但不扣费，仍需人工确认防误改)
+      toolsService.register({
+        name: 'winetoken_canvas_add_panel',
+        label: 'WineToken 漫剧画布·追加分镜',
+        category: 'canvas',
+        description: '【写入工具·不扣费】向当前漫剧画布工程追加一格分镜卡（自动续排镜号与坐标）。仅写入本地工程文件，不触发 AI 生成、不产生任何费用。修改后画布会在下次刷新/轮询时水合显示。需要用户在对话中明确同意修改画布。',
+        permission: 'sensitive',
+        parameters: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: '该分镜的画面描述/提示词' },
+            dialogue: { type: 'string', description: '该分镜的角色台词 (可选)' },
+            shot: { type: 'string', enum: ['CU', 'MS', 'WS', 'FS'], description: '景别: 特写/中景/远景/全景，默认 MS', default: 'MS' },
+            characterId: { type: 'string', description: '关联角色 id (可选，可先用 get_storyboard 查询)' },
+            aspectRatio: { type: 'string', enum: ['2:3', '16:9', '1:1'], description: '画幅比例，默认 2:3', default: '2:3' }
+          },
+          required: ['prompt']
+        },
+        output: {
+          schema: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' }, panelId: { type: 'string' },
+              num: { type: 'number' }, markdown: { type: 'string' }, error: { type: 'string' }
+            }
+          },
+          render: (args, value) => [{ type: 'text', text: value.markdown || (value.error ? `追加分镜失败: ${value.error}` : JSON.stringify(value)) }]
+        },
+        isConcurrencySafe: () => false,
+        async execute(args) {
+          try {
+            const result = canvasBridge.addPanel({
+              prompt: args.prompt || '', dialogue: args.dialogue || '',
+              shot: args.shot || 'MS', characterId: args.characterId || '',
+              aspectRatio: args.aspectRatio || '2:3'
+            });
+            toolCircuitBreaker.recordSuccess(args.session_id || 'default');
+            return {
+              success: true,
+              panelId: result.panel.id,
+              num: result.panel.num,
+              markdown: `已在漫剧画布追加第 ${result.panel.num} 格分镜 (${result.panel.shotLabel})，提示词: ${result.panel.prompt || '(空)'}。画布将在下次水合刷新后显示。`
+            };
+          } catch (err) {
+            // 写盘失败真实透传，但不计入「付费调用失败」熔断计数
+            return { success: false, error: err.message };
+          }
+        }
+      });
+
+      // 3.3 生成入队: 只写 WAL 存根，绝不宿主直发付费请求 (杜绝双花)
+      toolsService.register({
+        name: 'winetoken_canvas_generate',
+        label: 'WineToken 漫剧画布·排队生成',
+        category: 'canvas',
+        description: '【付费操作·仅入队】为指定分镜排队一次 AI 生成。本工具只把任务写入本地 WAL 存根，由画布前端消费执行真实请求，宿主绝不直接发包扣费，杜绝双花。调用前必须获得用户明确授权；单次仅入队 1 个任务。',
+        permission: 'sensitive',
+        parameters: {
+          type: 'object',
+          properties: {
+            panelId: { type: 'string', description: '目标分镜 id (可先用 get_storyboard 查询)' },
+            prompt: { type: 'string', description: '覆盖提示词 (可选，留空则用分镜现有提示词)' },
+            kind: { type: 'string', enum: ['image', 'video'], description: '生成类型，默认 image', default: 'image' },
+            model: { type: 'string', description: '模型 id (可选，留空用画布当前模型)' }
+          },
+          required: ['panelId']
+        },
+        output: {
+          schema: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' }, taskId: { type: 'string' },
+              status: { type: 'string' }, markdown: { type: 'string' }, error: { type: 'string' }
+            }
+          },
+          render: (args, value) => [{ type: 'text', text: value.markdown || (value.error ? `排队失败: ${value.error}` : JSON.stringify(value)) }]
+        },
+        isConcurrencySafe: () => false,
+        async execute(args) {
+          const sessionId = args.session_id || 'default';
+          if (toolCircuitBreaker.isTripped(sessionId)) {
+            return { success: false, status: 'circuit_broken', error: '画布生成工具连续失败超限，已触发 30 秒熔断保护，请告知用户稍后手动重试。' };
+          }
+          try {
+            const queued = canvasBridge.enqueueGeneration({
+              panelId: args.panelId || '', prompt: args.prompt || '',
+              kind: args.kind === 'video' ? 'video' : 'image', model: args.model || ''
+            });
+            toolCircuitBreaker.recordSuccess(sessionId);
+            return {
+              success: true, taskId: queued.taskId, status: queued.status,
+              markdown: `已把 ${args.kind === 'video' ? '视频' : '图片'} 生成任务 ${queued.taskId} 排入画布队列，等待画布前端执行。任务仅入队，尚未产生扣费。`
+            };
+          } catch (err) {
+            toolCircuitBreaker.recordFailure(sessionId);
+            return { success: false, error: err.message };
+          }
+        }
+      });
+    }
+
+    // 4. 向会话注入动态 System Prompt 指令（严格遵循付费资产保护、用户明确授权与防暴走规范）
     if (ctx.systemPrompt && typeof ctx.systemPrompt.section === 'function') {
       try {
         ctx.systemPrompt.section({
@@ -570,8 +733,9 @@ function registerWineTokenTools(ctx) {
           text: () => `
 ## WineToken 创作工坊·高能多模态工具调用与付费资产保护铁律 (STRICT TOOL USE & ASSET PROTECTION POLICY)
 
-你已接入 WineToken 创作工坊的专业级图像生成 (winetoken_generate_image) 与视频生成 (winetoken_generate_video) 工具。
-⚠️ **最高资产警示**：每次调用生图/生视频工具均会直接扣除用户的真实钱包资产或高价值会员限时配额，属于**不可逆的高耗付费操作**！为坚决杜绝未经允许扣费与模型无节制滥调，你必须严格无条件遵守以下铁律：
+你已接入 WineToken 创作工坊的专业级图像生成 (winetoken_generate_image) 与视频生成 (winetoken_generate_video) 工具，
+以及漫剧画布协作工具 (winetoken_canvas_get_storyboard 只读 / winetoken_canvas_add_panel 写入不扣费 / winetoken_canvas_generate 付费入队)。
+[资产警示] **最高资产警示**：每次调用生图/生视频工具均会直接扣除用户的真实钱包资产或高价值会员限时配额，属于**不可逆的高耗付费操作**！为坚决杜绝未经允许扣费与模型无节制滥调，你必须严格无条件遵守以下铁律：
 
 ### 1. 严格执行二阶段确认协议（未获明确授权，绝对严禁擅自调用）
 - **第一阶段（画面构思与授权征询）**：当用户在对话中提到想画图、构思海报、想要配图或探讨视觉设计时，**严禁直接触发生成工具**！你必须先在回复中为用户规划画面构思（包含艺术风格、画面主体、镜头光影、尺寸比例等），并明确征求用户同意（例如：“生图属于付费操作，若您认可上述构思请回复‘确认生成’，我将为您正式制作”）。
@@ -584,6 +748,9 @@ function registerWineTokenTools(ctx) {
 
 ### 3. 直接调用的唯一例外
 - 仅当用户在**最初的提问中明确且强烈地发出了免确认出图指令**（例如：“立刻帮我画一张赛博朋克猫咪壁纸，无需向我确认，马上出图”），你才可直接调用。即使在此例外下，**也必须坚守单轮仅调 1 次、单次仅出 1 张的铁律**！
+- **画布生成工具 (winetoken_canvas_generate)**：仅把任务排入本地 WAL 队列，真实扣费由画布前端执行；同样必须遵守「单轮仅 1 次、先征询授权再调用」。切勿连续入队多个任务。
+- **画布写入工具 (winetoken_canvas_add_panel)**：不扣费但会修改用户工程文件，仍须用户明确同意后才能调用。
+- **画布读取工具 (winetoken_canvas_get_storyboard)**：只读、零费用，可随时调用以感知画布内容。
 `
         });
       } catch (err) {
@@ -591,7 +758,7 @@ function registerWineTokenTools(ctx) {
       }
     }
 
-    console.log('[WineToken Plugin] [OK] 成功向 DeepSeek Harness 注入 AI 绘图与视频生成 2 大原生 Tools/Skill。');
+    console.log('[WineToken Plugin] [OK] 成功注入 AI 绘图/视频生成/画布协作 共 5 大原生 Tools/Skill。');
   };
 
   let unregister = () => {};

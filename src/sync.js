@@ -320,10 +320,10 @@ async function runSync(options = {}) {
     });
 
     console.log('='.repeat(60));
-    console.log('✅ [同步成功] 模型已全部自动映射并生效！DeepSeek Harness HMR 机制将实时刷新界面。');
+    console.log('[OK] [同步成功] 模型已全部自动映射并生效！DeepSeek Harness HMR 机制将实时刷新界面。');
     return true;
   } catch (err) {
-    console.error('❌ [同步失败]:', err.message);
+    console.error('[WARN] [同步失败]:', err.message);
     return false;
   }
 }
