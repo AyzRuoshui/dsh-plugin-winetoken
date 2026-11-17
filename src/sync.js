@@ -36,12 +36,12 @@ function buildManifestModels(chatModels) {
       const item = {
         id: m.id,
         name: m.name || m.id,
-        contextWindow: m.contextWindow || 1000000,
-        maxTokens: m.maxTokens || 128000,
+        contextWindow: m.contextWindow || 131072,
+        maxTokens: m.maxTokens || 16384,
         input: m.vision ? ['text', 'image'] : ['text']
       };
       if (m.reasoning) {
-        item.reasoningEfforts = { low: 'low', medium: 'medium', high: 'high', max: 'max' };
+        item.reasoningEfforts = { low: 'low', medium: 'medium', high: 'high' };
       }
       return item;
     });

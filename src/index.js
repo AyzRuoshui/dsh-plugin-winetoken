@@ -170,7 +170,7 @@ function apply(ctx) {
   const apiKey = keyInfo.apiKey;
 
   if (!apiKey) {
-    console.log('[WineToken Plugin] 未检测到 API Key，已保底注入 19 个离线基线模型。配置 WINETOKEN_API_KEY 或 ZHAIZHU_API_KEY 即可激活动态 Manifest 同步。');
+    console.log('[WineToken Plugin] 未检测到 API Key，已保底注入 20 个离线基线模型。配置 WINETOKEN_API_KEY 或 ZHAIZHU_API_KEY 即可激活动态 Manifest 同步。');
     return;
   }
 

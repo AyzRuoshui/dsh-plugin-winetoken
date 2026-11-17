@@ -24,28 +24,26 @@ const EXACT_MODEL_SPECS = {
   // DeepSeek 深度思考与多模态推理
   'deepseek-v4.1-flash': {
     name: 'DeepSeek V4.1 Flash (多模态推理)',
-    contextWindow: 1048576, // 1M 上下文
-    maxTokens: 393216,      // 384K 最大输出
+    contextWindow: 1048576, // 1M 上下文 (上游变体规格，站长确认，不套公开版 DeepSeek 家族规格)
+    maxTokens: 393216,      // 384K 最大输出 (站长确认)
     input: ['text', 'image'],
     isReasoning: true,
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
   'deepseek-v4-pro': {
     name: 'DeepSeek V4 Pro (旗舰推理)',
-    contextWindow: 1048576, // 1M 上下文
-    maxTokens: 65536,       // 64K 最大输出
+    contextWindow: 1048576, // 1M 上下文 (DeepSeek V4 官方规格)
+    maxTokens: 393216,      // 384K 最大输出 (官方)
     input: ['text'],
     isReasoning: true,
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
 
@@ -59,23 +57,7 @@ const EXACT_MODEL_SPECS = {
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
-    }
-  },
-
-  // 王者荣耀灵宝
-  '王者荣耀灵宝': {
-    name: '王者荣耀灵宝 (推理官渠)',
-    contextWindow: 262144, // 256K 上下文
-    maxTokens: 16384,      // 16K 最大输出
-    input: ['text'],
-    isReasoning: true,
-    reasoningEfforts: {
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
 
@@ -89,69 +71,73 @@ const EXACT_MODEL_SPECS = {
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
-    }
-  },
-  'mimo-v2.6-flash': {
-    name: '小米 MiMo 2.6 Flash (限免/推理)',
-    contextWindow: 1048576,
-    maxTokens: 131072,
-    input: ['text', 'image'],
-    isReasoning: true,
-    reasoningEfforts: {
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      max: 'max'
-    }
-  },
-  'mimo-v2.6-pro-ultraspeed': {
-    name: '小米 MiMo 2.6 Pro UltraSpeed (极速/推理)',
-    contextWindow: 1048576,
-    maxTokens: 131072,
-    input: ['text', 'image'],
-    isReasoning: true,
-    reasoningEfforts: {
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
 
   // Anthropic Claude
-  'claude-opus-4-6-thinking': {
-    name: 'Claude 4.6 Opus Thinking (深度思考)',
-    contextWindow: 1048576, // 1M 上下文
-    maxTokens: 65536,
-    input: ['text', 'image'],
-    isReasoning: true,
-    reasoningEfforts: {
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      max: 'max'
-    }
-  },
-  'claude-sonnet-4-6': {
-    name: 'Claude 4.6 Sonnet (编程主力)',
-    contextWindow: 1048576, // 1M 上下文
-    maxTokens: 65536,
-    input: ['text', 'image'],
-    isReasoning: false
-  },
   'claude-opus-5-5': {
     name: 'Claude 5.5 Opus (旗舰长文本)',
-    contextWindow: 200000,  // 200K 上下文，严禁虚标为 1M 避免超额崩溃
-    maxTokens: 65536,
+    contextWindow: 1048576, // 1M 上下文 (Anthropic 官方规格，Opus 5.5)
+    maxTokens: 131072,     // 128K 最大输出 (官方)
     input: ['text', 'image'],
     isReasoning: true,
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
+    }
+  },
+  'claude-fable-5-2': {
+    name: 'Claude 5.2 Fable (全能前沿推理)',
+    contextWindow: 1048576, // 1M 上下文 (Anthropic 官方规格，Fable 5.2)
+    maxTokens: 131072,     // 128K 最大输出 (官方)
+    input: ['text', 'image'],
+    isReasoning: true,
+    reasoningEfforts: {
+      low: 'low',
+      medium: 'medium',
+      high: 'high'
+    }
+  },
+
+  // 腾讯混元 Hy 系列
+  'hy4': {
+    name: '腾讯混元 Hy4 (旗舰全模态)',
+    contextWindow: 1048576, // 1M 上下文
+    maxTokens: 65536,       // 64K 最大输出
+    input: ['text', 'image'],
+    isReasoning: true,
+    reasoningEfforts: {
+      low: 'low',
+      medium: 'medium',
+      high: 'high'
+    }
+  },
+  'hy4-flash': {
+    name: '腾讯混元 Hy4 Flash (限免/多模态推理)',
+    contextWindow: 1048576, // 1M 上下文
+    maxTokens: 65536,       // 64K 最大输出
+    input: ['text', 'image'],
+    isReasoning: true,
+    reasoningEfforts: {
+      low: 'low',
+      medium: 'medium',
+      high: 'high'
+    }
+  },
+
+  // Google Gemini 系列
+  'gemini-3.8-flash': {
+    name: 'Google Gemini 3.8 Flash (多模态推理)',
+    contextWindow: 1048576, // 1M 上下文
+    maxTokens: 65536,       // 64K 最大输出
+    input: ['text', 'image'],
+    isReasoning: true,
+    reasoningEfforts: {
+      low: 'low',
+      medium: 'medium',
+      high: 'high'
     }
   },
 
@@ -165,8 +151,7 @@ const EXACT_MODEL_SPECS = {
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
 
@@ -180,8 +165,7 @@ const EXACT_MODEL_SPECS = {
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
 
@@ -195,118 +179,97 @@ const EXACT_MODEL_SPECS = {
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
   'kimi-k2.8-preview': {
     name: '月之暗面 Kimi K2.8 Preview (多模态)',
-    contextWindow: 262144, // 256K 上下文
+    contextWindow: 1048576, // 1M 上下文 (站长定：站内 Kimi 统一 1M；Kimi Code 官方口径最长 1M)
     maxTokens: 16384,
     input: ['text', 'image'],
     isReasoning: true,
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
 
   // 智谱 GLM 系列
   'glm-5.3-flash': {
     name: '智谱 GLM-5.3 Flash (多模态推理)',
-    contextWindow: 1048576, // 1M 上下文
-    maxTokens: 16384,
+    contextWindow: 1048576, // 1M 上下文 (智谱官方 GLM-5.2/5.3 规格，最大输出 128K)
+    maxTokens: 131072,
     input: ['text', 'image'],
     isReasoning: true,
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
   'glm-5.3': {
     name: '智谱 GLM-5.3 (旗舰推理)',
-    contextWindow: 1048576, // 1M 上下文
-    maxTokens: 16384,
+    contextWindow: 1048576, // 1M 上下文 (智谱官方 GLM-5.2/5.3 规格，最大输出 128K)
+    maxTokens: 131072,
     input: ['text'],        // 纯文本
     isReasoning: true,
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
   'glm-5.2': {
     name: '智谱 GLM-5.2 (夜间免费/推理)',
-    contextWindow: 1048576, // 1M 上下文
-    maxTokens: 16384,
+    contextWindow: 1048576, // 1M 上下文 (智谱官方 GLM-5.2/5.3 规格，最大输出 128K)
+    maxTokens: 131072,
     input: ['text'],        // 纯文本
     isReasoning: true,
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
 
   // OpenAI GPT 系列
   'gpt-6-astra': {
     name: 'GPT-6 Astra (全模态推理)',
-    contextWindow: 1048576, // 1.05M 上下文
-    maxTokens: 131072,      // 128K 最大输出
+    contextWindow: 1048576, // 1M 上下文 (按 GPT-5.5 世代官方规格，6 代不低于此)
+    maxTokens: 131072,     // 128K 最大输出 (GPT-5 世代官方统一规格)
     input: ['text', 'image'],
     isReasoning: true,
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
   'gpt-6.1-sol': {
     name: 'GPT-6.1 Sol (严谨逻辑推理)',
-    contextWindow: 131072,  // 128K 上下文
-    maxTokens: 16384,
-    input: ['text'],
+    contextWindow: 1048576, // 1M 上下文 (按 GPT-5.5 世代官方规格，6 代不低于此)
+    maxTokens: 131072,     // 128K 最大输出 (GPT-5 世代官方统一规格)
+    input: ['text', 'image'],
     isReasoning: true,
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
-    }
-  },
-  'gpt-oss-120b-medium': {
-    name: 'GPT-OSS 120B Medium (开源推理)',
-    contextWindow: 1048576, // 1M 上下文
-    maxTokens: 16384,
-    input: ['text'],
-    isReasoning: true,
-    reasoningEfforts: {
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   },
 
   // xAI Grok 系列
   'grok-4.7': {
     name: 'xAI Grok 4.7 (全模态推理)',
-    contextWindow: 131072, // 128K 上下文
+    contextWindow: 500000, // 500K 上下文 (xAI 官方规格；官方未单列输出上限，maxTokens 暂保留)
     maxTokens: 16384,
     input: ['text', 'image'],
     isReasoning: true,
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high',
-      max: 'max'
+      high: 'high'
     }
   }
 };
@@ -327,19 +290,37 @@ function heuristicInfer(modelId) {
   // 上下文判断
   let contextWindow = 65536;
   let maxTokens = 8192;
-  if (lower.includes('1m') || lower.includes('mimo') || lower.includes('claude') || lower.includes('kimi') || lower.includes('step')) {
+  if (lower.includes('claude') || lower.includes('fable') || lower.includes('opus')) {
+    contextWindow = 1048576; // Claude 当前世代官方 1M
+    maxTokens = 65536;
+  } else if (lower.includes('1m') || lower.includes('mimo') || lower.includes('step') || lower.includes('gemini') || lower.includes('hy4')) {
     contextWindow = 1048576;
     maxTokens = 65536;
+  } else if (lower.includes('kimi')) {
+    contextWindow = 1048576; // 站内 Kimi 统一 1M (站长定)
+    maxTokens = 16384;
   } else if (lower.includes('256k') || lower.includes('262k') || lower.includes('sensenova') || lower.includes('hy')) {
     contextWindow = 262144;
     maxTokens = 32768;
-  } else if (lower.includes('128k') || lower.includes('deepseek') || lower.includes('glm') || lower.includes('grok')) {
+  } else if (lower.includes('deepseek')) {
+    contextWindow = 1048576; // DeepSeek V4 世代官方 1M
+    maxTokens = 65536;
+  } else if (lower.includes('glm')) {
+    contextWindow = 1048576; // 智谱 GLM-5.2 起官方 1M (GLM-5 基础版才是 200K)
+    maxTokens = 65536;
+  } else if (lower.includes('grok')) {
+    contextWindow = 500000; // xAI 官方 500K
+    maxTokens = 16384;
+  } else if (lower.includes('gpt')) {
+    contextWindow = 1048576; // GPT-5.5 世代官方 1M
+    maxTokens = 131072;
+  } else if (lower.includes('128k')) {
     contextWindow = 131072;
     maxTokens = 16384;
   }
 
   // 视觉多模态判断
-  const isVision = lower.includes('vl') || lower.includes('vision') || lower.includes('flash') || lower.includes('pro') || lower.includes('omni') || lower.includes('claude');
+  const isVision = lower.includes('vl') || lower.includes('vision') || lower.includes('flash') || lower.includes('pro') || lower.includes('omni') || lower.includes('claude') || lower.includes('gemini') || lower.includes('gpt');
 
   // 推理模型判断
   const isReasoning = lower.includes('reason') || lower.includes('thinking') || lower.includes('r1') || lower.includes('o1') || lower.includes('pro') || lower.includes('flash');
@@ -378,14 +359,10 @@ function parseModelList(rawModels, filterNonChat = true) {
     };
 
     if (spec.isReasoning) {
-      // 只要是推理模型，全量注入完整的 low, medium, high, max 档位
-      modelObj.reasoningEfforts = {
-        low: 'low',
-        medium: 'medium',
-        high: 'high',
-        max: 'max',
-        ...(spec.reasoningEfforts || {})
-      };
+      // 保持三档标准推理档位 (low / medium / high)，严禁非法附加 max 档位
+      modelObj.reasoningEfforts = spec.reasoningEfforts
+        ? { ...spec.reasoningEfforts }
+        : { low: 'low', medium: 'medium', high: 'high' };
     }
 
     result.push(modelObj);

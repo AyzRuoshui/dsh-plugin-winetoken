@@ -72,10 +72,45 @@ test('PatchEngine - 绝对幂等性测试 (内容一致时不产生字符变动)
   assert.equal(second, initial, '重复合并相同配置时必须完全幂等，不改变任何文本');
 });
 
-test('PatchEngine - 基线模型读取完整性', () => {
+test('PatchEngine - 基线模型读取完整性与 2026-11-17 上架阵容契约', () => {
   const models = getBaselineModels();
   assert.ok(Array.isArray(models), '基线模型必须为数组');
-  assert.ok(models.length >= 10, '基线模型数量必须大于等于 10');
-  const foundDeepseek = models.some(m => m.id.includes('deepseek'));
-  assert.ok(foundDeepseek, '必须包含 DeepSeek 经典模型');
+  assert.equal(models.length, 19, '基线模型数量必须严格为 19 个');
+
+  const modelIds = new Set(models.map(m => m.id));
+
+  // 1. 验证全部 5 个新增模型存在
+  const newModels = [
+    'hy4',
+    'hy4-flash',
+    'gemini-3.8-flash',
+    'claude-fable-5-2'
+  ];
+  for (const id of newModels) {
+    assert.ok(modelIds.has(id), `必须包含新增模型: ${id}`);
+  }
+
+  // 2. 验证下架模型已被彻底移除
+  const removedModels = [
+    '王者荣耀灵宝',
+    'gpt-oss-120b-medium',
+    'claude-opus-4-6-thinking',
+    'claude-sonnet-4-6',
+    'mimo-v2-omni',
+    'deepseek-chat',
+    'deepseek-reasoner',
+    'deepseek-v4-flash'
+  ];
+  for (const id of removedModels) {
+    assert.ok(!modelIds.has(id), `已下架模型严禁出现: ${id}`);
+  }
+
+  // 3. 验证 gemini-3.8-flash 思考档位严格为 low/medium/high
+  const gemini = models.find(m => m.id === 'gemini-3.8-flash');
+  assert.ok(gemini, '必须包含 gemini-3.8-flash');
+  assert.deepEqual(gemini.reasoningEfforts, {
+    low: 'low',
+    medium: 'medium',
+    high: 'high'
+  }, 'gemini-3.8-flash 思考档位必须仅含 low/medium/high');
 });
