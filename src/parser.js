@@ -31,7 +31,8 @@ const EXACT_MODEL_SPECS = {
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high'
+      high: 'high',
+      max: 'max'
     }
   },
   'deepseek-v4-pro': {
@@ -43,7 +44,8 @@ const EXACT_MODEL_SPECS = {
     reasoningEfforts: {
       low: 'low',
       medium: 'medium',
-      high: 'high'
+      high: 'high',
+      max: 'max'
     }
   },
 
@@ -359,7 +361,7 @@ function parseModelList(rawModels, filterNonChat = true) {
     };
 
     if (spec.isReasoning) {
-      // 保持三档标准推理档位 (low / medium / high)，严禁非法附加 max 档位
+      // 档位以规格表为准 (deepseek 家族含 max 档)；规格表缺失时兜底三档
       modelObj.reasoningEfforts = spec.reasoningEfforts
         ? { ...spec.reasoningEfforts }
         : { low: 'low', medium: 'medium', high: 'high' };

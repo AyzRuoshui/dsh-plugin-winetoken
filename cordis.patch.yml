@@ -110,6 +110,7 @@
               low: low
               medium: medium
               high: high
+              max: max
           - id: gpt-6-astra
             name: GPT-6 Astra (全模态推理)
             contextWindow: 1048576
@@ -153,6 +154,7 @@
               low: low
               medium: medium
               high: high
+              max: max
           - id: glm-5.3-flash
             name: 智谱 GLM-5.3 Flash (多模态推理)
             contextWindow: 1048576

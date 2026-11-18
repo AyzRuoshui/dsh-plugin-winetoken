@@ -29,6 +29,18 @@ const CONFIG_PATH = path.join(BASE_DIR, 'config.json');
 
 const { parseModelList } = require('./parser');
 
+const EFFORT_KEYS = ['low', 'medium', 'high', 'max'];
+
+// 服务器 Manifest 下发的档位是第一数据源：只保留合法档位键与字符串值，非法/缺失返回 null 走本地兜底
+function sanitizeServerEfforts(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = {};
+  for (const k of EFFORT_KEYS) {
+    if (typeof raw[k] === 'string' && raw[k]) out[k] = raw[k];
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 function buildManifestModels(chatModels) {
   return (Array.isArray(chatModels) ? chatModels : [])
     .filter(m => m && typeof m.id === 'string' && m.enabled !== false)
@@ -40,8 +52,14 @@ function buildManifestModels(chatModels) {
         maxTokens: m.maxTokens || 16384,
         input: m.vision ? ['text', 'image'] : ['text']
       };
-      if (m.reasoning) {
-        item.reasoningEfforts = { low: 'low', medium: 'medium', high: 'high' };
+      const serverEfforts = sanitizeServerEfforts(m.reasoningEfforts);
+      if (serverEfforts) {
+        item.reasoningEfforts = serverEfforts;
+      } else if (m.reasoning) {
+        // 旧版服务器/本地缓存无档位字段时的兜底：deepseek 家族四档 (含 max)，其余三档
+        item.reasoningEfforts = m.id.includes('deepseek')
+          ? { low: 'low', medium: 'medium', high: 'high', max: 'max' }
+          : { low: 'low', medium: 'medium', high: 'high' };
       }
       return item;
     });
