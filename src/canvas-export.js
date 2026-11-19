@@ -14,7 +14,7 @@ const SAFE_ASSET_KEY = /^[A-Za-z0-9_-]{1,120}\.(png|jpg|jpeg|webp|gif|mp4|webm)$
 // 仅允许这些字段进入导出工程，避免把运行时敏感数据 (Key / 凭据) 带入工程包
 const PROJECT_FIELDS = Object.freeze([
   'characters', 'panels', 'canvasItems', 'edges', 'groups',
-  'viewport', 'activeModel', 'version', 'updatedAt'
+  'viewport', 'activeModel', 'version', 'updatedAt', 'nodes'
 ]);
 
 function isObject(v) {
@@ -55,7 +55,7 @@ function collectAssetKeys(project) {
     seen.add(key);
     keys.push(key);
   };
-  const lists = [src.characters, src.panels, src.canvasItems];
+  const lists = [src.characters, src.panels, src.canvasItems, src.nodes];
   for (const list of lists) {
     if (!Array.isArray(list)) continue;
     for (const item of list) {
@@ -68,6 +68,9 @@ function collectAssetKeys(project) {
         add(data.url);
         add(data.assetKey);
         add(data.videoUrl);
+        add(data.avatar);
+        add(data.imageUrl);
+        for (const url of Array.isArray(data.candidates) ? data.candidates : []) add(url);
       }
     }
   }

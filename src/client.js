@@ -2965,9 +2965,9 @@ $owner.Dispose()
         }
 
         // ==========================================
-        // 5. 漫剧 AI 画布全景工作台组件 (CanvasWorkspace)
+        // 5. 漫剧 AI 画布旧版工作台组件 (LegacyCanvasWorkspace)
         // ==========================================
-        function CanvasWorkspace({ theme: propTheme, isVip, isSvip, isSuper, onOpenTutorial }) {
+        function LegacyCanvasWorkspace({ theme: propTheme, isVip, isSvip, isSuper, onOpenTutorial }) {
           const hookTheme = useTheme();
           const theme = propTheme || hookTheme;
           // 三级水合恢复机制：全局内存单例 -> CanvasProjectStorage 磁盘备份 -> localStorage 镜像 -> 初始模板 (CANVAS-01)
@@ -7867,6 +7867,47 @@ $owner.Dispose()
           ]);
         }
 
+        const CanvasWorkspace = LegacyCanvasWorkspace;
+
+        // ==========================================
+        // 5.1 React Flow 漫剧画布工作台挂接 (v2.5.0)
+        // ==========================================
+        let createReactFlowWorkspace = null;
+        let initXyFlow = null;
+        try {
+          const rfMod = require('./canvas-reactflow.js');
+          if (rfMod && typeof rfMod.createReactFlowWorkspace === 'function') {
+            createReactFlowWorkspace = rfMod.createReactFlowWorkspace;
+          }
+        } catch (_) {}
+        try {
+          initXyFlow = require('./vendor/xyflow.factory.cjs');
+        } catch (_) {}
+
+        let ReactFlowWorkspace = null;
+        if (typeof createReactFlowWorkspace === 'function' && typeof initXyFlow === 'function') {
+          try {
+            const built = createReactFlowWorkspace({
+              React,
+              ReactDOM: (typeof window !== 'undefined' ? window.ReactDOM : null),
+              initXyFlow,
+              canvasProjectStore,
+              canvasStorageDriver,
+              canvasHistoryManager,
+              canvasAssetsDriver,
+              assetLibraryStore,
+              CanvasPricingUtils,
+              CanvasNodeUtils,
+              CanvasPromptUtils,
+              CanvasVideoUtils,
+              CanvasExportUtils
+            });
+            if (typeof built === 'function') {
+              ReactFlowWorkspace = built;
+            }
+          } catch (_) {}
+        }
+
         // ==========================================
         // 6. 创作工坊主工作台 (StudioPage)
         // ==========================================
@@ -8873,7 +8914,10 @@ $owner.Dispose()
                 overflow: 'hidden'
               }
             }, [
-              h(CanvasWorkspace, {
+              h((function() {
+                const canvasEngine = (typeof window !== 'undefined' && window.localStorage && window.localStorage.getItem('WINETOKEN_CANVAS_ENGINE')) || 'reactflow';
+                return (canvasEngine === 'legacy' || !ReactFlowWorkspace) ? LegacyCanvasWorkspace : ReactFlowWorkspace;
+              })(), {
                 theme,
                 isVip,
                 isSvip,

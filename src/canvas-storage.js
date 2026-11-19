@@ -61,8 +61,50 @@ class CanvasProjectStorage {
           status: 'idle'
         }
       ],
+      nodes: [
+        {
+          id: 'char_chuyun',
+          type: 'characterNode',
+          position: { x: 40, y: 60 },
+          data: {
+            name: '主角·楚云',
+            dna: '少年剑客，黑袍高领，银白碎发，剑眉星目，冷峻英气，电影质感',
+            avatar: '',
+            tags: []
+          }
+        },
+        {
+          id: 'shot_01',
+          type: 'panelNode',
+          position: { x: 360, y: 60 },
+          width: 280,
+          height: 420,
+          data: {
+            num: 1,
+            aspectRatio: '2:3',
+            shot: 'CU',
+            shotLabel: '特写',
+            prompt: '少年剑客面部特写，发丝微动，冷峻眼神，侧逆光，细致皮肤纹理，虚化背景，电影光影',
+            dialogue: '“这一剑，我已等了三年。”',
+            characterId: 'char_chuyun',
+            imageUrl: '',
+            candidates: [],
+            status: 'idle',
+            tags: []
+          }
+        }
+      ],
       canvasItems: [],
-      edges: [],
+      edges: [
+        {
+          id: 'e_char_shot_01',
+          source: 'char_chuyun',
+          target: 'shot_01',
+          type: 'default',
+          from: { type: 'character', id: 'char_chuyun' },
+          to: { type: 'panel', id: 'shot_01' }
+        }
+      ],
       groups: [],
       viewport: { x: 40, y: 30, zoom: 1 },
       activeModel: 'sensenova-u1.5-lite'
@@ -83,6 +125,7 @@ class CanvasProjectStorage {
           parsed.canvasItems = Array.isArray(parsed.canvasItems) ? parsed.canvasItems : [];
           parsed.edges = Array.isArray(parsed.edges) ? parsed.edges : [];
           parsed.groups = Array.isArray(parsed.groups) ? parsed.groups : [];
+          parsed.nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
           return parsed;
         }
       } catch (err) {

@@ -43,6 +43,7 @@ function normalizeProject(raw) {
     canvasItems: Array.isArray(src.canvasItems) ? src.canvasItems : [],
     edges: Array.isArray(src.edges) ? src.edges : [],
     groups: Array.isArray(src.groups) ? src.groups : [],
+    nodes: Array.isArray(src.nodes) ? src.nodes : [],
     viewport: {
       x: Number.isFinite(vp.x) ? vp.x : 40,
       y: Number.isFinite(vp.y) ? vp.y : 30,
@@ -197,6 +198,28 @@ class CanvasStateBridge {
       createdBy: 'tool'
     };
     project.panels.push(panel);
+    if (!Array.isArray(project.nodes)) project.nodes = [];
+    project.nodes.push({
+      id: panel.id,
+      type: 'panelNode',
+      position: { x: panel.x, y: panel.y },
+      width: panel.width,
+      height: panel.height,
+      data: {
+        num: panel.num,
+        prompt: panel.prompt,
+        dialogue: panel.dialogue,
+        shot: panel.shot,
+        shotLabel: panel.shotLabel,
+        aspectRatio: panel.aspectRatio,
+        characterId: panel.characterId,
+        imageUrl: panel.imageUrl,
+        candidates: panel.candidates,
+        status: panel.status,
+        isGenerating: false,
+        tags: []
+      }
+    });
     project.updatedAt = stamp;
     this._atomicWrite(active.file, project, '追加分镜');
     return { projectId: active.id, projectFile: active.file, panel };

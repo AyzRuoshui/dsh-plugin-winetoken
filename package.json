@@ -1,6 +1,6 @@
 {
   "name": "@winetoken/dsh-plugin-winetoken",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "description": "WineToken 全平台推理模型自动同步、双账轨资产监控与现代化 AI 漫剧画布创作工坊。",
   "author": "AyzRuoshui",
   "license": "MIT",
@@ -39,10 +39,16 @@
   },
   "scripts": {
     "sync": "node src/sync.js",
+    "build:client": "node scripts/build-xyflow.cjs",
+    "prepack": "npm run build:client",
     "test": "node --test tests/**/*.test.js",
     "release": "node scripts/release.cjs"
   },
   "dependencies": {
     "yaml": "^2.4.0"
+  },
+  "devDependencies": {
+    "@xyflow/react": "^12.12.1",
+    "esbuild": "^0.28.2"
   }
 }

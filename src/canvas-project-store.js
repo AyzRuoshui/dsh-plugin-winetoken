@@ -12,7 +12,7 @@ const path = require('path');
 const os = require('os');
 
 const REGISTRY_VERSION = 1;
-const PROJECT_VERSION = '2.3.0';
+const PROJECT_VERSION = '2.5.0';
 const SAFE_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
 /** 过滤控制字符并限制长度，杜绝把换行/ANSI 写进注册表 */
@@ -61,25 +61,324 @@ function emptyRegistry() {
   return { version: REGISTRY_VERSION, activeId: null, projects: [], deleted: [] };
 }
 
-/** 复用 canvas-storage.js 的增量兼容语义，绝不破坏性迁移旧工程 */
+function toFiniteNumber(v, fallback) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : fallback;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  }
+  return fallback;
+}
+
+function extractEndpointId(endpoint) {
+  if (typeof endpoint === 'string' || typeof endpoint === 'number') {
+    const s = String(endpoint).trim();
+    return s.length > 0 ? s : null;
+  }
+  if (endpoint && typeof endpoint === 'object' && !Array.isArray(endpoint)) {
+    const keys = ['id', 'nodeId', 'fromNodeId', 'toNodeId', 'targetId', 'sourceId'];
+    for (const k of keys) {
+      if (endpoint[k] !== undefined && endpoint[k] !== null) {
+        const s = String(endpoint[k]).trim();
+        if (s.length > 0) return s;
+      }
+    }
+  }
+  return null;
+}
+
+/** 一次性无损转换器：旧工程结构 -> React Flow nodes/edges */
+function migrateToReactFlow(legacyProject) {
+  const src = legacyProject && typeof legacyProject === 'object' && !Array.isArray(legacyProject) ? legacyProject : {};
+  const nodes = [];
+  const edges = [];
+  const chars = Array.isArray(src.characters) ? src.characters : [];
+  const panels = Array.isArray(src.panels) ? src.panels : [];
+  const items = Array.isArray(src.canvasItems) ? src.canvasItems : [];
+  const groups = Array.isArray(src.groups) ? src.groups : [];
+
+  // 1. Characters -> characterNode
+  chars.forEach((c, idx) => {
+    if (!c || typeof c !== 'object') return;
+    const cid = String(c.id || `char_${idx}`);
+    nodes.push({
+      id: cid,
+      type: 'characterNode',
+      position: {
+        x: toFiniteNumber(c.x, 40),
+        y: toFiniteNumber(c.y, 60 + idx * 246)
+      },
+      data: {
+        name: typeof c.name === 'string' ? c.name : (typeof c.name === 'number' ? String(c.name) : '未命名角色'),
+        dna: typeof c.dna === 'string' ? c.dna : '',
+        avatar: typeof c.avatar === 'string' ? c.avatar : '',
+        tags: Array.isArray(c.tags) ? c.tags : []
+      }
+    });
+  });
+
+  // 2. Panels -> panelNode
+  panels.forEach((p, idx) => {
+    if (!p || typeof p !== 'object') return;
+    const pid = String(p.id || `shot_${idx + 1}`);
+    const num = Number.isFinite(p.num) ? p.num : (idx + 1);
+    nodes.push({
+      id: pid,
+      type: 'panelNode',
+      position: {
+        x: toFiniteNumber(p.x, 360 + idx * 320),
+        y: toFiniteNumber(p.y, 60)
+      },
+      width: toFiniteNumber(p.width, 280),
+      height: toFiniteNumber(p.height, 420),
+      data: {
+        num,
+        prompt: typeof p.prompt === 'string' ? p.prompt : '',
+        dialogue: typeof p.dialogue === 'string' ? p.dialogue : '',
+        shot: typeof p.shot === 'string' ? p.shot : 'CU',
+        shotLabel: typeof p.shotLabel === 'string' ? p.shotLabel : '特写',
+        aspectRatio: typeof p.aspectRatio === 'string' ? p.aspectRatio : '2:3',
+        characterId: typeof p.characterId === 'string' ? p.characterId : (chars[0]?.id || ''),
+        imageUrl: typeof p.imageUrl === 'string' ? p.imageUrl : '',
+        stagingCandidateUrl: typeof p.stagingCandidateUrl === 'string' ? p.stagingCandidateUrl : null,
+        candidates: Array.isArray(p.candidates) ? p.candidates : [],
+        status: typeof p.status === 'string' ? p.status : 'idle',
+        isGenerating: Boolean(p.isGenerating),
+        tags: Array.isArray(p.tags) ? p.tags : []
+      }
+    });
+  });
+
+  // 3. CanvasItems -> imageNode / videoNode / textNode
+  items.forEach((item, idx) => {
+    if (!item || typeof item !== 'object') return;
+    const iid = String(item.id || `item_${idx}`);
+    const itemData = item.data && typeof item.data === 'object' ? item.data : {};
+    const itemType = (item.type === 'video' || item.type === 'text') ? item.type : 'image';
+    const nodeType = itemType === 'video' ? 'videoNode' : (itemType === 'text' ? 'textNode' : 'imageNode');
+    nodes.push({
+      id: iid,
+      type: nodeType,
+      position: {
+        x: toFiniteNumber(item.x, 700 + idx * 50),
+        y: toFiniteNumber(item.y, 100 + idx * 50)
+      },
+      width: toFiniteNumber(item.width, itemType === 'video' ? 330 : 290),
+      height: toFiniteNumber(item.height, itemType === 'video' ? 470 : (itemType === 'text' ? 160 : 460)),
+      data: {
+        ...itemData,
+        name: typeof itemData.name === 'string' ? itemData.name : (itemType === 'video' ? '视频生成节点' : (itemType === 'text' ? '文本便签' : '图片生成节点')),
+        tags: Array.isArray(itemData.tags) ? itemData.tags : [],
+        params: itemData.params && typeof itemData.params === 'object' ? { ...itemData.params } : {}
+      }
+    });
+  });
+
+  // 4. Groups -> groupNode
+  groups.forEach((g, idx) => {
+    if (!g || typeof g !== 'object') return;
+    const gid = String(g.id || `group_${idx}`);
+    nodes.push({
+      id: gid,
+      type: 'groupNode',
+      position: {
+        x: toFiniteNumber(g.x, 0),
+        y: toFiniteNumber(g.y, 0)
+      },
+      data: {
+        name: typeof g.name === 'string' ? g.name : (typeof g.label === 'string' ? g.label : '未命名分组'),
+        memberIds: Array.isArray(g.memberIds) ? g.memberIds : []
+      },
+      style: {
+        width: toFiniteNumber(g.width, 400),
+        height: toFiniteNumber(g.height, 300)
+      }
+    });
+  });
+
+  // 5. Edges -> React Flow edge (type 统一为 'default'，杜绝 'bezier')
+  const rawEdges = Array.isArray(src.edges) ? src.edges : [];
+  rawEdges.forEach((e, idx) => {
+    if (!e || typeof e !== 'object') return;
+    const fromId = extractEndpointId(e.from !== undefined ? e.from : (e.fromNodeId !== undefined ? e.fromNodeId : e.source));
+    const toId = extractEndpointId(e.to !== undefined ? e.to : (e.toNodeId !== undefined ? e.toNodeId : e.target));
+    if (!fromId || !toId || fromId === toId) return;
+    const eid = String(e.id || `edge_${fromId}_${toId}_${idx}`);
+    edges.push({
+      id: eid,
+      source: fromId,
+      target: toId,
+      type: 'default',
+      from: { type: 'item', id: fromId },
+      to: { type: 'panel', id: toId }
+    });
+  });
+
+  const viewport = src.viewport && typeof src.viewport === 'object' ? src.viewport : {};
+
+  return {
+    ...src,
+    version: '2.5.0',
+    nodes,
+    edges,
+    characters: chars,
+    panels,
+    canvasItems: items,
+    groups,
+    viewport: {
+      x: toFiniteNumber(viewport.x, 40),
+      y: toFiniteNumber(viewport.y, 30),
+      zoom: toFiniteNumber(viewport.zoom, 1)
+    },
+    activeModel: typeof src.activeModel === 'string' ? src.activeModel : ''
+  };
+}
+
+/** 归一化工程数据：支持 React Flow 原生 nodes/edges 与向后兼容双向映射 */
 function normalizeProject(raw, id, name) {
   const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-  const viewport = src.viewport && typeof src.viewport === 'object' ? src.viewport : { x: 40, y: 30, zoom: 1 };
+  const viewport = src.viewport && typeof src.viewport === 'object' ? src.viewport : {};
+
+  let nodes = [];
+  let edges = [];
+  let characters = Array.isArray(src.characters) ? src.characters.filter(Boolean) : [];
+  let panels = Array.isArray(src.panels) ? src.panels.filter(Boolean) : [];
+  let canvasItems = Array.isArray(src.canvasItems) ? src.canvasItems.filter(Boolean) : [];
+  let groups = Array.isArray(src.groups) ? src.groups.filter(Boolean) : [];
+
+  if (Array.isArray(src.nodes)) {
+    // 已经包含 nodes，归一化每个节点
+    src.nodes.forEach(n => {
+      if (!n || typeof n !== 'object') return;
+      const nid = String(n.id || '');
+      if (!nid) return;
+      const pos = n.position && typeof n.position === 'object' ? n.position : {};
+      const data = n.data && typeof n.data === 'object' ? n.data : {};
+      const t = String(n.type || 'imageNode');
+      nodes.push({
+        ...n,
+        id: nid,
+        type: t,
+        position: {
+          x: toFiniteNumber(pos.x !== undefined ? pos.x : n.x, 0),
+          y: toFiniteNumber(pos.y !== undefined ? pos.y : n.y, 0)
+        },
+        data
+      });
+    });
+
+    // 从 nodes 派生/同步 legacy 数组（若 legacy 数组为空）
+    if (characters.length === 0) {
+      nodes.filter(n => n.type === 'characterNode' || n.type === 'character').forEach(n => {
+        characters.push({
+          id: n.id,
+          name: n.data?.name || '未命名角色',
+          dna: n.data?.dna || '',
+          avatar: n.data?.avatar || '',
+          tags: Array.isArray(n.data?.tags) ? n.data.tags : [],
+          x: n.position.x,
+          y: n.position.y
+        });
+      });
+    }
+    if (panels.length === 0) {
+      nodes.filter(n => n.type === 'panelNode' || n.type === 'panel').forEach(n => {
+        panels.push({
+          id: n.id,
+          num: n.data?.num || 1,
+          prompt: n.data?.prompt || '',
+          dialogue: n.data?.dialogue || '',
+          shot: n.data?.shot || 'CU',
+          shotLabel: n.data?.shotLabel || '特写',
+          aspectRatio: n.data?.aspectRatio || '2:3',
+          characterId: n.data?.characterId || '',
+          imageUrl: n.data?.imageUrl || '',
+          stagingCandidateUrl: n.data?.stagingCandidateUrl || null,
+          candidates: Array.isArray(n.data?.candidates) ? n.data.candidates : [],
+          status: n.data?.status || 'idle',
+          isGenerating: Boolean(n.data?.isGenerating),
+          tags: Array.isArray(n.data?.tags) ? n.data.tags : [],
+          x: n.position.x,
+          y: n.position.y,
+          width: toFiniteNumber(n.width, 280),
+          height: toFiniteNumber(n.height, 420)
+        });
+      });
+    }
+    if (canvasItems.length === 0) {
+      nodes.filter(n => ['imageNode', 'videoNode', 'textNode', 'image', 'video', 'text'].includes(n.type)).forEach(n => {
+        const itemType = (n.type === 'videoNode' || n.type === 'video') ? 'video'
+          : ((n.type === 'textNode' || n.type === 'text') ? 'text' : 'image');
+        canvasItems.push({
+          id: n.id,
+          type: itemType,
+          x: n.position.x,
+          y: n.position.y,
+          width: toFiniteNumber(n.width, itemType === 'video' ? 330 : 290),
+          height: toFiniteNumber(n.height, itemType === 'video' ? 470 : (itemType === 'text' ? 160 : 460)),
+          data: n.data
+        });
+      });
+    }
+    if (groups.length === 0) {
+      nodes.filter(n => n.type === 'groupNode' || n.type === 'group').forEach(n => {
+        groups.push({
+          id: n.id,
+          name: n.data?.name || '未命名分组',
+          memberIds: Array.isArray(n.data?.memberIds) ? n.data.memberIds : [],
+          width: toFiniteNumber(n.style?.width || n.width, 400),
+          height: toFiniteNumber(n.style?.height || n.height, 300),
+          x: n.position.x,
+          y: n.position.y
+        });
+      });
+    }
+  } else {
+    // 缺少 nodes，执行完整迁移
+    const migrated = migrateToReactFlow(src);
+    nodes = migrated.nodes;
+    edges = migrated.edges;
+    characters = migrated.characters;
+    panels = migrated.panels;
+    canvasItems = migrated.canvasItems;
+    groups = migrated.groups;
+  }
+
+  // 归一化 edges
+  const rawEdges = Array.isArray(src.edges) ? src.edges : edges;
+  const normalizedEdges = [];
+  rawEdges.forEach((e, idx) => {
+    if (!e || typeof e !== 'object') return;
+    const fromId = extractEndpointId(e.from !== undefined ? e.from : (e.fromNodeId !== undefined ? e.fromNodeId : e.source));
+    const toId = extractEndpointId(e.to !== undefined ? e.to : (e.toNodeId !== undefined ? e.toNodeId : e.target));
+    if (!fromId || !toId || fromId === toId) return;
+    const eid = String(e.id || `edge_${fromId}_${toId}_${idx}`);
+    normalizedEdges.push({
+      id: eid,
+      source: fromId,
+      target: toId,
+      type: 'default', // React Flow 边的注册名统一为 default，杜绝 bezier
+      from: { type: 'item', id: fromId },
+      to: { type: 'panel', id: toId }
+    });
+  });
+
   return {
     ...src,
     id,
     name,
     version: PROJECT_VERSION,
     updatedAt: Number.isFinite(src.updatedAt) ? src.updatedAt : Date.now(),
-    characters: Array.isArray(src.characters) ? src.characters : [],
-    panels: Array.isArray(src.panels) ? src.panels : [],
-    canvasItems: Array.isArray(src.canvasItems) ? src.canvasItems : [],
-    edges: Array.isArray(src.edges) ? src.edges : [],
-    groups: Array.isArray(src.groups) ? src.groups : [],
+    nodes,
+    edges: normalizedEdges,
+    characters,
+    panels,
+    canvasItems,
+    groups,
     viewport: {
-      x: Number.isFinite(viewport.x) ? viewport.x : 40,
-      y: Number.isFinite(viewport.y) ? viewport.y : 30,
-      zoom: Number.isFinite(viewport.zoom) ? viewport.zoom : 1
+      x: toFiniteNumber(viewport.x, 40),
+      y: toFiniteNumber(viewport.y, 30),
+      zoom: toFiniteNumber(viewport.zoom, 1)
     },
     activeModel: typeof src.activeModel === 'string' ? src.activeModel : ''
   };
@@ -294,7 +593,16 @@ class CanvasProjectStore {
     } catch (err) {
       throw new Error(`[WineToken ProjectStore] 工程 ${id} 读取失败: ${err.message}`);
     }
-    return normalizeProject(parsed, id, meta ? meta.name : '未命名工程');
+    const needsMigration = !Array.isArray(parsed.nodes) || parsed.version !== PROJECT_VERSION;
+    const normalized = normalizeProject(parsed, id, meta ? meta.name : '未命名工程');
+    if (needsMigration) {
+      try {
+        this._atomicWriteJson(file, normalized, '无损迁移升级工程');
+      } catch (err) {
+        console.warn(`[WineToken ProjectStore] 工程 ${id} 迁移写盘告警: ${err.message}`);
+      }
+    }
+    return normalized;
   }
 
   saveProject(id, data) {
@@ -310,4 +618,4 @@ class CanvasProjectStore {
   }
 }
 
-module.exports = { CanvasProjectStore, REGISTRY_VERSION, PROJECT_VERSION, isValidId };
+module.exports = { CanvasProjectStore, REGISTRY_VERSION, PROJECT_VERSION, isValidId, normalizeProject, migrateToReactFlow };

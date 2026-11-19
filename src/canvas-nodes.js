@@ -156,21 +156,25 @@ function titleOfGroup(g) {
 function makeNode(raw, type, refType, title) {
   const id = normalizeId(raw.id) || '';
   const def = defaultSizeFor(type);
+  const posX = (raw.position && raw.position.x !== undefined) ? raw.position.x : raw.x;
+  const posY = (raw.position && raw.position.y !== undefined) ? raw.position.y : raw.y;
+  const w = raw.width || (raw.style && raw.style.width) || def.w;
+  const h = raw.height || (raw.style && raw.style.height) || def.h;
   return {
     id,
     type,
     title,
-    x: toFinite(raw.x, 0),
-    y: toFinite(raw.y, 0),
-    width: toFinite(raw.width, def.w),
-    height: toFinite(raw.height, def.h),
+    x: toFinite(posX, 0),
+    y: toFinite(posY, 0),
+    width: toFinite(w, def.w),
+    height: toFinite(h, def.h),
     ref: { type: refType, id },
     raw
   };
 }
 
 /**
- * 扁平投影：characters → panels → canvasItems → groups，缺数组/缺条目均安全跳过。
+ * 扁平投影：支持 React Flow nodes 与 legacy 四数组 (characters/panels/canvasItems/groups)。
  * raw 保留原对象引用 (不深拷贝)，ref 采用边命名空间。
  */
 function listNodes(project) {
@@ -181,6 +185,41 @@ function listNodes(project) {
     if (!isObject(raw)) return;
     try { out.push(build(raw)); } catch (_) {}
   };
+  if (Array.isArray(p.nodes)) {
+    p.nodes.forEach(n => emit(n, r => {
+      const rawType = getString(r.type);
+      let canonicalType = 'image';
+      let refType = 'item';
+      if (rawType === 'panelNode' || rawType === 'panel') {
+        canonicalType = 'panel';
+        refType = 'panel';
+      } else if (rawType === 'characterNode' || rawType === 'character') {
+        canonicalType = 'character';
+        refType = 'character';
+      } else if (rawType === 'groupNode' || rawType === 'group') {
+        canonicalType = 'group';
+        refType = 'group';
+      } else if (rawType === 'videoNode' || rawType === 'video') {
+        canonicalType = 'video';
+        refType = 'item';
+      } else if (rawType === 'textNode' || rawType === 'text') {
+        canonicalType = 'text';
+        refType = 'item';
+      } else {
+        canonicalType = itemNodeType(r);
+        refType = 'item';
+      }
+      const d = dataOf(r);
+      let title = '';
+      if (canonicalType === 'character') title = titleOfCharacter(d.name ? d : r);
+      else if (canonicalType === 'panel') title = titleOfPanel(d.num !== undefined ? d : r);
+      else if (canonicalType === 'group') title = titleOfGroup(d.name ? d : r);
+      else title = titleOfItem(r, canonicalType);
+
+      return makeNode(r, canonicalType, refType, title);
+    }));
+    return out;
+  }
   const chars = Array.isArray(p.characters) ? p.characters : [];
   chars.forEach(c => emit(c, r => makeNode(r, 'character', 'character', titleOfCharacter(r))));
   const panels = Array.isArray(p.panels) ? p.panels : [];
@@ -360,25 +399,31 @@ function validateParam(key, val) {
 
 function basePromptOf(node) {
   const raw = node.raw || {};
-  if (node.type === 'panel') return getString(raw.prompt);
-  if (node.type === 'text') return getString(dataOf(raw).text);
-  if (node.type === 'image' || node.type === 'video') return getString(dataOf(raw).prompt);
+  const d = dataOf(raw);
+  if (node.type === 'panel') return getString(d.prompt || raw.prompt);
+  if (node.type === 'text') return getString(d.text || raw.text);
+  if (node.type === 'image' || node.type === 'video') return getString(d.prompt || raw.prompt);
   return '';
 }
 
 function imagePromptOf(node) {
-  return getString(dataOf(node.raw).prompt);
+  const d = dataOf(node.raw);
+  const raw = node.raw || {};
+  return getString(d.prompt || raw.prompt);
 }
 
 function textOf(node) {
-  return getString(dataOf(node.raw).text);
+  const d = dataOf(node.raw);
+  const raw = node.raw || {};
+  return getString(d.text || raw.text);
 }
 
 function imageRefOf(node) {
   const d = dataOf(node.raw);
-  const url = getString(d.url);
+  const raw = node.raw || {};
+  const url = getString(d.url || raw.imageUrl || raw.url);
   if (url.trim() !== '') return url;
-  const assetKey = getString(d.assetKey);
+  const assetKey = getString(d.assetKey || raw.assetKey);
   if (assetKey.trim() !== '') return 'asset:' + assetKey;
   return '';
 }
@@ -440,19 +485,21 @@ function buildGenerationContext(project, nodeId) {
     };
     upstream.forEach(({ node }) => { if (node.type === 'image') addRef(imageRefOf(node)); });
     if (target.type === 'panel') {
-      const charId = normalizeId((target.raw || {}).characterId);
+      const charId = normalizeId(dataOf(target.raw).characterId || (target.raw || {}).characterId);
       const char = charId !== null ? idx.byId.get(charId) : null;
-      if (char && char.type === 'character') addRef(getString((char.raw || {}).avatar));
+      if (char && char.type === 'character') {
+        const charAvatar = getString(dataOf(char.raw).avatar || (char.raw || {}).avatar);
+        addRef(charAvatar);
+      }
     }
     if (refs.length > REF_MAX) {
       refs.length = REF_MAX;
       warnings.push(`参考图超过 ${REF_MAX} 张，已截断`);
     }
 
-    // 4) params：仅白名单键浅合并 (后者覆盖)，键来自常量而非用户输入，天然阻断原型污染
+    // 4) params：目标自身作为基底，上游仅白名单键浅合并 (后者覆盖)，键来自常量而非用户输入，天然阻断原型污染
     const params = {};
-    upstream.forEach(({ node }) => {
-      const pr = dataOf(node.raw).params;
+    const mergeParamObj = (pr) => {
       if (!isObject(pr)) return;
       PARAM_KEYS.forEach(key => {
         if (FORBIDDEN_KEYS.has(key)) return; // 双保险
@@ -464,6 +511,11 @@ function buildGenerationContext(project, nodeId) {
         const clean = validateParam(key, val);
         if (clean !== null) params[key] = clean;
       });
+    };
+
+    mergeParamObj(dataOf(target.raw).params || (target.raw || {}).params);
+    upstream.forEach(({ node }) => {
+      mergeParamObj(dataOf(node.raw).params || (node.raw || {}).params);
     });
 
     result.prompt = prompt;
