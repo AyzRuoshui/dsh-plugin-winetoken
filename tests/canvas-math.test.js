@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   snapToGrid,
   calculateBezierPath,
+  calculateSmartConnectionPath,
   isIntersectingAABB,
   measureAndWrapText,
   computeAlignGuides,
@@ -144,4 +145,48 @@ test('CanvasMath - parseStoryboardJSON 脏输出安全降级', () => {
   assert.deepEqual(parseStoryboardJSON('模型开始胡言乱语，没有 JSON'), []);
   assert.deepEqual(parseStoryboardJSON('{"shot":"CU"}'), []);
   assert.deepEqual(parseStoryboardJSON('[{"shot":"CU","prompt":"合法分镜"}]').length, 1);
+});
+
+test('CanvasMath - calculateSmartConnectionPath 常规右侧保持原有口径 (修正 2)', () => {
+  const source = { x: 40, y: 60, width: 220, height: 230 };
+  const target = { x: 360, y: 60, width: 280, height: 420 };
+  const options = { defaultStartY: 125, defaultEndY: 90 };
+  const d = calculateSmartConnectionPath(source, target, options);
+  assert.equal(d, 'M 260 125 C 310 125, 310 90, 360 90');
+});
+
+test('CanvasMath - calculateSmartConnectionPath 上移跨象限场景与负坐标支持', () => {
+  const source = { x: 40, y: 60, width: 220, height: 230 };
+  const target = { x: 40, y: -400, width: 280, height: 420 };
+  const d = calculateSmartConnectionPath(source, target);
+  assert.match(d, /^M 150 60 C 150 -?\d+(\.\d+)?, 180 -?\d+(\.\d+)?, 180 20$/);
+  assert.ok(!d.includes('NaN'), '路径绝不包含 NaN');
+  assert.ok(d.startsWith('M 150 60 '));
+  assert.ok(d.endsWith(' 180 20'));
+});
+
+test('CanvasMath - calculateSmartConnectionPath 左移反向水平场景', () => {
+  const source = { x: 300, y: 100, width: 200, height: 200 };
+  const target = { x: 50, y: 100, width: 100, height: 100 };
+  const d = calculateSmartConnectionPath(source, target);
+  assert.equal(d, 'M 300 200 C 150 200, 300 150, 150 150');
+  assert.ok(!d.includes('NaN'));
+});
+
+test('CanvasMath - calculateSmartConnectionPath 下方跨象限与全负坐标鲁棒性', () => {
+  const source = { x: -200, y: -300, width: 100, height: 100 };
+  const target = { x: -200, y: 200, width: 100, height: 100 };
+  const d = calculateSmartConnectionPath(source, target);
+  assert.ok(d.startsWith('M -150 -200 '));
+  assert.ok(d.endsWith(' -150 200'));
+  assert.ok(!d.includes('NaN'));
+});
+
+test('CanvasMath - anchorFor 支持负坐标与脏数据防崩溃', () => {
+  const negNode = { x: -100, y: -200, width: 50, height: 60 };
+  assert.deepEqual(anchorFor(negNode, 'top'), { x: -75, y: -200 });
+  assert.deepEqual(anchorFor(negNode, 'bottom'), { x: -75, y: -140 });
+  assert.deepEqual(anchorFor(negNode, 'left'), { x: -100, y: -170 });
+  assert.deepEqual(anchorFor(negNode, 'right'), { x: -50, y: -170 });
+  assert.deepEqual(anchorFor(null), { x: 0, y: 0 });
 });

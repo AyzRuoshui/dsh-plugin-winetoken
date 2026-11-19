@@ -236,8 +236,8 @@ const EXACT_MODEL_SPECS = {
   },
 
   // OpenAI GPT 系列
-  'gpt-6-astra': {
-    name: 'GPT-6 Astra (全模态推理)',
+  'gpt-6.2-astra': {
+    name: 'GPT-6.2 Astra (全模态推理)',
     contextWindow: 1048576, // 1M 上下文 (按 GPT-5.5 世代官方规格，6 代不低于此)
     maxTokens: 131072,     // 128K 最大输出 (GPT-5 世代官方统一规格)
     input: ['text', 'image'],
@@ -248,8 +248,8 @@ const EXACT_MODEL_SPECS = {
       high: 'high'
     }
   },
-  'gpt-6.1-sol': {
-    name: 'GPT-6.1 Sol (严谨逻辑推理)',
+  'gpt-6.2-sol': {
+    name: 'GPT-6.2 Sol (严谨逻辑推理)',
     contextWindow: 1048576, // 1M 上下文 (按 GPT-5.5 世代官方规格，6 代不低于此)
     maxTokens: 131072,     // 128K 最大输出 (GPT-5 世代官方统一规格)
     input: ['text', 'image'],

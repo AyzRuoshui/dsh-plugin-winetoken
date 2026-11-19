@@ -3020,6 +3020,46 @@ $owner.Dispose()
           // 视口变换参数 (基于 Direct DOM Transform 硬件加速)
           const viewportRef = React.useRef(initialProject.viewport || { x: 40, y: 30, zoom: 1 });
           const canvasLayerRef = React.useRef(null);
+          const viewportContainerRef = React.useRef(null);
+          const [viewportWidth, setViewportWidth] = React.useState(() => {
+            return (typeof window !== 'undefined' && typeof window.innerWidth === 'number') ? window.innerWidth : 1440;
+          });
+
+          React.useEffect(() => {
+            if (typeof window === 'undefined') return;
+            const updateWidth = () => {
+              const el = viewportContainerRef.current || (typeof document !== 'undefined' ? document.getElementById('winetoken-canvas-viewport') : null);
+              const w = (el && el.clientWidth) ? el.clientWidth : window.innerWidth;
+              if (typeof w === 'number' && w > 0) {
+                setViewportWidth(w);
+              }
+            };
+            updateWidth();
+            window.addEventListener('resize', updateWidth);
+            let ro = null;
+            const el = viewportContainerRef.current || (typeof document !== 'undefined' ? document.getElementById('winetoken-canvas-viewport') : null);
+            if (typeof ResizeObserver !== 'undefined' && el) {
+              try {
+                ro = new ResizeObserver((entries) => {
+                  for (const entry of entries) {
+                    const w = entry.contentRect?.width;
+                    if (typeof w === 'number' && w > 0) {
+                      setViewportWidth(w);
+                    }
+                  }
+                });
+                ro.observe(el);
+              } catch (_) {}
+            }
+            return () => {
+              window.removeEventListener('resize', updateWidth);
+              if (ro) ro.disconnect();
+            };
+          }, []);
+
+          const isNarrow = viewportWidth < 900;
+          const isCompact = viewportWidth < 1280;
+
           const isDraggingRef = React.useRef(false);
           const dragStartRef = React.useRef({ x: 0, y: 0, originX: 0, originY: 0 });
           const isSpacePressedRef = React.useRef(false);
@@ -5252,6 +5292,7 @@ $owner.Dispose()
 
           return h('div', {
             id: 'winetoken-canvas-viewport',
+            ref: viewportContainerRef,
             style: {
               width: '100%',
               height: '100%',
@@ -5892,10 +5933,11 @@ $owner.Dispose()
 
             // 2. 右下角视口浮岛 (平移缩放比 + 帮助入口)
             h('div', {
+              id: 'winetoken-canvas-viewport-island',
               style: {
                 position: 'absolute',
                 bottom: '16px',
-                right: '20px',
+                right: isNarrow ? '16px' : '20px',
                 zIndex: 100,
                 display: 'flex',
                 alignItems: 'center',
@@ -5910,22 +5952,22 @@ $owner.Dispose()
               h('button', {
                 type: 'button',
                 onClick: () => handleZoomStep(false),
-                style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '13px', padding: '2px 6px' }
+                style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '13px', padding: '2px 6px', whiteSpace: 'nowrap', flexShrink: 0 }
               }, '-'),
               h('span', {
                 onClick: handleResetView,
-                style: { fontSize: '11px', fontFamily: 'monospace', color: theme.textPrimary, cursor: 'pointer', padding: '0 4px' },
+                style: { fontSize: '11px', fontFamily: 'monospace', color: theme.textPrimary, cursor: 'pointer', padding: '0 4px', whiteSpace: 'nowrap', flexShrink: 0 },
                 title: '点击重置为 100%'
               }, `${zoomDisplay}%`),
               h('button', {
                 type: 'button',
                 onClick: () => handleZoomStep(true),
-                style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '13px', padding: '2px 6px' }
+                style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '13px', padding: '2px 6px', whiteSpace: 'nowrap', flexShrink: 0 }
               }, '+'),
               h('button', {
                 type: 'button',
                 onClick: handleFitToContent,
-                style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '11px', padding: '2px 6px' },
+                style: { background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '11px', padding: '2px 6px', whiteSpace: 'nowrap', flexShrink: 0 },
                 title: '适应画布：缩放至刚好容纳全部内容 (Ctrl+0)'
               }, '适应'),
               h('button', {
@@ -5938,7 +5980,8 @@ $owner.Dispose()
                 style: {
                   background: 'none', border: 'none',
                   color: showMiniMap ? '#06b6d4' : theme.textSecondary,
-                  cursor: 'pointer', fontSize: '11px', padding: '2px 6px'
+                  cursor: 'pointer', fontSize: '11px', padding: '2px 6px',
+                  whiteSpace: 'nowrap', flexShrink: 0
                 },
                 title: '显示/隐藏小地图'
               }, '小地图'),
@@ -5947,11 +5990,12 @@ $owner.Dispose()
                 onClick: () => setPromptLibOpen(true),
                 style: {
                   background: 'none', border: 'none', color: theme.textSecondary,
-                  cursor: 'pointer', fontSize: '11px', padding: '2px 6px'
+                  cursor: 'pointer', fontSize: '11px', padding: '2px 6px',
+                  whiteSpace: 'nowrap', flexShrink: 0
                 },
                 title: '提示词库: 收藏/复用节点提示词'
               }, '提示词'),
-              h('div', { style: { width: '1px', height: '14px', backgroundColor: theme.borderSubtle, margin: '0 4px' } }),
+              h('div', { style: { width: '1px', height: '14px', backgroundColor: theme.borderSubtle, margin: '0 4px', flexShrink: 0 } }),
               h('button', {
                 type: 'button',
                 onClick: () => setShowShortcuts(true),
@@ -5964,10 +6008,12 @@ $owner.Dispose()
                   alignItems: 'center',
                   gap: '4px',
                   fontSize: '11.5px',
-                  padding: '2px 6px'
+                  padding: '2px 6px',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
                 },
                 title: '查看画布快捷键速查面板'
-              }, [h(Icon, { name: 'help', size: 13 }), h('span', {}, '快捷键')]),
+              }, [h(Icon, { name: 'help', size: 13 }), !isCompact && h('span', {}, '快捷键')].filter(Boolean)),
               h('button', {
                 type: 'button',
                 onClick: () => setAiSplitOpen(true),
@@ -5980,10 +6026,12 @@ $owner.Dispose()
                   alignItems: 'center',
                   gap: '4px',
                   fontSize: '11.5px',
-                  padding: '2px 6px'
+                  padding: '2px 6px',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
                 },
                 title: 'AI 剧本拆镜：粘贴剧本自动生成分镜卡阵列 (调用一次对话模型)'
-              }, [h(Icon, { name: 'sparkles', size: 13 }), h('span', {}, 'AI拆镜')]),
+              }, [h(Icon, { name: 'sparkles', size: 13 }), !isCompact && h('span', {}, 'AI拆镜')].filter(Boolean)),
               h('button', {
                 type: 'button',
                 onClick: onOpenTutorial,
@@ -5996,10 +6044,12 @@ $owner.Dispose()
                   alignItems: 'center',
                   gap: '4px',
                   fontSize: '11.5px',
-                  padding: '2px 6px'
+                  padding: '2px 6px',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
                 },
                 title: '打开漫剧新手引导教程'
-              }, [h(Icon, { name: 'help', size: 13 }), h('span', {}, '教程')])
+              }, [h(Icon, { name: 'help', size: 13 }), !isCompact && h('span', {}, '教程')].filter(Boolean))
             ]),
 
             // 2.5 漫剧画布底部新建工具栏 (对标 LibTV §2.1 新建节点与资产库/预设库入口)
@@ -6007,74 +6057,89 @@ $owner.Dispose()
               id: 'winetoken-canvas-bottom-toolbar',
               style: {
                 position: 'absolute',
-                bottom: '16px',
-                left: '50%',
-                transform: 'translateX(-50%)',
+                bottom: isNarrow ? '64px' : '16px',
+                left: isNarrow ? '50%' : (isCompact ? '16px' : '50%'),
+                transform: isNarrow ? 'translateX(-50%)' : (isCompact ? 'none' : 'translateX(-50%)'),
                 zIndex: 100,
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                padding: '6px 14px',
+                gap: (isCompact || isNarrow) ? '4px' : '6px',
+                padding: isNarrow ? '4px 8px' : (isCompact ? '4px 10px' : '6px 14px'),
                 borderRadius: '10px',
                 backgroundColor: theme.popoverBg,
                 border: `1px solid ${theme.popoverBorder}`,
                 boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
-                userSelect: 'none'
+                userSelect: 'none',
+                maxWidth: 'calc(100% - 32px)',
+                overflowX: 'auto',
+                scrollbarWidth: 'none'
               }
             }, [
               h('button', {
                 type: 'button',
                 onClick: () => createNodeAtCenter('image'),
                 title: '在画布中央新建图片生成节点',
-                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
-              }, [h(Icon, { name: 'camera', size: 12 }), h('span', {}, '图片')]),
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: isNarrow ? '4px 6px' : '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }
+              }, [h(Icon, { name: 'camera', size: 12 }), !isNarrow && h('span', {}, '图片')].filter(Boolean)),
               h('button', {
                 type: 'button',
                 onClick: () => createNodeAtCenter('video'),
                 title: '在画布中央新建视频生成节点',
-                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
-              }, [h(Icon, { name: 'video', size: 12 }), h('span', {}, '视频')]),
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: isNarrow ? '4px 6px' : '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }
+              }, [h(Icon, { name: 'video', size: 12 }), !isNarrow && h('span', {}, '视频')].filter(Boolean)),
               h('button', {
                 type: 'button',
                 onClick: () => createNodeAtCenter('text'),
                 title: '在画布中央新建文本便签',
-                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
-              }, [h(Icon, { name: 'messageSquare', size: 12 }), h('span', {}, '文本')]),
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: isNarrow ? '4px 6px' : '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }
+              }, [h(Icon, { name: 'messageSquare', size: 12 }), !isNarrow && h('span', {}, '文本')].filter(Boolean)),
               h('button', {
                 type: 'button',
                 onClick: () => handleAddPanel('2:3', 'CU', '特写'),
                 title: '新建漫剧分镜卡',
-                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
-              }, [h(Icon, { name: 'plus', size: 12 }), h('span', {}, '分镜')]),
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: isNarrow ? '4px 6px' : '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }
+              }, [h(Icon, { name: 'plus', size: 12 }), !isNarrow && h('span', {}, '分镜')].filter(Boolean)),
               h('button', {
                 type: 'button',
                 onClick: handleAddCharacter,
                 title: '新建角色卡',
-                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
-              }, [h(Icon, { name: 'user', size: 12 }), h('span', {}, '角色')]),
-              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 2px' } }),
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: isNarrow ? '4px 6px' : '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }
+              }, [h(Icon, { name: 'user', size: 12 }), !isNarrow && h('span', {}, '角色')].filter(Boolean)),
+              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 2px', flexShrink: 0 } }),
               h('button', {
                 type: 'button',
                 onClick: () => setPresetModal({ targetItemId: null }),
                 title: '打开 16 项专业预设库 (调度/宫格/视图/质感)',
-                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: '#06b6d4', fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
-              }, [h(Icon, { name: 'sparkles', size: 12 }), h('span', {}, '预设库')]),
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: '#06b6d4', fontSize: '11.5px', padding: isNarrow ? '4px 6px' : '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }
+              }, [h(Icon, { name: 'sparkles', size: 12 }), !isNarrow && h('span', {}, '预设库')].filter(Boolean)),
               h('button', {
                 type: 'button',
                 onClick: () => setAssetLibraryOpen(true),
                 title: '打开本地资产库 (角色/场景/道具/已使用次数 S1)',
-                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: '#10b981', fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
-              }, [h(Icon, { name: 'palette', size: 12 }), h('span', {}, '资产库')]),
-              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 2px' } }),
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: '#10b981', fontSize: '11.5px', padding: isNarrow ? '4px 6px' : '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }
+              }, [h(Icon, { name: 'palette', size: 12 }), !isNarrow && h('span', {}, '资产库')].filter(Boolean)),
+              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 2px', flexShrink: 0 } }),
               // S3 标签筛选下拉
               h('select', {
                 value: tagFilter,
                 onChange: (e) => setTagFilter(e.target.value),
                 title: '按标签高亮筛选画布节点',
-                style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11px', padding: '3px 6px', cursor: 'pointer', outline: 'none' }
+                style: {
+                  background: theme.bgInput,
+                  border: `1px solid ${theme.borderSubtle}`,
+                  borderRadius: '6px',
+                  color: theme.textPrimary,
+                  fontSize: '11px',
+                  padding: '3px 6px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  maxWidth: isNarrow ? '90px' : '120px'
+                }
               }, [
-                h('option', { value: '全部' }, '标签: 全部'),
-                ...(CanvasPromptUtils?.CANVAS_TAGS || []).map(t => h('option', { key: t.id, value: t.label }, `标签: ${t.label}`))
+                h('option', { value: '全部' }, isNarrow ? '全部' : '标签: 全部'),
+                ...(CanvasPromptUtils?.CANVAS_TAGS || []).map(t => h('option', { key: t.id, value: t.label }, isNarrow ? t.label : `标签: ${t.label}`))
               ])
             ]),
 
@@ -6544,97 +6609,111 @@ $owner.Dispose()
                   position: 'absolute',
                   left: 0,
                   top: 0,
-                  width: '5000px',
-                  height: '5000px',
+                  width: '100%',
+                  height: '100%',
+                  overflow: 'visible',
                   pointerEvents: 'none'
                 }
-              }, panels.map(p => {
-                const char = characters.find(c => c.id === p.characterId);
-                if (!char) return null;
-                const charIndex = characters.findIndex(c => c.id === p.characterId);
-                const safeCharIndex = charIndex >= 0 ? charIndex : 0;
-                const startX = 260; // 角色卡右锚点 (left: 40 + width: 220 = 260)
-                // 角色卡高度约 230px，间距 gap: 16px，纵向中心锚点精确定位
-                const startY = 60 + safeCharIndex * 246 + 65;
-                const endX = p.x;
-                const endY = p.y + 30;
-                const ctrlX1 = startX + (endX - startX) * 0.5;
-                const ctrlY1 = startY;
-                const ctrlX2 = startX + (endX - startX) * 0.5;
-                const ctrlY2 = endY;
+              }, [
+                // 3.1a 角色卡 -> 分镜卡流光连线
+                ...panels.map(p => {
+                  const char = characters.find(c => c.id === p.characterId);
+                  if (!char) return null;
+                  const charIndex = characters.findIndex(c => c.id === p.characterId);
+                  const safeCharIndex = charIndex >= 0 ? charIndex : 0;
+                  const sourceBox = { x: 40, y: 60 + safeCharIndex * 246, width: 220, height: 230 };
+                  const targetBox = { x: p.x, y: p.y, width: p.width || 280, height: p.height || 420 };
+                  const defaultStartY = 60 + safeCharIndex * 246 + 65;
+                  const defaultEndY = p.y + 30;
 
-                return h('path', {
-                  key: `wire_${p.id}`,
-                  d: `M ${startX} ${startY} C ${ctrlX1} ${ctrlY1}, ${ctrlX2} ${ctrlY2}, ${endX} ${endY}`,
-                  fill: 'none',
-                  stroke: theme.isDark ? '#06b6d4' : '#0891b2',
-                  strokeWidth: 2,
-                  strokeDasharray: '4 4',
-                  opacity: 0.65
-                });
-              })),
-
-              // 3.1b 显式连线层 (CANVAS-M2 2.4): edges 数据驱动的贝塞尔连线, 可点击选中后 Del 删除
-              edges.map(e => {
-                const resolveNode = (end) => {
-                  if (!end) return null;
-                  if (end.type === 'panel') {
-                    const p = panels.find(x => x.id === end.id);
-                    return p ? { x: p.x, y: p.y, width: p.width || 280, height: p.height || 420 } : null;
+                  let d;
+                  if (CanvasMathUtils && CanvasMathUtils.calculateSmartConnectionPath) {
+                    d = CanvasMathUtils.calculateSmartConnectionPath(sourceBox, targetBox, { defaultStartY, defaultEndY });
+                  } else {
+                    const startX = 260;
+                    const startY = defaultStartY;
+                    const endX = p.x;
+                    const endY = defaultEndY;
+                    const ctrlX1 = startX + (endX - startX) * 0.5;
+                    const ctrlY1 = startY;
+                    const ctrlX2 = startX + (endX - startX) * 0.5;
+                    const ctrlY2 = endY;
+                    d = `M ${startX} ${startY} C ${ctrlX1} ${ctrlY1}, ${ctrlX2} ${ctrlY2}, ${endX} ${endY}`;
                   }
-                  const it = canvasItems.find(x => x.id === end.id);
-                  return it ? { x: it.x, y: it.y, width: it.width || 240, height: it.height || 320 } : null;
-                };
-                const nodeA = resolveNode(e.from);
-                const nodeB = resolveNode(e.to);
-                if (!nodeA || !nodeB) return null;
-                const pa = CanvasMathUtils && CanvasMathUtils.anchorFor
-                  ? CanvasMathUtils.anchorFor(nodeA, 'right')
-                  : { x: nodeA.x + nodeA.width, y: nodeA.y + nodeA.height / 2 };
-                const pb = CanvasMathUtils && CanvasMathUtils.anchorFor
-                  ? CanvasMathUtils.anchorFor(nodeB, 'left')
-                  : { x: nodeB.x, y: nodeB.y + nodeB.height / 2 };
-                const d = CanvasMathUtils && CanvasMathUtils.calculateBezierPath
-                  ? CanvasMathUtils.calculateBezierPath(pa, pb)
-                  : `M ${pa.x} ${pa.y} L ${pb.x} ${pb.y}`;
-                const isEdgeSelected = selectedIds.has(e.id);
-                return h('path', {
-                  key: e.id,
-                  d,
-                  fill: 'none',
-                  stroke: isEdgeSelected ? '#f97316' : '#10b981',
-                  strokeWidth: isEdgeSelected ? 3 : 2,
-                  strokeDasharray: '6 4',
-                  opacity: 0.8,
-                  style: { pointerEvents: 'stroke', cursor: 'pointer' },
-                  onPointerDown: (ev) => {
-                    ev.stopPropagation();
-                    setSelectedIds(new Set([e.id]));
-                  }
-                });
-              }),
 
-              // 3.1c 连线拖拽临时线 (CANVAS-M2 2.4)
-              connectDrag ? (() => {
-                const srcNode = connectDrag.from.type === 'panel'
-                  ? panels.find(x => x.id === connectDrag.from.id)
-                  : canvasItems.find(x => x.id === connectDrag.from.id);
-                if (!srcNode) return null;
-                const box = { x: srcNode.x, y: srcNode.y, width: srcNode.width || 280, height: srcNode.height || (srcNode.type === 'image' ? 320 : 140) };
-                const pa = CanvasMathUtils && CanvasMathUtils.anchorFor
-                  ? CanvasMathUtils.anchorFor(box, 'right')
-                  : { x: box.x + box.width, y: box.y + box.height / 2 };
-                return h('path', {
-                  key: 'connect_drag_tmp',
-                  d: `M ${pa.x} ${pa.y} L ${connectDrag.x} ${connectDrag.y}`,
-                  fill: 'none',
-                  stroke: '#10b981',
-                  strokeWidth: 2,
-                  strokeDasharray: '4 4',
-                  opacity: 0.9,
-                  pointerEvents: 'none'
-                });
-              })() : null,
+                  return h('path', {
+                    key: `wire_${p.id}`,
+                    d,
+                    fill: 'none',
+                    stroke: theme.isDark ? '#06b6d4' : '#0891b2',
+                    strokeWidth: 2,
+                    strokeDasharray: '4 4',
+                    opacity: 0.65
+                  });
+                }).filter(Boolean),
+
+                // 3.1b 显式连线层 (CANVAS-M2 2.4): edges 数据驱动的贝塞尔连线, 可点击选中后 Del 删除
+                ...edges.map(e => {
+                  const resolveNode = (end) => {
+                    if (!end) return null;
+                    if (end.type === 'panel') {
+                      const p = panels.find(x => x.id === end.id);
+                      return p ? { x: p.x, y: p.y, width: p.width || 280, height: p.height || 420 } : null;
+                    }
+                    const it = canvasItems.find(x => x.id === end.id);
+                    return it ? { x: it.x, y: it.y, width: it.width || 240, height: it.height || 320 } : null;
+                  };
+                  const nodeA = resolveNode(e.from);
+                  const nodeB = resolveNode(e.to);
+                  if (!nodeA || !nodeB) return null;
+                  const pa = CanvasMathUtils && CanvasMathUtils.anchorFor
+                    ? CanvasMathUtils.anchorFor(nodeA, 'right')
+                    : { x: nodeA.x + nodeA.width, y: nodeA.y + nodeA.height / 2 };
+                  const pb = CanvasMathUtils && CanvasMathUtils.anchorFor
+                    ? CanvasMathUtils.anchorFor(nodeB, 'left')
+                    : { x: nodeB.x, y: nodeB.y + nodeB.height / 2 };
+                  const d = CanvasMathUtils && CanvasMathUtils.calculateBezierPath
+                    ? CanvasMathUtils.calculateBezierPath(pa, pb)
+                    : `M ${pa.x} ${pa.y} L ${pb.x} ${pb.y}`;
+                  const isEdgeSelected = selectedIds.has(e.id);
+                  return h('path', {
+                    key: e.id,
+                    d,
+                    fill: 'none',
+                    stroke: isEdgeSelected ? '#f97316' : '#10b981',
+                    strokeWidth: isEdgeSelected ? 3 : 2,
+                    strokeDasharray: '6 4',
+                    opacity: 0.8,
+                    style: { pointerEvents: 'stroke', cursor: 'pointer' },
+                    onPointerDown: (ev) => {
+                      ev.stopPropagation();
+                      setSelectedIds(new Set([e.id]));
+                    }
+                  });
+                }).filter(Boolean),
+
+                // 3.1c 连线拖拽临时线 (CANVAS-M2 2.4)
+                connectDrag ? (() => {
+                  const srcNode = connectDrag.from.type === 'panel'
+                    ? panels.find(x => x.id === connectDrag.from.id)
+                    : canvasItems.find(x => x.id === connectDrag.from.id);
+                  if (!srcNode) return null;
+                  const box = { x: srcNode.x, y: srcNode.y, width: srcNode.width || 280, height: srcNode.height || (srcNode.type === 'image' ? 320 : 140) };
+                  const pa = CanvasMathUtils && CanvasMathUtils.anchorFor
+                    ? CanvasMathUtils.anchorFor(box, 'right')
+                    : { x: box.x + box.width, y: box.y + box.height / 2 };
+                  return h('path', {
+                    key: 'connect_drag_tmp',
+                    d: `M ${pa.x} ${pa.y} L ${connectDrag.x} ${connectDrag.y}`,
+                    fill: 'none',
+                    stroke: '#10b981',
+                    strokeWidth: 2,
+                    strokeDasharray: '4 4',
+                    opacity: 0.9,
+                    pointerEvents: 'none'
+                  });
+                })() : null
+              ].filter(Boolean)),
 
               // 3.2 角色资产库锚点卡
               h('div', {

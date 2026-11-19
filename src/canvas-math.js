@@ -148,6 +148,87 @@ function computeAlignGuides(moving, others, threshold = 6) {
 }
 
 /**
+ * 智能节点间拓扑连线计算（吸收修正 2：常规右侧保持原有锚点视觉，仅跨象限自适应）
+ * @param {{x: number, y: number, width: number, height: number}} sourceBox
+ * @param {{x: number, y: number, width: number, height: number}} targetBox
+ * @param {{defaultStartY?: number, defaultEndY?: number}} [options]
+ * @returns {string} SVG 贝塞尔曲线指令路径
+ */
+function calculateSmartConnectionPath(sourceBox, targetBox, options = {}) {
+  const sb = {
+    x: typeof sourceBox?.x === 'number' && !Number.isNaN(sourceBox.x) ? sourceBox.x : 0,
+    y: typeof sourceBox?.y === 'number' && !Number.isNaN(sourceBox.y) ? sourceBox.y : 0,
+    width: typeof sourceBox?.width === 'number' && !Number.isNaN(sourceBox.width) ? sourceBox.width : 0,
+    height: typeof sourceBox?.height === 'number' && !Number.isNaN(sourceBox.height) ? sourceBox.height : 0
+  };
+  const tb = {
+    x: typeof targetBox?.x === 'number' && !Number.isNaN(targetBox.x) ? targetBox.x : 0,
+    y: typeof targetBox?.y === 'number' && !Number.isNaN(targetBox.y) ? targetBox.y : 0,
+    width: typeof targetBox?.width === 'number' && !Number.isNaN(targetBox.width) ? targetBox.width : 0,
+    height: typeof targetBox?.height === 'number' && !Number.isNaN(targetBox.height) ? targetBox.height : 0
+  };
+
+  const sxRight = sb.x + sb.width;
+  const txLeft = tb.x;
+
+  // 常规情形（目标在源节点右侧）：严格保持 v2.4.0 现有口径与视觉
+  if (txLeft >= sxRight - 20) {
+    const startX = sxRight;
+    const startY = typeof options.defaultStartY === 'number' && !Number.isNaN(options.defaultStartY)
+      ? options.defaultStartY
+      : sb.y + sb.height / 2;
+    const endX = tb.x;
+    const endY = typeof options.defaultEndY === 'number' && !Number.isNaN(options.defaultEndY)
+      ? options.defaultEndY
+      : tb.y + 30;
+    const dx = endX - startX;
+    const ctrlX1 = startX + dx * 0.5;
+    const ctrlY1 = startY;
+    const ctrlX2 = startX + dx * 0.5;
+    const ctrlY2 = endY;
+    return `M ${startX} ${startY} C ${ctrlX1} ${ctrlY1}, ${ctrlX2} ${ctrlY2}, ${endX} ${endY}`;
+  }
+
+  // 跨象限情形：目标卡移动到上方、下方或左侧
+  const scx = sb.x + sb.width / 2;
+  const scy = sb.y + sb.height / 2;
+  const tcx = tb.x + tb.width / 2;
+  const tcy = tb.y + tb.height / 2;
+  const dx = tcx - scx;
+  const dy = tcy - scy;
+
+  let sourceAnchor, targetAnchor, cp1, cp2;
+
+  // 垂直主导关系（上方或下方）
+  if (Math.abs(dy) > Math.abs(dx)) {
+    if (dy < 0) {
+      // 目标在上方：源节点顶边 -> 目标节点底边
+      sourceAnchor = { x: scx, y: sb.y };
+      targetAnchor = { x: tcx, y: tb.y + tb.height };
+      const dist = Math.max(Math.abs(dy) * 0.5, 40);
+      cp1 = { x: sourceAnchor.x, y: sourceAnchor.y - dist };
+      cp2 = { x: targetAnchor.x, y: targetAnchor.y + dist };
+    } else {
+      // 目标在下方：源节点底边 -> 目标节点顶边
+      sourceAnchor = { x: scx, y: sb.y + sb.height };
+      targetAnchor = { x: tcx, y: tb.y };
+      const dist = Math.max(Math.abs(dy) * 0.5, 40);
+      cp1 = { x: sourceAnchor.x, y: sourceAnchor.y + dist };
+      cp2 = { x: targetAnchor.x, y: targetAnchor.y - dist };
+    }
+  } else {
+    // 水平反向（目标在左方）
+    sourceAnchor = { x: sb.x, y: scy };
+    targetAnchor = { x: tb.x + tb.width, y: tcy };
+    const dist = Math.max(Math.abs(dx) * 0.5, 40);
+    cp1 = { x: sourceAnchor.x - dist, y: sourceAnchor.y };
+    cp2 = { x: targetAnchor.x + dist, y: targetAnchor.y };
+  }
+
+  return `M ${sourceAnchor.x} ${sourceAnchor.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${targetAnchor.x} ${targetAnchor.y}`;
+}
+
+/**
  * 节点锚点定位 (CANVAS-M2 2.3)
  * 返回节点 AABB 指定边的中点世界坐标，供连线端点实时贴合节点边缘
  * @param {object} node {x, y, width, height}
@@ -155,16 +236,19 @@ function computeAlignGuides(moving, others, threshold = 6) {
  * @returns {{x: number, y: number}}
  */
 function anchorFor(node, side = 'right') {
-  const w = node.width || 0;
-  const h = node.height || 0;
-  const cx = node.x + w / 2;
-  const cy = node.y + h / 2;
+  const n = node || {};
+  const x = typeof n.x === 'number' && !Number.isNaN(n.x) ? n.x : 0;
+  const y = typeof n.y === 'number' && !Number.isNaN(n.y) ? n.y : 0;
+  const w = typeof n.width === 'number' && !Number.isNaN(n.width) ? n.width : 0;
+  const h = typeof n.height === 'number' && !Number.isNaN(n.height) ? n.height : 0;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
   switch (side) {
-    case 'left': return { x: node.x, y: cy };
-    case 'top': return { x: cx, y: node.y };
-    case 'bottom': return { x: cx, y: node.y + h };
+    case 'left': return { x, y: cy };
+    case 'top': return { x: cx, y };
+    case 'bottom': return { x: cx, y: y + h };
     case 'right':
-    default: return { x: node.x + w, y: cy };
+    default: return { x: x + w, y: cy };
   }
 }
 
@@ -272,6 +356,7 @@ function parseStoryboardJSON(raw) {
 module.exports = {
   snapToGrid,
   calculateBezierPath,
+  calculateSmartConnectionPath,
   isIntersectingAABB,
   measureAndWrapText,
   computeAlignGuides,
