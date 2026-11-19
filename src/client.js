@@ -81,11 +81,20 @@
   try {
     CanvasPromptUtils = require('./canvas-prompts.js');
   } catch (_) {}
+  let CanvasPricingUtils = null;
+  let AssetLibraryStoreClass = null;
+  try {
+    CanvasPricingUtils = require('./canvas-pricing.js');
+  } catch (_) {}
+  try {
+    AssetLibraryStoreClass = require('./canvas-assets.js').AssetLibraryStore;
+  } catch (_) {}
 
   const canvasStorageDriver = CanvasProjectStorageClass ? new CanvasProjectStorageClass() : null;
   const canvasHistoryManager = CanvasHistoryManagerClass ? new CanvasHistoryManagerClass(30) : null;
   const canvasProjectStore = CanvasProjectStoreClass ? new CanvasProjectStoreClass() : null;
   const canvasAssetsDriver = CanvasAssetsClass ? new CanvasAssetsClass() : null;
+  const assetLibraryStore = AssetLibraryStoreClass ? new AssetLibraryStoreClass() : null;
 
   /**
    * WineToken 跨进程凭据同步中枢 (WineTokenCredentialBridge)
@@ -3070,15 +3079,34 @@ $owner.Dispose()
           // 漫剧画布生图模型状态与原图全屏预览灯箱
           const [canvasModel, setCanvasModel] = React.useState(initialProject.activeModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite');
           const [availableImageModels, setAvailableImageModels] = React.useState(WineTokenManifestManager.getImageModels());
+          const [availableVideoModels, setAvailableVideoModels] = React.useState(() => WineTokenManifestManager.getVideoModels());
           // AI 拆镜用对话模型列表 (与图片模型共用 Manifest SWR 热更新)
           const [availableChatModels, setAvailableChatModels] = React.useState(() => WineTokenManifestManager.getChatModels());
           const [lightboxUrl, setLightboxUrl] = React.useState(null);
+
+          // 补充规格 S1 资产库面板状态与 S3 标签筛选
+          const [assetLibraryOpen, setAssetLibraryOpen] = React.useState(false);
+          const [assetLibCategory, setAssetLibCategory] = React.useState('全部');
+          const [assetLibQuery, setAssetLibQuery] = React.useState('');
+          const [assetLibSort, setAssetLibSort] = React.useState('updatedAt');
+          const [assetLibTick, setAssetLibTick] = React.useState(0);
+          const [tagFilter, setTagFilter] = React.useState('全部'); // S3 标签筛选
+
+          // 补充规格 S4 裁剪与存为资产弹窗状态
+          const [cropModal, setCropModal] = React.useState(null); // { itemId, url, assetKey }
+          const [saveAssetModal, setSaveAssetModal] = React.useState(null); // { itemId, assetKey, name, category, description }
+          const [presetModal, setPresetModal] = React.useState(null); // { targetItemId: string }
+          const [presetCategory, setPresetCategory] = React.useState('全部');
+          const [tagPicker, setTagPicker] = React.useState(null); // { nodeId, nodeType }
 
           // 监听 Manifest SWR 热更新事件
           React.useEffect(() => {
             const unsub = WineTokenManifestManager.subscribe((models) => {
               if (models && models.imageModels && models.imageModels.length > 0) {
                 setAvailableImageModels(models.imageModels);
+              }
+              if (models && models.videoModels && models.videoModels.length > 0) {
+                setAvailableVideoModels(models.videoModels);
               }
               if (models && Array.isArray(models.chatModels)) {
                 setAvailableChatModels(models.chatModels);
@@ -4234,29 +4262,29 @@ $owner.Dispose()
             }
           };
 
-          // 2.5 新建节点菜单分发 (Tab / 右键空白)
-          const createNodeFromMenu = (type) => {
-            if (!nodeMenu) return;
-            const { worldX, worldY } = nodeMenu;
-            setNodeMenu(null);
+          // 2.5 自由生成节点创建引擎 (对标 LibTV §2.1 / §3.2.1)
+          const createNodeAtWorld = (type, worldX, worldY, initialData = {}) => {
             if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
             const snap = (v) => (CanvasMathUtils ? CanvasMathUtils.snapToGrid(v, 8) : Math.round(v));
+            const wx = snap(worldX || 0);
+            const wy = snap(worldY || 0);
             if (type === 'panel') {
               const nextNum = panels.reduce((m, p) => Math.max(m, p.num || 0), 0) + 1;
               const newP = {
                 id: `shot_${Date.now()}`,
                 num: nextNum,
-                x: snap(worldX),
-                y: snap(worldY),
+                x: wx,
+                y: wy,
                 width: 280,
                 height: 420,
-                aspectRatio: '2:3',
-                shot: 'CU',
-                shotLabel: '特写',
-                prompt: `镜头 #${nextNum}，人物画面，专业漫剧光影，构图严谨`,
-                dialogue: '',
+                aspectRatio: initialData.aspectRatio || '2:3',
+                shot: initialData.shot || 'CU',
+                shotLabel: initialData.shotLabel || '特写',
+                prompt: initialData.prompt || `镜头 #${nextNum}，人物画面，专业漫剧光影，构图严谨`,
+                dialogue: initialData.dialogue || '',
                 characterId: characters[0]?.id || '',
-                imageUrl: '',
+                imageUrl: initialData.imageUrl || '',
+                tags: initialData.tags || [],
                 isGenerating: false,
                 stagingCandidateUrl: null
               };
@@ -4265,25 +4293,101 @@ $owner.Dispose()
             } else if (type === 'character') {
               handleAddCharacter();
             } else if (type === 'image') {
-              const it = { id: `item_${Date.now()}`, type: 'image', x: snap(worldX), y: snap(worldY), width: 240, height: 320, data: { url: '', prompt: '' }, sourcePanelId: null, createdAt: Date.now() };
+              const defaultImageModel = canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
+              const it = {
+                id: `item_${Date.now()}`,
+                type: 'image',
+                x: wx,
+                y: wy,
+                width: 290,
+                height: 460,
+                data: {
+                  url: initialData.url || '',
+                  assetKey: initialData.assetKey || '',
+                  prompt: initialData.prompt || '',
+                  name: initialData.name || '图片生成节点',
+                  tags: initialData.tags || [],
+                  params: {
+                    model: initialData.model || defaultImageModel,
+                    aspectRatio: initialData.aspectRatio || '16:9',
+                    quality: 'standard',
+                    size: initialData.size || '1792x1024',
+                    count: 1
+                  }
+                },
+                sourcePanelId: initialData.sourcePanelId || null,
+                createdAt: Date.now()
+              };
               setCanvasItems(prev => [...prev, it]);
               setSelectedIds(new Set([it.id]));
             } else if (type === 'text') {
-              const it = { id: `item_${Date.now()}`, type: 'text', x: snap(worldX), y: snap(worldY), width: 220, height: 140, data: { text: '' }, sourcePanelId: null, createdAt: Date.now() };
+              const it = {
+                id: `item_${Date.now()}`,
+                type: 'text',
+                x: wx,
+                y: wy,
+                width: 240,
+                height: 160,
+                data: {
+                  text: initialData.text || '',
+                  name: initialData.name || '文本便签',
+                  tags: initialData.tags || []
+                },
+                sourcePanelId: null,
+                createdAt: Date.now()
+              };
               setCanvasItems(prev => [...prev, it]);
               setSelectedIds(new Set([it.id]));
             } else if (type === 'video') {
-              // 对标 infinite-canvas 视频节点: 初始为 idle 状态机，首帧可由上游图片节点连线提供
               const vs = CanvasVideoUtils ? CanvasVideoUtils.createVideoNodeState() : { status: 'idle', videoUrl: '', error: '' };
+              const defaultVideoModel = (availableVideoModels[0]?.id) || 'MiniMax-H3';
               const it = {
-                id: `item_${Date.now()}`, type: 'video', x: snap(worldX), y: snap(worldY),
-                width: 320, height: 220,
-                data: { url: '', prompt: '', videoState: vs },
-                sourcePanelId: null, createdAt: Date.now()
+                id: `item_${Date.now()}`,
+                type: 'video',
+                x: wx,
+                y: wy,
+                width: 330,
+                height: 470,
+                data: {
+                  url: initialData.url || '',
+                  assetKey: initialData.assetKey || '',
+                  prompt: initialData.prompt || '',
+                  name: initialData.name || '视频生成节点',
+                  tags: initialData.tags || [],
+                  videoState: vs,
+                  params: {
+                    model: initialData.model || defaultVideoModel,
+                    duration: 5,
+                    size: '1280x720',
+                    resolution: '720P',
+                    aspectRatio: '16:9',
+                    generateAudio: false,
+                    count: 1
+                  }
+                },
+                sourcePanelId: null,
+                createdAt: Date.now()
               };
               setCanvasItems(prev => [...prev, it]);
               setSelectedIds(new Set([it.id]));
             }
+          };
+
+          const createNodeAtCenter = (type, initialData = {}) => {
+            const rect = canvasLayerRef.current?.parentElement?.getBoundingClientRect();
+            const zoom = viewportRef.current.zoom || 1;
+            const screenW = rect ? rect.width : (typeof window !== 'undefined' ? window.innerWidth : 1200);
+            const screenH = rect ? rect.height : (typeof window !== 'undefined' ? window.innerHeight : 800);
+            const worldX = (screenW / 2 - viewportRef.current.x) / zoom;
+            const worldY = (screenH / 2 - viewportRef.current.y) / zoom;
+            createNodeAtWorld(type, worldX, worldY, initialData);
+          };
+
+          const createNodeFromMenu = (type) => {
+            if (!nodeMenu) return;
+            const { worldX, worldY } = nodeMenu;
+            setNodeMenu(null);
+            createNodeAtWorld(type, worldX, worldY);
           };
 
           // 2.5 右键空白处新建节点 (对标桌面软件右键菜单惯例；Tab 快捷键保留)
@@ -4300,6 +4404,253 @@ $owner.Dispose()
               worldX: (e.clientX - rect.left - viewportRef.current.x) / zoom,
               worldY: (e.clientY - rect.top - viewportRef.current.y) / zoom
             });
+          };
+
+          // LibTV 规格: 双击画布空白处快速新建节点
+          const handleCanvasDoubleClick = (e) => {
+            if (activeTool !== 'select' || connectMode) return;
+            const startedOnBackground = e.target === canvasLayerRef.current || e.target === e.currentTarget;
+            if (!startedOnBackground) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const zoom = viewportRef.current.zoom || 1;
+            setNodeMenu({
+              screenX: e.clientX - rect.left,
+              screenY: e.clientY - rect.top,
+              worldX: (e.clientX - rect.left - viewportRef.current.x) / zoom,
+              worldY: (e.clientY - rect.top - viewportRef.current.y) / zoom
+            });
+          };
+
+          // S3 标签与关键词管理
+          const toggleNodeTag = (nodeId, nodeType, tagLabel) => {
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            if (nodeType === 'panel') {
+              setPanels(prev => prev.map(p => {
+                if (p.id !== nodeId) return p;
+                const oldTags = Array.isArray(p.tags) ? p.tags : [];
+                const nextTags = oldTags.includes(tagLabel)
+                  ? oldTags.filter(t => t !== tagLabel)
+                  : [...oldTags, tagLabel];
+                return { ...p, tags: nextTags };
+              }));
+            } else {
+              setCanvasItems(prev => prev.map(it => {
+                if (it.id !== nodeId) return it;
+                const itData = it.data || {};
+                const oldTags = Array.isArray(itData.tags) ? itData.tags : [];
+                const nextTags = oldTags.includes(tagLabel)
+                  ? oldTags.filter(t => t !== tagLabel)
+                  : [...oldTags, tagLabel];
+                return { ...it, data: { ...itData, tags: nextTags } };
+              }));
+            }
+          };
+
+          const addCustomKeyword = (nodeId, nodeType, keyword) => {
+            const clean = (keyword || '').trim();
+            if (!clean) return;
+            toggleNodeTag(nodeId, nodeType, clean);
+          };
+
+          // S4 派生后处理动作 (高清/重绘/全景/多角度/重打光/图层拆分)
+          const handleDeriveItem = (sourceItem, actionId) => {
+            let displaySrc = sourceItem.data?.url || '';
+            if (displaySrc.startsWith('asset:') && canvasAssetsDriver) {
+              try { displaySrc = canvasAssetsDriver.readAsDataUrl(displaySrc.slice(6)); } catch (_) { displaySrc = ''; }
+            }
+            if (!displaySrc) {
+              alert('该节点尚未生成或上传图片，请先获得图片后再执行派生后处理');
+              return;
+            }
+            const action = CanvasPromptUtils ? CanvasPromptUtils.getDerivedAction(actionId) : null;
+            const actionName = action ? action.name : actionId;
+            const derivedPrompt = CanvasPromptUtils ? CanvasPromptUtils.buildDerivedPrompt(sourceItem.data?.prompt || '', actionId) : (sourceItem.data?.prompt || '');
+            
+            const snap = (v) => (CanvasMathUtils ? CanvasMathUtils.snapToGrid(v, 8) : Math.round(v));
+            const newItemId = `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const newItemX = snap(sourceItem.x + (sourceItem.width || 290) + 40);
+            const newItemY = snap(sourceItem.y);
+            
+            if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+            const newItem = {
+              id: newItemId,
+              type: 'image',
+              x: newItemX,
+              y: newItemY,
+              width: sourceItem.width || 290,
+              height: sourceItem.height || 460,
+              data: {
+                url: '',
+                assetKey: '',
+                prompt: derivedPrompt,
+                name: `${sourceItem.data?.name || '图像'}_${actionName}`,
+                tags: [...(sourceItem.data?.tags || [])],
+                params: {
+                  ...(sourceItem.data?.params || {}),
+                  preset: actionId
+                }
+              },
+              sourcePanelId: sourceItem.sourcePanelId || null,
+              createdAt: Date.now()
+            };
+            const newEdge = {
+              id: `edge_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              from: { type: 'item', id: sourceItem.id },
+              to: { type: 'item', id: newItemId }
+            };
+            setCanvasItems(prev => [...prev, newItem]);
+            setEdges(prev => [...prev, newEdge]);
+            setSelectedIds(new Set([newItemId]));
+            
+            setTimeout(() => {
+              handleGenerateItem(newItemId);
+            }, 60);
+          };
+
+          // S4 裁剪确认
+          const handleCropConfirm = (itemId, targetRatio) => {
+            const item = canvasItems.find(x => x.id === itemId);
+            if (!item) return;
+            let displaySrc = item.data?.url || '';
+            if (displaySrc.startsWith('asset:') && canvasAssetsDriver) {
+              try { displaySrc = canvasAssetsDriver.readAsDataUrl(displaySrc.slice(6)); } catch (_) {}
+            }
+            if (!displaySrc) return;
+
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              const [rw, rh] = targetRatio.split(':').map(Number);
+              const targetAspect = rw / rh;
+              const imgAspect = img.width / img.height;
+              let cropW, cropH, cropX, cropY;
+              if (imgAspect > targetAspect) {
+                cropH = img.height;
+                cropW = Math.round(img.height * targetAspect);
+                cropX = Math.round((img.width - cropW) / 2);
+                cropY = 0;
+              } else {
+                cropW = img.width;
+                cropH = Math.round(img.width / targetAspect);
+                cropX = 0;
+                cropY = Math.round((img.height - cropH) / 2);
+              }
+              const canvas = document.createElement('canvas');
+              canvas.width = cropW;
+              canvas.height = cropH;
+              const ctx2d = canvas.getContext('2d');
+              ctx2d.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+              const dataUrl = canvas.toDataURL('image/png');
+              let newAssetKey = '';
+              let newUrl = dataUrl;
+              if (canvasAssetsDriver) {
+                try {
+                  const saved = canvasAssetsDriver.saveDataUrl(dataUrl);
+                  newAssetKey = saved.assetKey;
+                  newUrl = `asset:${newAssetKey}`;
+                } catch (err) {
+                  console.warn('[WineToken Canvas] 裁剪后落盘失败:', err.message);
+                }
+              }
+              if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
+              setCanvasItems(prev => prev.map(x => x.id === itemId ? {
+                ...x,
+                data: {
+                  ...x.data,
+                  url: newUrl,
+                  assetKey: newAssetKey,
+                  params: { ...(x.data?.params || {}), aspectRatio: targetRatio }
+                }
+              } : x));
+              setCropModal(null);
+            };
+            img.src = displaySrc;
+          };
+
+          // S1/S2 存入资产库提交
+          const handleSaveAssetSubmit = ({ itemId, name, category, description, tags }) => {
+            const item = canvasItems.find(x => x.id === itemId);
+            if (!item || !assetLibraryStore) return;
+            let assetKey = item.data?.assetKey;
+            let displaySrc = item.data?.url || '';
+            if (!assetKey && displaySrc.startsWith('data:') && canvasAssetsDriver) {
+              try {
+                const saved = canvasAssetsDriver.saveDataUrl(displaySrc);
+                assetKey = saved.assetKey;
+                setCanvasItems(prev => prev.map(x => x.id === itemId ? { ...x, data: { ...x.data, assetKey, url: `asset:${assetKey}` } } : x));
+              } catch (err) {
+                alert(`保存资产失败: ${err.message}`);
+                return;
+              }
+            }
+            if (!assetKey) {
+              alert('未检出有效本地资产键，请先确保图片已生成或落盘');
+              return;
+            }
+            try {
+              assetLibraryStore.addItem({
+                assetKey,
+                name: name || item.data?.name || '未命名资产',
+                category: category || '自定义',
+                description: description || item.data?.prompt || '',
+                tags: Array.isArray(tags) ? tags : []
+              });
+              setAssetLibTick(t => t + 1);
+              setSaveAssetModal(null);
+              setCanvasItems(prev => prev.map(x => x.id === itemId ? { ...x, data: { ...x.data, name: name || x.data?.name } } : x));
+            } catch (err) {
+              alert(`存入资产库失败: ${err.message}`);
+            }
+          };
+
+          // S1 调入资产到画布
+          const handleUseAssetOnCanvas = (asset) => {
+            if (!asset || !asset.assetKey) return;
+            createNodeAtCenter('image', {
+              url: `asset:${asset.assetKey}`,
+              assetKey: asset.assetKey,
+              name: asset.name,
+              prompt: asset.description || asset.name,
+              tags: asset.tags || []
+            });
+            if (assetLibraryStore) {
+              assetLibraryStore.incrementUsage(asset.id);
+              setAssetLibTick(t => t + 1);
+            }
+            setAssetLibraryOpen(false);
+          };
+
+          const handleDeleteAssetFromLibrary = (assetId) => {
+            if (typeof confirm !== 'undefined' && !confirm('确定要从资产库中移除此资产吗？已在画布中引用的资产不受影响。')) return;
+            if (assetLibraryStore) {
+              assetLibraryStore.removeItem(assetId);
+              setAssetLibTick(t => t + 1);
+            }
+          };
+
+          const handleImportAssetFile = (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              try {
+                const dataUrl = String(reader.result);
+                if (canvasAssetsDriver && assetLibraryStore) {
+                  const saved = canvasAssetsDriver.saveDataUrl(dataUrl);
+                  assetLibraryStore.addItem({
+                    assetKey: saved.assetKey,
+                    name: file.name.replace(/\.[^/.]+$/, ''),
+                    category: assetLibCategory === '全部' ? '自定义' : assetLibCategory,
+                    description: '从本地导入',
+                    tags: []
+                  });
+                  setAssetLibTick(t => t + 1);
+                }
+              } catch (err) {
+                alert(`导入资产失败: ${err.message}`);
+              }
+            };
+            reader.readAsDataURL(file);
           };
 
           // 添加新角色锚点卡
@@ -4555,17 +4906,38 @@ $owner.Dispose()
             const primaryRef = refs.length ? resolveRef(refs[0]) : '';
 
             setCanvasItems(prev => prev.map(x => x.id === itemId ? { ...x, data: { ...x.data, generating: true, error: '' } } : x));
+            let walJob = null;
             try {
               const apiKey = getKey();
               if (!apiKey) throw new Error('未检测到 API Key，请先点击顶栏钥匙图标输入');
               const chosenModel = (item.data?.params?.model) || ctx.params.model || canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
+              
+              // 比例与尺寸计算
+              const ratio = item.data?.params?.aspectRatio || '16:9';
+              const ratioSizeMap = {
+                '1:1': '1024x1024',
+                '16:9': '1792x1024',
+                '9:16': '1024x1792',
+                '4:3': '1344x768',
+                '3:4': '768x1344'
+              };
+              let size = item.data?.params?.size || ctx.params.size;
+              if (!size || !/^\d{2,5}x\d{2,5}$/.test(size)) {
+                size = ratioSizeMap[ratio] || '1792x1024';
+              }
+              const count = Math.max(1, Math.min(4, Number(item.data?.params?.count) || 1));
               const payload = {
                 model: chosenModel,
                 prompt,
-                size: typeof ctx.params.size === 'string' && /^\d{2,5}x\d{2,5}$/.test(ctx.params.size) ? ctx.params.size : '1024x1024',
-                n: 1
+                size,
+                n: count
               };
               if (primaryRef) { payload.image = primaryRef; payload.image_url = primaryRef; }
+
+              // WAL 任务队列记录
+              walJob = CanvasJobQueueSingleton ? CanvasJobQueueSingleton.createJob({
+                panelId: itemId, prompt, model: chosenModel, size
+              }) : null;
 
               const res = await fetch(`${BASE_URL}/v1/images/generations`, {
                 method: 'POST',
@@ -4579,6 +4951,7 @@ $owner.Dispose()
               const data = await res.json();
               const url = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : '');
               if (!url) throw new Error('接口未返回有效图像');
+              if (walJob && CanvasJobQueueSingleton) CanvasJobQueueSingleton.completeJob(walJob.id, url);
 
               // 优先把结果落本地资产 (节点只持 assetKey)，失败真实透传，绝不静默吞错
               let finalUrl = url;
@@ -4595,6 +4968,7 @@ $owner.Dispose()
               } : x));
               updateBilling();
             } catch (err) {
+              if (walJob && CanvasJobQueueSingleton) CanvasJobQueueSingleton.failJob(walJob.id, err.message);
               setCanvasItems(prev => prev.map(x => x.id === itemId ? {
                 ...x, data: { ...x.data, generating: false, error: err.message }
               } : x));
@@ -4638,7 +5012,7 @@ $owner.Dispose()
             const apiKey = getKey();
             if (!apiKey) { setProjectError('未检测到 API Key，请先点击顶栏钥匙图标输入'); return; }
 
-            // 上游图片节点连线作为首帧参考图 (对齐上游 referenceImages 语义)
+            // 上游图片节点连线作为参考图 (支持多图全能参考与单图首帧)
             const projectSnapshot = { characters, panels, canvasItems, edges, groups };
             const ctx = CanvasNodeUtils && CanvasNodeUtils.buildGenerationContext
               ? CanvasNodeUtils.buildGenerationContext(projectSnapshot, itemId)
@@ -4651,11 +5025,23 @@ $owner.Dispose()
             };
             const refs = ctx.referenceImages.filter(r => typeof r === 'string' && r.trim());
             const firstFrame = refs.length ? resolveRef(refs[0]) : '';
+            const lastFrame = refs.length > 1 ? resolveRef(refs[refs.length - 1]) : '';
             const prompt = (item.data?.prompt || ctx.prompt || '电影感运镜，光线流动').trim().slice(0, 4000);
+            const chosenModel = (item.data?.params?.model) || ctx.params.model || (availableVideoModels[0]?.id) || 'MiniMax-H3';
+            const duration = Number(item.data?.params?.duration) || 5;
+            const size = item.data?.params?.size || '1280x720';
+
             const payload = CanvasVideoUtils.buildVideoPayload({
-              model: ctx.params.model || '', prompt, duration: 5,
-              size: '1280x720', firstFrameUrl: firstFrame
+              model: chosenModel,
+              prompt,
+              duration,
+              size,
+              firstFrameUrl: firstFrame,
+              lastFrameUrl: lastFrame
             });
+            if (item.data?.params?.generateAudio) {
+              payload.audio = true;
+            }
             const endpoint = `${BASE_URL}/v1/videos/generations`;
             const controller = new AbortController();
             videoPollAbortRef.current.set(itemId, controller);
@@ -5616,6 +6002,463 @@ $owner.Dispose()
               }, [h(Icon, { name: 'help', size: 13 }), h('span', {}, '教程')])
             ]),
 
+            // 2.5 漫剧画布底部新建工具栏 (对标 LibTV §2.1 新建节点与资产库/预设库入口)
+            h('div', {
+              id: 'winetoken-canvas-bottom-toolbar',
+              style: {
+                position: 'absolute',
+                bottom: '16px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 100,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 14px',
+                borderRadius: '10px',
+                backgroundColor: theme.popoverBg,
+                border: `1px solid ${theme.popoverBorder}`,
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
+                userSelect: 'none'
+              }
+            }, [
+              h('button', {
+                type: 'button',
+                onClick: () => createNodeAtCenter('image'),
+                title: '在画布中央新建图片生成节点',
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
+              }, [h(Icon, { name: 'camera', size: 12 }), h('span', {}, '图片')]),
+              h('button', {
+                type: 'button',
+                onClick: () => createNodeAtCenter('video'),
+                title: '在画布中央新建视频生成节点',
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
+              }, [h(Icon, { name: 'video', size: 12 }), h('span', {}, '视频')]),
+              h('button', {
+                type: 'button',
+                onClick: () => createNodeAtCenter('text'),
+                title: '在画布中央新建文本便签',
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
+              }, [h(Icon, { name: 'messageSquare', size: 12 }), h('span', {}, '文本')]),
+              h('button', {
+                type: 'button',
+                onClick: () => handleAddPanel('2:3', 'CU', '特写'),
+                title: '新建漫剧分镜卡',
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
+              }, [h(Icon, { name: 'plus', size: 12 }), h('span', {}, '分镜')]),
+              h('button', {
+                type: 'button',
+                onClick: handleAddCharacter,
+                title: '新建角色卡',
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
+              }, [h(Icon, { name: 'user', size: 12 }), h('span', {}, '角色')]),
+              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 2px' } }),
+              h('button', {
+                type: 'button',
+                onClick: () => setPresetModal({ targetItemId: null }),
+                title: '打开 16 项专业预设库 (调度/宫格/视图/质感)',
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: '#06b6d4', fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
+              }, [h(Icon, { name: 'sparkles', size: 12 }), h('span', {}, '预设库')]),
+              h('button', {
+                type: 'button',
+                onClick: () => setAssetLibraryOpen(true),
+                title: '打开本地资产库 (角色/场景/道具/已使用次数 S1)',
+                style: { display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: '#10b981', fontSize: '11.5px', padding: '4px 8px', cursor: 'pointer' }
+              }, [h(Icon, { name: 'palette', size: 12 }), h('span', {}, '资产库')]),
+              h('div', { style: { width: '1px', height: '16px', backgroundColor: theme.borderSubtle, margin: '0 2px' } }),
+              // S3 标签筛选下拉
+              h('select', {
+                value: tagFilter,
+                onChange: (e) => setTagFilter(e.target.value),
+                title: '按标签高亮筛选画布节点',
+                style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, borderRadius: '6px', color: theme.textPrimary, fontSize: '11px', padding: '3px 6px', cursor: 'pointer', outline: 'none' }
+              }, [
+                h('option', { value: '全部' }, '标签: 全部'),
+                ...(CanvasPromptUtils?.CANVAS_TAGS || []).map(t => h('option', { key: t.id, value: t.label }, `标签: ${t.label}`))
+              ])
+            ]),
+
+            // S4 快速裁剪弹窗
+            cropModal ? h('div', {
+              onClick: () => setCropModal(null),
+              style: {
+                position: 'fixed', left: 0, top: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.65)', zIndex: 9200,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+              }
+            }, [
+              h('div', {
+                onClick: (e) => e.stopPropagation(),
+                onPointerDown: (e) => e.stopPropagation(),
+                style: {
+                  width: '520px', maxWidth: '94%', backgroundColor: theme.bgCard,
+                  border: `1px solid ${theme.borderSubtle}`, borderRadius: '14px',
+                  boxShadow: '0 24px 60px rgba(0,0,0,0.5)', padding: '18px 20px',
+                  display: 'flex', flexDirection: 'column', gap: '14px'
+                }
+              }, [
+                h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, [
+                  h('div', { style: { fontSize: '14px', fontWeight: 700, color: theme.textPrimary } }, '图像画面快速裁剪 (S4)'),
+                  h('button', { type: 'button', onClick: () => setCropModal(null), style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '14px' } }, '×')
+                ]),
+                h('div', { style: { fontSize: '11px', color: theme.textSecondary } }, '选择目标比例，系统将自动居中裁切并生成落盘为本地新资产：'),
+                h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } }, [
+                  '1:1', '16:9', '9:16', '4:3', '3:4'
+                ].map(r => h('button', {
+                  key: r,
+                  type: 'button',
+                  onClick: () => handleCropConfirm(cropModal.itemId, r),
+                  style: {
+                    padding: '6px 14px', borderRadius: '6px',
+                    border: '1px solid #06b6d4', backgroundColor: 'rgba(6,182,212,0.1)',
+                    color: theme.textPrimary, fontSize: '12px', cursor: 'pointer'
+                  }
+                }, `裁剪为 ${r}`))),
+                h('div', {
+                  style: {
+                    height: '240px', backgroundColor: '#000', borderRadius: '8px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'
+                  }
+                }, [
+                  cropModal.url ? h('img', {
+                    src: cropModal.url,
+                    style: { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }
+                  }) : null
+                ])
+              ])
+            ]) : null,
+
+            // S1/S2 命名分类保存已有资产弹窗
+            saveAssetModal ? h('div', {
+              onClick: () => setSaveAssetModal(null),
+              style: {
+                position: 'fixed', left: 0, top: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.65)', zIndex: 9200,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+              }
+            }, [
+              h('div', {
+                onClick: (e) => e.stopPropagation(),
+                onPointerDown: (e) => e.stopPropagation(),
+                style: {
+                  width: '460px', maxWidth: '94%', backgroundColor: theme.bgCard,
+                  border: `1px solid ${theme.borderSubtle}`, borderRadius: '14px',
+                  boxShadow: '0 24px 60px rgba(0,0,0,0.5)', padding: '20px',
+                  display: 'flex', flexDirection: 'column', gap: '12px'
+                }
+              }, [
+                h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, [
+                  h('div', { style: { fontSize: '14px', fontWeight: 700, color: theme.textPrimary } }, '保存已有资产进资产库 (S1/S2)'),
+                  h('button', { type: 'button', onClick: () => setSaveAssetModal(null), style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '14px' } }, '×')
+                ]),
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } }, [
+                  h('span', { style: { fontSize: '11px', color: theme.textMuted } }, '资产名称:'),
+                  h('input', {
+                    value: saveAssetModal.name || '',
+                    onChange: (e) => setSaveAssetModal(prev => ({ ...prev, name: e.target.value })),
+                    placeholder: '如 C_P01_主体成品.png',
+                    style: { padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: theme.bgInput, color: theme.textPrimary, outline: 'none' }
+                  })
+                ]),
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } }, [
+                  h('span', { style: { fontSize: '11px', color: theme.textMuted } }, '所属分类:'),
+                  h('select', {
+                    value: saveAssetModal.category || '自定义',
+                    onChange: (e) => setSaveAssetModal(prev => ({ ...prev, category: e.target.value })),
+                    style: { padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: theme.bgInput, color: theme.textPrimary, outline: 'none' }
+                  }, ['角色', '场景', '道具', '自定义'].map(c => h('option', { key: c, value: c }, c)))
+                ]),
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } }, [
+                  h('span', { style: { fontSize: '11px', color: theme.textMuted } }, '描述说明:'),
+                  h('input', {
+                    value: saveAssetModal.description || '',
+                    onChange: (e) => setSaveAssetModal(prev => ({ ...prev, description: e.target.value })),
+                    placeholder: '简短描述该资产特征...',
+                    style: { padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: `1px solid ${theme.borderSubtle}`, backgroundColor: theme.bgInput, color: theme.textPrimary, outline: 'none' }
+                  })
+                ]),
+                h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' } }, [
+                  h('button', {
+                    type: 'button', onClick: () => setSaveAssetModal(null),
+                    style: { padding: '7px 14px', borderRadius: '6px', border: `1px solid ${theme.borderSubtle}`, background: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '12px' }
+                  }, '取消'),
+                  h('button', {
+                    type: 'button',
+                    onClick: () => handleSaveAssetSubmit(saveAssetModal),
+                    style: { padding: '7px 18px', borderRadius: '6px', border: 'none', backgroundColor: '#06b6d4', color: '#ffffff', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }
+                  }, '确认存入')
+                ])
+              ])
+            ]) : null,
+
+            // 16项专业预设选择弹窗
+            presetModal ? h('div', {
+              onClick: () => setPresetModal(null),
+              style: {
+                position: 'fixed', left: 0, top: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.65)', zIndex: 9200,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'
+              }
+            }, [
+              h('div', {
+                onClick: (e) => e.stopPropagation(),
+                onPointerDown: (e) => e.stopPropagation(),
+                style: {
+                  width: '840px', maxWidth: '94%', height: '580px', maxHeight: '88%',
+                  backgroundColor: theme.bgCard, border: `1px solid ${theme.borderSubtle}`,
+                  borderRadius: '14px', boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+                  padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px'
+                }
+              }, [
+                h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, [
+                  h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+                    h('div', { style: { fontSize: '15px', fontWeight: 700, color: theme.textPrimary } }, '漫剧专业提示词预设库 (16项)'),
+                    presetModal.targetItemId ? h('span', { style: { fontSize: '11px', color: '#06b6d4' } }, '正在套用至当前节点') : null
+                  ]),
+                  h('button', { type: 'button', onClick: () => setPresetModal(null), style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '15px' } }, '×')
+                ]),
+                h('div', { style: { display: 'flex', gap: '8px', borderBottom: `1px solid ${theme.borderSubtle}`, paddingBottom: '8px' } }, [
+                  '全部', '分镜叙事', '空间与机位', '设定图', '质感调节'
+                ].map(cat => h('button', {
+                  key: cat,
+                  type: 'button',
+                  onClick: () => setPresetCategory(cat),
+                  style: {
+                    background: (presetCategory || '全部') === cat ? '#06b6d4' : 'transparent',
+                    color: (presetCategory || '全部') === cat ? '#ffffff' : theme.textSecondary,
+                    border: 'none', borderRadius: '5px', padding: '4px 10px', fontSize: '11.5px', cursor: 'pointer', fontWeight: 500
+                  }
+                }, cat))),
+                h('div', {
+                  style: {
+                    flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                    gap: '12px', paddingRight: '4px'
+                  }
+                }, (CanvasPromptUtils?.LIBTV_PRESETS || []).filter(p => !presetCategory || presetCategory === '全部' || p.category === presetCategory).map(preset => {
+                  return h('div', {
+                    key: preset.id,
+                    style: {
+                      border: `1px solid ${theme.borderSubtle}`, borderRadius: '10px',
+                      padding: '12px', backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                      display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '8px'
+                    }
+                  }, [
+                    h('div', {}, [
+                      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' } }, [
+                        h('div', { style: { fontSize: '12.5px', fontWeight: 600, color: theme.textPrimary } }, preset.name),
+                        h('span', { style: { fontSize: '9.5px', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)', padding: '1px 4px', borderRadius: '3px' } }, preset.aspectRatio)
+                      ]),
+                      h('div', { style: { fontSize: '11px', color: theme.textMuted, marginBottom: '6px' } }, preset.desc),
+                      h('div', { style: { fontSize: '10.5px', color: theme.textSecondary, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' } }, preset.prompt)
+                    ]),
+                    h('button', {
+                      type: 'button',
+                      onClick: () => {
+                        if (presetModal.targetItemId) {
+                          setCanvasItems(prev => prev.map(x => {
+                            if (x.id !== presetModal.targetItemId) return x;
+                            const applied = CanvasPromptUtils ? CanvasPromptUtils.applyPreset(x.data?.prompt || '', preset.id) : { prompt: preset.prompt, aspectRatio: preset.aspectRatio };
+                            return {
+                              ...x,
+                              data: {
+                                ...x.data,
+                                prompt: applied.prompt,
+                                params: {
+                                  ...(x.data?.params || {}),
+                                  aspectRatio: applied.aspectRatio || x.data?.params?.aspectRatio || '16:9'
+                                }
+                              }
+                            };
+                          }));
+                        } else {
+                          createNodeAtCenter('image', {
+                            prompt: preset.prompt,
+                            name: `预设_${preset.name}`,
+                            aspectRatio: preset.aspectRatio || '16:9'
+                          });
+                        }
+                        setPresetModal(null);
+                      },
+                      style: {
+                        padding: '6px', borderRadius: '6px', border: 'none',
+                        backgroundColor: '#06b6d4', color: '#ffffff', fontSize: '11px',
+                        fontWeight: 600, cursor: 'pointer', textAlign: 'center'
+                      }
+                    }, presetModal.targetItemId ? '套用到此节点' : '新建此预设节点')
+                  ]);
+                }))
+              ])
+            ]) : null,
+
+            // S1 独立资产库视图
+            assetLibraryOpen ? h('div', {
+              onClick: () => setAssetLibraryOpen(false),
+              style: {
+                position: 'fixed', left: 0, top: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.65)', zIndex: 9200,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'
+              }
+            }, [
+              h('div', {
+                onClick: (e) => e.stopPropagation(),
+                onPointerDown: (e) => e.stopPropagation(),
+                style: {
+                  width: '880px', maxWidth: '95%', height: '620px', maxHeight: '90%',
+                  backgroundColor: theme.bgCard, border: `1px solid ${theme.borderSubtle}`,
+                  borderRadius: '14px', boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+                  padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px'
+                }
+              }, [
+                h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, [
+                  h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+                    h('div', { style: { fontSize: '15px', fontWeight: 700, color: theme.textPrimary } }, '素材资产库 (S1)'),
+                    h('span', { style: { fontSize: '11px', color: theme.textMuted } }, '沉淀可复用的角色、场景、道具与风格素材')
+                  ]),
+                  h('button', { type: 'button', onClick: () => setAssetLibraryOpen(false), style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '15px' } }, '×')
+                ]),
+                // 工具行: 分类页签 + 搜索 + 排序 + 导入本地资产
+                h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' } }, [
+                  h('div', { style: { display: 'flex', gap: '6px' } }, [
+                    '全部', '角色', '场景', '道具', '自定义'
+                  ].map(cat => h('button', {
+                    key: cat,
+                    type: 'button',
+                    onClick: () => setAssetLibCategory(cat),
+                    style: {
+                      background: assetLibCategory === cat ? '#10b981' : 'transparent',
+                      color: assetLibCategory === cat ? '#ffffff' : theme.textSecondary,
+                      border: 'none', borderRadius: '5px', padding: '4px 10px', fontSize: '11.5px', cursor: 'pointer', fontWeight: 500
+                    }
+                  }, cat))),
+                  h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+                    h('input', {
+                      value: assetLibQuery,
+                      onChange: (e) => setAssetLibQuery(e.target.value),
+                      placeholder: '按名称 / 描述 / 标签搜索...',
+                      style: {
+                        padding: '4px 8px', fontSize: '11.5px', borderRadius: '5px',
+                        border: `1px solid ${theme.borderSubtle}`, backgroundColor: theme.bgInput,
+                        color: theme.textPrimary, outline: 'none', width: '160px'
+                      }
+                    }),
+                    h('select', {
+                      value: assetLibSort,
+                      onChange: (e) => setAssetLibSort(e.target.value),
+                      style: {
+                        padding: '4px 8px', fontSize: '11.5px', borderRadius: '5px',
+                        border: `1px solid ${theme.borderSubtle}`, backgroundColor: theme.bgInput,
+                        color: theme.textPrimary, outline: 'none', cursor: 'pointer'
+                      }
+                    }, [
+                      h('option', { value: 'updatedAt' }, '按最近更新'),
+                      h('option', { value: 'usageCount' }, '按使用次数')
+                    ]),
+                    h('label', {
+                      title: '从本地导入单张图片或资产包',
+                      style: {
+                        padding: '4px 10px', borderRadius: '5px', border: `1px solid ${theme.borderSubtle}`,
+                        backgroundColor: 'transparent', color: theme.textPrimary, fontSize: '11.5px',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                      }
+                    }, [
+                      h(Icon, { name: 'upload', size: 12 }),
+                      h('span', {}, '导入资产'),
+                      h('input', { type: 'file', accept: 'image/*', onChange: handleImportAssetFile, style: { display: 'none' } })
+                    ])
+                  ])
+                ]),
+                // 资产卡片网格
+                (() => {
+                  const items = assetLibraryStore ? assetLibraryStore.searchItems({ query: assetLibQuery, category: assetLibCategory, sortBy: assetLibSort }) : [];
+                  if (!items.length) {
+                    return h('div', {
+                      style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted, fontSize: '12px', flexDirection: 'column', gap: '8px' }
+                    }, [
+                      h('div', {}, '暂无该分类资产'),
+                      h('div', { style: { fontSize: '11px', opacity: 0.7 } }, '可在画布图片节点点击「存为资产」，或通过右上角「导入资产」添入')
+                    ]);
+                  }
+                  return h('div', {
+                    style: {
+                      flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                      gap: '12px', paddingRight: '4px'
+                    }
+                  }, items.map(asset => {
+                    let displaySrc = '';
+                    if (canvasAssetsDriver && asset.assetKey) {
+                      try { displaySrc = canvasAssetsDriver.readAsDataUrl(asset.assetKey); } catch (_) {}
+                    }
+                    return h('div', {
+                      key: asset.id,
+                      style: {
+                        border: `1px solid ${theme.borderSubtle}`, borderRadius: '10px',
+                        backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                        overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'space-between'
+                      }
+                    }, [
+                      h('div', {
+                        style: { height: '130px', backgroundColor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }
+                      }, [
+                        displaySrc ? h('img', { src: displaySrc, style: { width: '100%', height: '100%', objectFit: 'cover' } }) : null,
+                        h('span', {
+                          style: {
+                            position: 'absolute', top: '6px', right: '6px',
+                            backgroundColor: 'rgba(0,0,0,0.65)', color: '#ffffff',
+                            fontSize: '9.5px', padding: '1px 5px', borderRadius: '4px'
+                          }
+                        }, asset.category),
+                        h('span', {
+                          style: {
+                            position: 'absolute', bottom: '6px', left: '6px',
+                            backgroundColor: 'rgba(0,0,0,0.65)', color: '#10b981',
+                            fontSize: '9.5px', padding: '1px 5px', borderRadius: '4px'
+                          }
+                        }, `已使用 ${asset.usageCount || 0} 次`)
+                      ]),
+                      h('div', { style: { padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '4px' } }, [
+                        h('div', { style: { fontSize: '12px', fontWeight: 600, color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, asset.name),
+                        asset.description ? h('div', { style: { fontSize: '10.5px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, asset.description) : null
+                      ]),
+                      h('div', {
+                        style: {
+                          padding: '6px 10px', borderTop: `1px solid ${theme.borderSubtle}`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                        }
+                      }, [
+                        h('button', {
+                          type: 'button',
+                          onClick: () => handleUseAssetOnCanvas(asset),
+                          title: '调入画布中央并递增使用计数',
+                          style: { background: 'none', border: 'none', color: '#06b6d4', fontSize: '11px', cursor: 'pointer', fontWeight: 600, padding: 0 }
+                        }, '调入画布'),
+                        h('div', { style: { display: 'flex', gap: '6px' } }, [
+                          h('button', {
+                            type: 'button',
+                            onClick: () => {
+                              if (displaySrc) {
+                                const a = document.createElement('a');
+                                a.href = displaySrc;
+                                a.download = asset.name || asset.assetKey;
+                                a.click();
+                              }
+                            },
+                            title: '下载资产文件',
+                            style: { background: 'none', border: 'none', color: theme.textSecondary, fontSize: '11px', cursor: 'pointer', padding: 0 }
+                          }, '下载'),
+                          h('button', {
+                            type: 'button',
+                            onClick: () => handleDeleteAssetFromLibrary(asset.id),
+                            title: '从资产库删除',
+                            style: { background: 'none', border: 'none', color: theme.textMuted, fontSize: '12px', cursor: 'pointer', padding: 0 }
+                          }, '×')
+                        ])
+                      ])
+                    ]);
+                  }))
+                })()
+              ])
+            ]) : null,
+
             // 3. 变换视口层 (包含连线 + 角色卡 + 分镜卡)
             h('div', {
               ref: canvasLayerRef,
@@ -5966,13 +6809,56 @@ $owner.Dispose()
                 })
               ]))),
 
-              // 3.25 通用画布节点 (CANVAS-M2 2.2/2.3): 生成图/文本对象, 万物皆节点
+              // 3.25 通用画布节点 (CANVAS-M2 2.2/2.3 / LibTV 规格): 生成图/视频/文本对象, 节点即生成器
               h('div', { id: 'winetoken-canvas-items-area' }, canvasItems.map(item => {
                 const isItemSelected = selectedIds.has(item.id);
                 const itemData = item.data || {}; // 脏工程兜底: 新增节点字段一律经此访问
+                const nodeTags = Array.isArray(itemData.tags) ? itemData.tags : [];
+                const isTagMatched = tagFilter === '全部' || nodeTags.includes(tagFilter);
+                const tagOpacity = isTagMatched ? 1 : 0.28;
+                const tagBoxShadow = (tagFilter !== '全部' && isTagMatched)
+                  ? '0 0 0 2px #06b6d4, 0 10px 24px rgba(6, 182, 212, 0.45)'
+                  : (isItemSelected
+                    ? '0 0 0 2px rgba(6, 182, 212, 0.45), 0 10px 24px rgba(0, 0, 0, 0.25)'
+                    : '0 10px 24px rgba(0, 0, 0, 0.22)');
+
+                const itemW = Math.max(item.width || 240, item.type === 'video' ? 330 : (item.type === 'image' ? 290 : 240));
+                const itemH = Math.max(item.height || 320, item.type === 'video' ? 470 : (item.type === 'image' ? 460 : 160));
+
                 const isItemOnScreen = (CanvasMathUtils && CanvasMathUtils.isIntersectingAABB)
-                  ? CanvasMathUtils.isIntersectingAABB({ x: item.x, y: item.y, width: item.width || 240, height: item.height || 320 }, viewWorldBox)
+                  ? CanvasMathUtils.isIntersectingAABB({ x: item.x, y: item.y, width: itemW, height: itemH }, viewWorldBox)
                   : true;
+
+                // 引用边分析与上游生成上下文采集 (纯函数)
+                const projectSnapshot = { characters, panels, canvasItems, edges, groups };
+                const itemCtx = CanvasNodeUtils && CanvasNodeUtils.buildGenerationContext
+                  ? CanvasNodeUtils.buildGenerationContext(projectSnapshot, item.id)
+                  : { prompt: '', referenceImages: [], params: {}, mode: 'default' };
+
+                let displaySrc = itemData.url || '';
+                if (displaySrc.startsWith('asset:') && canvasAssetsDriver) {
+                  try { displaySrc = canvasAssetsDriver.readAsDataUrl(displaySrc.slice(6)); }
+                  catch (_) { displaySrc = ''; }
+                }
+
+                // 计价数据 (明码标价，来自真实 Manifest，不许编造)
+                let priceBadge = '';
+                if (item.type === 'image') {
+                  const chosenImgModel = (itemData.params?.model) || canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
+                  const modelObj = availableImageModels.find(m => m.id === chosenImgModel) || { id: chosenImgModel };
+                  const pInfo = CanvasPricingUtils
+                    ? CanvasPricingUtils.calculateImagePrice(modelObj, { count: itemData.params?.count || 1, isVip, isSvip, isSuper })
+                    : { priceText: '' };
+                  priceBadge = CanvasPricingUtils ? CanvasPricingUtils.formatPriceBadge(pInfo.priceText) : '';
+                } else if (item.type === 'video') {
+                  const chosenVidModel = (itemData.params?.model) || (availableVideoModels[0]?.id) || 'MiniMax-H3';
+                  const modelObj = availableVideoModels.find(m => m.id === chosenVidModel) || { id: chosenVidModel };
+                  const pInfo = CanvasPricingUtils
+                    ? CanvasPricingUtils.calculateVideoPrice(modelObj, { duration: itemData.params?.duration || 5, isVip, isSvip, isSuper })
+                    : { priceText: '' };
+                  priceBadge = CanvasPricingUtils ? CanvasPricingUtils.formatPriceBadge(pInfo.priceText) : '';
+                }
+
                 return h('div', {
                   key: item.id,
                   'data-node-id': item.id,
@@ -5982,20 +6868,20 @@ $owner.Dispose()
                     position: 'absolute',
                     left: `${item.x}px`,
                     top: `${item.y}px`,
-                    width: `${item.width || 240}px`,
-                    height: `${item.height || 320}px`,
+                    width: `${itemW}px`,
+                    height: `${itemH}px`,
                     backgroundColor: theme.bgCard,
                     border: `1px solid ${isItemSelected ? '#06b6d4' : theme.borderSubtle}`,
                     borderRadius: '10px',
-                    boxShadow: isItemSelected
-                      ? '0 0 0 2px rgba(6, 182, 212, 0.45), 0 10px 24px rgba(0, 0, 0, 0.25)'
-                      : '0 10px 24px rgba(0, 0, 0, 0.22)',
+                    boxShadow: tagBoxShadow,
+                    opacity: tagOpacity,
                     overflow: 'hidden',
                     display: isItemOnScreen ? 'flex' : 'none',
                     flexDirection: 'column',
                     zIndex: isItemSelected ? 30 : 10
                   }
                 }, [
+                  // 1. 节点顶栏: 名称内联编辑 / 标签 / 连线手柄 / 删除
                   h('div', {
                     style: {
                       padding: '5px 10px',
@@ -6009,29 +6895,51 @@ $owner.Dispose()
                       userSelect: 'none'
                     }
                   }, [
-                    h('span', {
-                      style: { fontSize: '10px', color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }
-                    }, item.type === 'image' ? (itemData.prompt || '生成图像')
-                      : (item.type === 'video' ? (itemData.prompt || '生成视频') : '文本便签')),
-                    // 节点即生成器 (对标 infinite-canvas): 重跑该节点，上游连线自动成为上下文
-                    (item.type === 'image' || item.type === 'video') ? h('button', {
-                      type: 'button',
-                      title: item.type === 'video' ? '按该节点提示词与上游首帧连线生成视频' : '按该节点提示词与上游连线重新生成',
+                    // 资产命名内联编辑 (S2)
+                    h('input', {
+                      value: itemData.name || (item.type === 'image' ? '图片节点' : (item.type === 'video' ? '视频节点' : '文本便签')),
                       onPointerDown: (ev) => ev.stopPropagation(),
-                      onClick: () => (item.type === 'video' ? handleGenerateVideoItem(item.id) : handleGenerateItem(item.id)),
-                      style: { background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', color: (itemData.generating || (itemData.videoState && itemData.videoState.status === 'polling')) ? theme.textMuted : '#06b6d4', cursor: 'pointer', fontSize: '10px', padding: '1px 5px', flexShrink: 0 }
-                    }, (itemData.generating || (itemData.videoState && ['submitting', 'polling'].includes(itemData.videoState.status))) ? '生成中' : '重跑') : null,
-                    // 视频生成中提供取消入口，杜绝已扣费任务无法中止
-                    (item.type === 'video' && itemData.videoState && ['submitting', 'polling'].includes(itemData.videoState.status)) ? h('button', {
-                      type: 'button', title: '取消当前视频轮询',
-                      onPointerDown: (ev) => ev.stopPropagation(),
-                      onClick: () => handleCancelVideoItem(item.id),
-                      style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '10px', padding: '1px 4px', flexShrink: 0 }
-                    }, '取消') : null,
-                    // 连线锚点 (拖出连线) CANVAS-M2 2.4
+                      onChange: (ev) => {
+                        const val = ev.target.value;
+                        setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, name: val } } : x));
+                      },
+                      style: {
+                        background: 'transparent', border: 'none', outline: 'none', color: theme.textPrimary,
+                        fontSize: '11px', fontWeight: 600, flex: 1, minWidth: '60px', overflow: 'hidden', textOverflow: 'ellipsis'
+                      }
+                    }),
+                    // S3 节点标签徽标集
+                    h('div', { style: { display: 'flex', gap: '3px', alignItems: 'center' } }, [
+                      nodeTags.map(tLabel => {
+                        const tDef = (CanvasPromptUtils?.CANVAS_TAGS || []).find(t => t.label === tLabel) || { color: '#06b6d4', bg: 'rgba(6,182,212,0.15)', label: tLabel };
+                        return h('span', {
+                          key: tLabel,
+                          onClick: (ev) => { ev.stopPropagation(); toggleNodeTag(item.id, 'item', tLabel); },
+                          title: '点击移除该标签',
+                          style: {
+                            fontSize: '9px', color: tDef.color, backgroundColor: tDef.bg, border: `1px solid ${tDef.color}`,
+                            padding: '1px 4px', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap'
+                          }
+                        }, tLabel);
+                      }),
+                      h('button', {
+                        type: 'button',
+                        title: '设置该节点标签与自定义关键词 (S3)',
+                        onPointerDown: (ev) => ev.stopPropagation(),
+                        onClick: (ev) => {
+                          ev.stopPropagation();
+                          setTagPicker(prev => (prev && prev.nodeId === item.id) ? null : { nodeId: item.id, nodeType: 'item' });
+                        },
+                        style: {
+                          background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px',
+                          color: theme.textSecondary, cursor: 'pointer', fontSize: '9px', padding: '1px 3px'
+                        }
+                      }, '+标签')
+                    ]),
+                    // 连线锚点 (拖出连线)
                     h('div', {
                       onPointerDown: (ev) => beginConnectDrag(ev, 'item', item.id),
-                      title: '拖出连线到目标节点',
+                      title: '拖出连线到目标节点 (作为参考图/生成输入)',
                       style: { width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', border: '1.5px solid #ffffff', boxShadow: '0 0 5px rgba(16, 185, 129, 0.6)', cursor: 'crosshair', flexShrink: 0 }
                     }),
                     h('button', {
@@ -6051,21 +6959,205 @@ $owner.Dispose()
                       style: { background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '12px', lineHeight: 1, flexShrink: 0 }
                     }, '×')
                   ]),
-                  item.type === 'image' ? (
-                    (() => {
-                      let displaySrc = item.data.url || '';
-                      if (displaySrc.startsWith('asset:') && canvasAssetsDriver) {
-                        try { displaySrc = canvasAssetsDriver.readAsDataUrl(displaySrc.slice(6)); }
-                        catch (_) { displaySrc = ''; }
+
+                  // S3 标签快速点选悬浮浮层
+                  (tagPicker && tagPicker.nodeId === item.id) ? h('div', {
+                    onPointerDown: (ev) => ev.stopPropagation(),
+                    onClick: (ev) => ev.stopPropagation(),
+                    style: {
+                      padding: '8px', borderBottom: `1px solid ${theme.borderSubtle}`,
+                      backgroundColor: theme.popoverBg, display: 'flex', flexDirection: 'column', gap: '6px'
+                    }
+                  }, [
+                    h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } }, (CanvasPromptUtils?.CANVAS_TAGS || []).map(t => {
+                      const isTagged = nodeTags.includes(t.label);
+                      return h('button', {
+                        key: t.id,
+                        type: 'button',
+                        onClick: () => toggleNodeTag(item.id, 'item', t.label),
+                        style: {
+                          border: `1px solid ${t.color}`,
+                          backgroundColor: isTagged ? t.color : t.bg,
+                          color: isTagged ? '#ffffff' : t.color,
+                          fontSize: '9.5px', padding: '2px 5px', borderRadius: '4px', cursor: 'pointer'
+                        }
+                      }, t.label);
+                    })),
+                    h('input', {
+                      placeholder: '输入关键词按回车添加...',
+                      onKeyDown: (ev) => {
+                        if (ev.key === 'Enter') {
+                          ev.stopPropagation();
+                          addCustomKeyword(item.id, 'item', ev.target.value);
+                          ev.target.value = '';
+                        }
+                      },
+                      style: {
+                        fontSize: '10px', padding: '3px 6px', border: `1px solid ${theme.borderSubtle}`,
+                        borderRadius: '4px', backgroundColor: theme.bgInput, color: theme.textPrimary, outline: 'none'
                       }
-                      return displaySrc
-                        ? h('img', {
-                            src: displaySrc,
-                            draggable: false,
-                            style: { width: '100%', flex: 1, minHeight: 0, objectFit: 'cover' }
-                          })
-                        : h('div', {
-                            onDoubleClick: () => {
+                    })
+                  ]) : null,
+
+                  // =================== 图片节点 (LibTV 生成层核心) ===================
+                  item.type === 'image' ? [
+                    // S4 图像后处理工具条 (有产物图时展现: 裁剪/存资产/派生)
+                    displaySrc ? h('div', {
+                      style: {
+                        display: 'flex', alignItems: 'center', gap: '3px', padding: '3px 8px',
+                        borderBottom: `1px solid ${theme.borderSubtle}`, overflowX: 'auto', scrollbarWidth: 'none',
+                        backgroundColor: theme.isDark ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.02)'
+                      }
+                    }, [
+                      h('button', {
+                        type: 'button', onClick: () => setCropModal({ itemId: item.id, url: displaySrc, assetKey: itemData.assetKey }),
+                        title: '本地裁剪生成新资产 (S4)',
+                        style: { background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '3px', color: theme.textSecondary, fontSize: '9.5px', padding: '1px 4px', cursor: 'pointer', whiteSpace: 'nowrap' }
+                      }, '裁剪'),
+                      h('button', {
+                        type: 'button', onClick: () => setSaveAssetModal({ itemId: item.id, assetKey: itemData.assetKey, url: displaySrc, name: itemData.name || '图片资产', category: '自定义', description: itemData.prompt || '', tags: itemData.tags || [] }),
+                        title: '命名分类保存进资产库 (S1/S2)',
+                        style: { background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '3px', color: '#10b981', fontSize: '9.5px', padding: '1px 4px', cursor: 'pointer', whiteSpace: 'nowrap' }
+                      }, '存为资产'),
+                      h('div', { style: { width: '1px', height: '12px', backgroundColor: theme.borderSubtle, margin: '0 1px' } }),
+                      [
+                        { id: 'hd', label: '高清' },
+                        { id: 'repaint', label: '重绘' },
+                        { id: 'panorama', label: '全景' },
+                        { id: 'multi_angle', label: '多机位' },
+                        { id: 'relight', label: '重打光' },
+                        { id: 'layer_split', label: '图层拆分' }
+                      ].map(act => h('button', {
+                        key: act.id,
+                        type: 'button',
+                        onClick: () => handleDeriveItem(item, act.id),
+                        title: `基于当前图派生生成: ${act.label} (自动建立上游连线)`,
+                        style: { background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '3px', color: '#06b6d4', fontSize: '9.5px', padding: '1px 4px', cursor: 'pointer', whiteSpace: 'nowrap' }
+                      }, act.label))
+                    ]) : null,
+
+                    // 模型与预设选择行 (模型只能来自线上 Manifest / 预设来自 16 预设库)
+                    h('div', {
+                      style: {
+                        padding: '4px 8px', borderBottom: `1px solid ${theme.borderSubtle}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px'
+                      }
+                    }, [
+                      h('select', {
+                        value: itemData.params?.model || canvasModel || 'sensenova-u1.5-lite',
+                        onPointerDown: (ev) => ev.stopPropagation(),
+                        onChange: (e) => {
+                          const val = e.target.value;
+                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), model: val } } } : x));
+                        },
+                        title: '选择生成模型 (以线上 Manifest 为准)',
+                        style: {
+                          flex: 1, background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`,
+                          color: theme.textPrimary, fontSize: '10.5px', borderRadius: '4px', padding: '2px 4px', outline: 'none', cursor: 'pointer'
+                        }
+                      }, availableImageModels.map(m => {
+                        const isFree = m.price === 0 || (m.tag && m.tag.includes('限免'));
+                        const pTxt = isFree ? '限免' : (m.price != null ? `¥${m.price}` : '');
+                        return h('option', { key: m.id, value: m.id }, `${m.name} ${m.tag ? '[' + m.tag + ']' : ''} ${pTxt ? '(' + pTxt + ')' : ''}`);
+                      })),
+                      h('button', {
+                        type: 'button',
+                        onClick: () => setPresetModal({ targetItemId: item.id }),
+                        title: '套用 16 个专业预设库 (调度/宫格/视图/质感)',
+                        style: {
+                          background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px',
+                          color: '#06b6d4', fontSize: '10.5px', padding: '2px 6px', cursor: 'pointer', flexShrink: 0
+                        }
+                      }, '预设')
+                    ]),
+
+                    // 提示词输入区域
+                    h('textarea', {
+                      value: itemData.prompt || '',
+                      onPointerDown: (ev) => ev.stopPropagation(),
+                      onChange: (e) => {
+                        const val = e.target.value;
+                        setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, prompt: val } } : x));
+                      },
+                      placeholder: '输入该节点的生图提示词 (上游文本节点将自动追加)...',
+                      style: {
+                        height: '52px', resize: 'none', border: 'none', borderBottom: `1px solid ${theme.borderSubtle}`,
+                        padding: '6px 8px', fontSize: '11px', backgroundColor: 'transparent',
+                        color: theme.textPrimary, outline: 'none', boxSizing: 'border-box', lineHeight: 1.4
+                      }
+                    }),
+
+                    // 参数控制行: 比例 / 画质 / 张数 / 上游参考图角标
+                    h('div', {
+                      style: {
+                        padding: '4px 8px', borderBottom: `1px solid ${theme.borderSubtle}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', flexWrap: 'nowrap', overflowX: 'auto', scrollbarWidth: 'none'
+                      }
+                    }, [
+                      h('select', {
+                        value: itemData.params?.aspectRatio || '16:9',
+                        onPointerDown: (ev) => ev.stopPropagation(),
+                        onChange: (e) => {
+                          const val = e.target.value;
+                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), aspectRatio: val } } } : x));
+                        },
+                        title: '画面比例',
+                        style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
+                      }, [
+                        { val: '1:1', label: '1:1 正方' },
+                        { val: '16:9', label: '16:9 横屏' },
+                        { val: '9:16', label: '9:16 竖屏' },
+                        { val: '4:3', label: '4:3 宽屏' },
+                        { val: '3:4', label: '3:4 竖屏' }
+                      ].map(opt => h('option', { key: opt.val, value: opt.val }, opt.label))),
+                      h('select', {
+                        value: itemData.params?.quality || 'standard',
+                        onPointerDown: (ev) => ev.stopPropagation(),
+                        onChange: (e) => {
+                          const val = e.target.value;
+                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), quality: val } } } : x));
+                        },
+                        title: '画质档位',
+                        style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
+                      }, [
+                        { val: 'standard', label: '标准 1K' },
+                        { val: '2k', label: '2K 高清' },
+                        { val: '4k', label: '4K 超清' }
+                      ].map(opt => h('option', { key: opt.val, value: opt.val }, opt.label))),
+                      h('select', {
+                        value: String(itemData.params?.count || 1),
+                        onPointerDown: (ev) => ev.stopPropagation(),
+                        onChange: (e) => {
+                          const val = Number(e.target.value) || 1;
+                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), count: val } } } : x));
+                        },
+                        title: '出图张数',
+                        style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
+                      }, [1, 2, 4].map(n => h('option', { key: n, value: String(n) }, `${n}张`))),
+                      itemCtx.referenceImages.length > 0 ? h('span', {
+                        title: '上游连线汇入的参考图',
+                        style: { fontSize: '9px', color: '#06b6d4', padding: '1px 4px', border: '1px solid rgba(6,182,212,0.3)', borderRadius: '3px', whiteSpace: 'nowrap' }
+                      }, `参考图×${itemCtx.referenceImages.length}`) : null
+                    ]),
+
+                    // 图像渲染展示区域 (双击灯箱全屏 / 双击上传)
+                    h('div', {
+                      style: { flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', overflow: 'hidden', position: 'relative' }
+                    }, [
+                      displaySrc ? h('img', {
+                        src: displaySrc,
+                        draggable: false,
+                        onDoubleClick: () => setLightboxUrl(displaySrc),
+                        title: '双击查看 1:1 点对点点全屏预览',
+                        style: { width: '100%', height: '100%', objectFit: 'contain', imageRendering: '-webkit-optimize-contrast', cursor: 'zoom-in' }
+                      }) : (
+                        itemData.generating ? h('div', {
+                          style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', color: '#06b6d4', fontSize: '11px' }
+                        }, [
+                          h(Icon, { name: 'spinner', size: 18, style: { animation: 'wt-spin 1s linear infinite' } }),
+                          h('span', {}, 'AI 渲染生成中…')
+                        ]) : h('div', {
+                          onDoubleClick: () => {
                             const input = document.createElement('input');
                             input.type = 'file';
                             input.accept = 'image/png,image/jpeg,image/webp';
@@ -6073,59 +7165,213 @@ $owner.Dispose()
                               const f = input.files && input.files[0];
                               if (!f) return;
                               const reader = new FileReader();
-                              reader.onload = () => setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, url: String(reader.result) } } : x));
+                              reader.onload = () => {
+                                const dUrl = String(reader.result);
+                                let aKey = '';
+                                if (canvasAssetsDriver) {
+                                  try { const saved = canvasAssetsDriver.saveDataUrl(dUrl); aKey = saved.assetKey; } catch (_) {}
+                                }
+                                setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, url: aKey ? `asset:${aKey}` : dUrl, assetKey: aKey } } : x));
+                              };
                               reader.readAsDataURL(f);
                             };
                             input.click();
                           },
-                          style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: theme.textMuted, cursor: 'pointer', minHeight: 0 }
-                          }, itemData.error || '双击上传图片')
-                        })()
-                      ) : (item.type === 'video' ? (() => {
+                          style: { color: theme.textMuted, fontSize: '11px', textAlign: 'center', padding: '10px', cursor: 'pointer' }
+                        }, itemData.error ? `错误: ${itemData.error}` : '双击上传本地参考图 / 或连线汇入')
+                      )
+                    ]),
+
+                    // 底部生成与明码标价行 (LIBTV_FULL_PARITY_BRIEF §3.2.5)
+                    h('div', {
+                      style: {
+                        padding: '6px 10px', borderTop: `1px solid ${theme.borderSubtle}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'
+                      }
+                    }, [
+                      h('div', { style: { fontSize: '10px', color: theme.textMuted } }, itemData.error ? '生成异常' : (displaySrc ? '已就绪' : '待生成')),
+                      h('button', {
+                        type: 'button',
+                        disabled: itemData.generating,
+                        onClick: () => handleGenerateItem(item.id),
+                        title: `按当前节点参数及上游连线输入生成 ${priceBadge}`,
+                        style: {
+                          backgroundColor: itemData.generating ? theme.borderSubtle : '#06b6d4',
+                          border: 'none', borderRadius: '5px', color: '#ffffff',
+                          fontSize: '11px', fontWeight: 600, padding: '4px 10px', cursor: itemData.generating ? 'not-allowed' : 'pointer'
+                        }
+                      }, itemData.generating ? '生成中...' : (displaySrc ? `重跑 ${priceBadge}` : `生成 ${priceBadge}`))
+                    ])
+                  ] : (item.type === 'video' ? [
+                    // =================== 视频节点 (LibTV 规格 + 全能参考) ===================
+                    // 参考模式角标与模型行
+                    h('div', {
+                      style: {
+                        padding: '5px 8px', borderBottom: `1px solid ${theme.borderSubtle}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px'
+                      }
+                    }, [
+                      h('span', {
+                        title: itemCtx.mode === 'multi_reference' ? '多张上游图片连线汇入，已开启全能多图参考模式' : '视频参考模式',
+                        style: {
+                          fontSize: '9.5px', color: itemCtx.mode === 'multi_reference' ? '#10b981' : '#06b6d4',
+                          border: `1px solid ${itemCtx.mode === 'multi_reference' ? 'rgba(16,185,129,0.4)' : 'rgba(6,182,212,0.3)'}`,
+                          padding: '1px 5px', borderRadius: '4px', whiteSpace: 'nowrap', fontWeight: 600
+                        }
+                      }, itemCtx.mode === 'multi_reference' ? `全能参考(${itemCtx.multiReferenceCount}图)` : (itemCtx.mode === 'single_reference' ? '首帧参考' : '文生视频')),
+                      h('select', {
+                        value: itemData.params?.model || (availableVideoModels[0]?.id) || 'MiniMax-H3',
+                        onPointerDown: (ev) => ev.stopPropagation(),
+                        onChange: (e) => {
+                          const val = e.target.value;
+                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), model: val } } } : x));
+                        },
+                        title: '选择视频模型 (以线上 Manifest 为准)',
+                        style: {
+                          flex: 1, background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`,
+                          color: theme.textPrimary, fontSize: '10.5px', borderRadius: '4px', padding: '2px 4px', outline: 'none', cursor: 'pointer'
+                        }
+                      }, availableVideoModels.map(m => h('option', { key: m.id, value: m.id }, `${m.name} [${m.tag || '推荐'}]`)))
+                    ]),
+
+                    // 视频提示词
+                    h('textarea', {
+                      value: itemData.prompt || '',
+                      onPointerDown: (ev) => ev.stopPropagation(),
+                      onChange: (e) => {
+                        const val = e.target.value;
+                        setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, prompt: val } } : x));
+                      },
+                      placeholder: '输入该节点的视频动态与运镜提示词...',
+                      style: {
+                        height: '52px', resize: 'none', border: 'none', borderBottom: `1px solid ${theme.borderSubtle}`,
+                        padding: '6px 8px', fontSize: '11px', backgroundColor: 'transparent',
+                        color: theme.textPrimary, outline: 'none', boxSizing: 'border-box', lineHeight: 1.4
+                      }
+                    }),
+
+                    // 视频参数控制行: 时长 / 分辨率 / 比例 / 音频 / 数量
+                    h('div', {
+                      style: {
+                        padding: '4px 8px', borderBottom: `1px solid ${theme.borderSubtle}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', overflowX: 'auto', scrollbarWidth: 'none'
+                      }
+                    }, [
+                      h('select', {
+                        value: String(itemData.params?.duration || 5),
+                        onPointerDown: (ev) => ev.stopPropagation(),
+                        onChange: (e) => {
+                          const val = Number(e.target.value) || 5;
+                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), duration: val } } } : x));
+                        },
+                        title: '生成时长',
+                        style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
+                      }, [4, 5, 6, 10, 15].map(d => h('option', { key: d, value: String(d) }, `${d}秒`))),
+                      h('select', {
+                        value: itemData.params?.resolution || '720P',
+                        onPointerDown: (ev) => ev.stopPropagation(),
+                        onChange: (e) => {
+                          const val = e.target.value;
+                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), resolution: val, size: val === '1080P' ? '1920x1080' : '1280x720' } } } : x));
+                        },
+                        title: '分辨率',
+                        style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
+                      }, [
+                        { val: '720P', label: '720P' },
+                        { val: '1080P', label: '1080P' }
+                      ].map(opt => h('option', { key: opt.val, value: opt.val }, opt.label))),
+                      h('select', {
+                        value: itemData.params?.aspectRatio || '16:9',
+                        onPointerDown: (ev) => ev.stopPropagation(),
+                        onChange: (e) => {
+                          const val = e.target.value;
+                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), aspectRatio: val } } } : x));
+                        },
+                        title: '视频比例',
+                        style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
+                      }, [
+                        { val: '16:9', label: '16:9 横屏' },
+                        { val: '9:16', label: '9:16 竖屏' }
+                      ].map(opt => h('option', { key: opt.val, value: opt.val }, opt.label))),
+                      h('button', {
+                        type: 'button',
+                        onClick: () => {
+                          const nextAudio = !itemData.params?.generateAudio;
+                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), generateAudio: nextAudio } } } : x));
+                        },
+                        title: '音频开关 (按模型能力支持)',
+                        style: {
+                          background: itemData.params?.generateAudio ? '#06b6d4' : theme.bgInput,
+                          color: itemData.params?.generateAudio ? '#ffffff' : theme.textMuted,
+                          border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', fontSize: '9.5px', padding: '1px 4px', cursor: 'pointer'
+                        }
+                      }, itemData.params?.generateAudio ? '音频:开' : '音频:关')
+                    ]),
+
+                    // 视频播放与轮询渲染区域
+                    h('div', {
+                      style: { flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', overflow: 'hidden', position: 'relative' }
+                    }, [
+                      (() => {
                         const vState = itemData.videoState || { status: 'idle' };
                         let videoSrc = itemData.url || '';
                         if (videoSrc.startsWith('asset:') && canvasAssetsDriver) {
-                          try { videoSrc = canvasAssetsDriver.readAsDataUrl(videoSrc.slice(6)); }
-                          catch (_) { videoSrc = ''; }
+                          try { videoSrc = canvasAssetsDriver.readAsDataUrl(videoSrc.slice(6)); } catch (_) {}
                         }
                         if (videoSrc) {
                           return h('video', {
                             src: videoSrc, controls: true, loop: true,
                             onPointerDown: (ev) => ev.stopPropagation(),
-                            style: { width: '100%', flex: 1, minHeight: 0, objectFit: 'contain', backgroundColor: '#000' }
+                            style: { width: '100%', height: '100%', objectFit: 'contain' }
                           });
                         }
                         const busy = ['submitting', 'polling'].includes(vState.status);
-                        const label = busy
-                          ? `视频生成中 (第 ${vState.attempt || 1} 次轮询 / 最长 120 秒)`
-                          : (vState.status === 'failed' || vState.status === 'timeout'
-                            ? (vState.error || '生成失败，可点击重跑')
-                            : (vState.status === 'cancelled' ? '已取消，可点击重跑' : '点击顶栏「重跑」生成视频'));
                         return h('div', {
-                          style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '6px', fontSize: '11px', color: theme.textMuted, textAlign: 'center', padding: '8px', minHeight: 0 }
+                          style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', color: theme.textMuted, fontSize: '11px', textAlign: 'center', padding: '12px' }
                         }, [
-                          h('div', {}, label),
-                          vState.taskId ? h('div', { style: { fontSize: '9.5px', opacity: 0.7 } }, `任务 ${String(vState.taskId).slice(0, 24)}`) : null
+                          busy ? h(Icon, { name: 'spinner', size: 18, style: { animation: 'wt-spin 1s linear infinite', color: '#06b6d4' } }) : null,
+                          h('div', {}, busy ? `视频生成中 (第 ${vState.attempt || 1} 次轮询 / 120秒)` : (vState.error || '连线多张图片后点击下方「生成视频」')),
+                          busy ? h('button', {
+                            type: 'button', onClick: () => handleCancelVideoItem(item.id),
+                            style: { background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', color: theme.textMuted, cursor: 'pointer', fontSize: '10px', padding: '2px 8px', marginTop: '4px' }
+                          }, '取消轮询') : null
                         ]);
-                      })() : h('textarea', {
-                      value: item.data.text || '',
+                      })()
+                    ]),
+
+                    // 视频底部明码标价行
+                    h('div', {
+                      style: {
+                        padding: '6px 10px', borderTop: `1px solid ${theme.borderSubtle}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'
+                      }
+                    }, [
+                      h('div', { style: { fontSize: '10px', color: theme.textMuted } }, itemData.videoState?.status === 'succeeded' ? '已完成' : '待渲染'),
+                      h('button', {
+                        type: 'button',
+                        disabled: ['submitting', 'polling'].includes(itemData.videoState?.status),
+                        onClick: () => handleGenerateVideoItem(item.id),
+                        title: `按当前参数生成视频 ${priceBadge}`,
+                        style: {
+                          backgroundColor: ['submitting', 'polling'].includes(itemData.videoState?.status) ? theme.borderSubtle : '#06b6d4',
+                          border: 'none', borderRadius: '5px', color: '#ffffff',
+                          fontSize: '11px', fontWeight: 600, padding: '4px 10px',
+                          cursor: ['submitting', 'polling'].includes(itemData.videoState?.status) ? 'not-allowed' : 'pointer'
+                        }
+                      }, ['submitting', 'polling'].includes(itemData.videoState?.status) ? '渲染中...' : (displaySrc ? `重跑视频 ${priceBadge}` : `生成视频 ${priceBadge}`))
+                    ])
+                  ] : [
+                    // =================== 文本便签节点 ===================
+                    h('textarea', {
+                      value: itemData.text || '',
+                      onPointerDown: (ev) => ev.stopPropagation(),
                       onChange: (ev) => setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, text: ev.target.value } } : x)),
-                      placeholder: '输入文本内容…',
+                      placeholder: '输入文本便签内容 (连入下游节点将作为补充提示词)...',
                       style: { flex: 1, resize: 'none', border: 'none', outline: 'none', background: 'transparent', color: theme.textPrimary, fontSize: '12px', padding: '8px 10px', fontFamily: 'inherit', minHeight: 0 }
-                    })),
-                  // 节点生成参数: 提示词可编辑，作为该 image/video 节点的生成输入
-                  (item.type === 'image' || item.type === 'video') ? h('input', {
-                    type: 'text',
-                    value: itemData.prompt || '',
-                    onPointerDown: (ev) => ev.stopPropagation(),
-                    onChange: (ev) => setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, prompt: ev.target.value } } : x)),
-                    placeholder: '输入该节点的生成提示词…',
-                    style: {
-                      flexShrink: 0, border: 'none', borderTop: `1px solid ${theme.borderSubtle}`,
-                      outline: 'none', background: 'transparent', color: theme.textPrimary,
-                      fontSize: '10.5px', padding: '4px 10px', width: '100%', boxSizing: 'border-box'
-                    }
-                  }) : null
+                    })
+                  ])
                 ]);
               })),
 
@@ -6137,6 +7383,18 @@ $owner.Dispose()
                 const isCandidate = Boolean(p.stagingCandidateUrl);
                 const displayUrl = p.stagingCandidateUrl || p.imageUrl;
                 const isSelected = selectedIds.has(p.id);
+                // S3 标签高亮筛选
+                const pTags = Array.isArray(p.tags) ? p.tags : [];
+                const isPTagMatched = tagFilter === '全部' || pTags.includes(tagFilter);
+                const pTagOpacity = isPTagMatched ? 1 : 0.28;
+                const pBoxShadow = (tagFilter !== '全部' && isPTagMatched)
+                  ? '0 0 0 2px #06b6d4, 0 12px 28px rgba(6, 182, 212, 0.45)'
+                  : (isSelected
+                    ? '0 0 0 2px rgba(6, 182, 212, 0.45), 0 12px 28px rgba(0, 0, 0, 0.25)'
+                    : (isCandidate
+                      ? '0 12px 30px rgba(245, 158, 11, 0.25)'
+                      : '0 12px 28px rgba(0, 0, 0, 0.25)'));
+
                 // CANVAS-M3 3.4: AABB 视口剔除, 离屏节点不进渲染树
                 const isOnScreen = (CanvasMathUtils && CanvasMathUtils.isIntersectingAABB)
                   ? CanvasMathUtils.isIntersectingAABB({ x: p.x, y: p.y, width: p.width || 280, height: p.height || 420 }, viewWorldBox)
@@ -6154,11 +7412,8 @@ $owner.Dispose()
                     backgroundColor: theme.bgCard,
                     border: `1px solid ${isCandidate ? '#f59e0b' : (isSelected ? '#06b6d4' : theme.borderSubtle)}`,
                     borderRadius: '10px',
-                    boxShadow: isSelected
-                      ? '0 0 0 2px rgba(6, 182, 212, 0.45), 0 12px 28px rgba(0, 0, 0, 0.25)'
-                      : (isCandidate
-                        ? '0 12px 30px rgba(245, 158, 11, 0.25)'
-                        : '0 12px 28px rgba(0, 0, 0, 0.25)'),
+                    boxShadow: pBoxShadow,
+                    opacity: pTagOpacity,
                     overflow: 'hidden',
                     display: isOnScreen ? 'flex' : 'none',
                     flexDirection: 'column'
@@ -6215,6 +7470,26 @@ $owner.Dispose()
                       }, c.name)))
                     ]),
                     h('div', { style: { display: 'flex', alignItems: 'center', gap: '5px' } }, [
+                      // S3 分镜标签
+                      pTags.map(tLabel => {
+                        const tDef = (CanvasPromptUtils?.CANVAS_TAGS || []).find(t => t.label === tLabel) || { color: '#06b6d4', bg: 'rgba(6,182,212,0.15)', label: tLabel };
+                        return h('span', {
+                          key: tLabel,
+                          onClick: (ev) => { ev.stopPropagation(); toggleNodeTag(p.id, 'panel', tLabel); },
+                          title: '点击移除标签',
+                          style: { fontSize: '9px', color: tDef.color, backgroundColor: tDef.bg, border: `1px solid ${tDef.color}`, padding: '1px 4px', borderRadius: '4px', cursor: 'pointer' }
+                        }, tLabel);
+                      }),
+                      h('button', {
+                        type: 'button',
+                        title: '设置该分镜标签与关键词 (S3)',
+                        onPointerDown: (ev) => ev.stopPropagation(),
+                        onClick: (ev) => {
+                          ev.stopPropagation();
+                          setTagPicker(prev => (prev && prev.nodeId === p.id) ? null : { nodeId: p.id, nodeType: 'panel' });
+                        },
+                        style: { background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', color: theme.textSecondary, cursor: 'pointer', fontSize: '9px', padding: '1px 3px' }
+                      }, '+标签'),
                       // 连线锚点 (拖出连线到目标节点) CANVAS-M2 2.4
                       h('div', {
                         onPointerDown: (ev) => beginConnectDrag(ev, 'panel', p.id),
@@ -6238,6 +7513,34 @@ $owner.Dispose()
                       }, '删除')
                     ])
                   ]),
+
+                  // S3 标签快速点选悬浮浮层
+                  (tagPicker && tagPicker.nodeId === p.id) ? h('div', {
+                    onPointerDown: (ev) => ev.stopPropagation(),
+                    onClick: (ev) => ev.stopPropagation(),
+                    style: { padding: '8px', borderBottom: `1px solid ${theme.borderSubtle}`, backgroundColor: theme.popoverBg, display: 'flex', flexDirection: 'column', gap: '6px' }
+                  }, [
+                    h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } }, (CanvasPromptUtils?.CANVAS_TAGS || []).map(t => {
+                      const isTagged = pTags.includes(t.label);
+                      return h('button', {
+                        key: t.id,
+                        type: 'button',
+                        onClick: () => toggleNodeTag(p.id, 'panel', t.label),
+                        style: { border: `1px solid ${t.color}`, backgroundColor: isTagged ? t.color : t.bg, color: isTagged ? '#ffffff' : t.color, fontSize: '9.5px', padding: '2px 5px', borderRadius: '4px', cursor: 'pointer' }
+                      }, t.label);
+                    })),
+                    h('input', {
+                      placeholder: '输入关键词按回车添加...',
+                      onKeyDown: (ev) => {
+                        if (ev.key === 'Enter') {
+                          ev.stopPropagation();
+                          addCustomKeyword(p.id, 'panel', ev.target.value);
+                          ev.target.value = '';
+                        }
+                      },
+                      style: { fontSize: '10px', padding: '3px 6px', border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', backgroundColor: theme.bgInput, color: theme.textPrimary, outline: 'none' }
+                    })
+                  ]) : null,
 
                   // 画面展示区 (支持 InvokeAI 幽灵暂存层 + 亚像素高清渲染)
                   h('div', {

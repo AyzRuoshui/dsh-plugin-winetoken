@@ -324,7 +324,10 @@ function collectUpstream(project, nodeId) {
 
 const PROMPT_MAX = 4000;
 const REF_MAX = 8;
-const PARAM_KEYS = Object.freeze(['model', 'size', 'aspectRatio', 'shot', 'negativePrompt', 'count']);
+const PARAM_KEYS = Object.freeze([
+  'model', 'size', 'aspectRatio', 'shot', 'negativePrompt', 'count',
+  'duration', 'resolution', 'mode', 'generateAudio', 'quality', 'preset'
+]);
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 // 返回规范值；null 表示非法丢弃。白名单之外的键根本不会走到这里。
@@ -337,6 +340,19 @@ function validateParam(key, val) {
     if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 64) return null;
     return n;
   }
+  if (key === 'duration') {
+    let n = NaN;
+    if (typeof val === 'number') n = val;
+    else if (typeof val === 'string' && val.trim() !== '') n = Number(val);
+    if (!Number.isFinite(n) || n < 1 || n > 30) return null;
+    return Math.round(n);
+  }
+  if (key === 'generateAudio') {
+    if (typeof val === 'boolean') return val;
+    if (val === 'true') return true;
+    if (val === 'false') return false;
+    return null;
+  }
   if (typeof val !== 'string') return null;
   const max = key === 'negativePrompt' ? 2000 : key === 'model' ? 200 : 100;
   return val.length > max ? null : val;
@@ -346,6 +362,7 @@ function basePromptOf(node) {
   const raw = node.raw || {};
   if (node.type === 'panel') return getString(raw.prompt);
   if (node.type === 'text') return getString(dataOf(raw).text);
+  if (node.type === 'image' || node.type === 'video') return getString(dataOf(raw).prompt);
   return '';
 }
 
@@ -452,6 +469,17 @@ function buildGenerationContext(project, nodeId) {
     result.prompt = prompt;
     result.texts = texts;
     result.referenceImages = refs;
+    result.allReferenceImages = [...refs];
+    result.firstFrameUrl = refs[0] || '';
+    result.lastFrameUrl = refs.length > 1 ? refs[refs.length - 1] : '';
+    result.multiReferenceCount = refs.length;
+    if (target.type === 'video') {
+      result.mode = refs.length > 1 ? 'multi_reference' : (refs.length === 1 ? 'single_reference' : 'text_to_video');
+    } else if (target.type === 'image' || target.type === 'panel') {
+      result.mode = refs.length > 0 ? 'image_to_image' : 'text_to_image';
+    } else {
+      result.mode = 'default';
+    }
     result.params = params;
   } catch (_) {
     warnings.push('生成上下文构建时遇到脏数据，已安全降级');
