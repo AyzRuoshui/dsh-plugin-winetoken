@@ -21,6 +21,30 @@ const DEFAULT_MAX_ATTEMPTS = 40;      // 与 StudioPage 一致: 3 秒 × 40 = 12
 const DEFAULT_POLL_INTERVAL_MS = 3000;
 const TERMINAL_STATUSES = Object.freeze(['succeeded', 'failed', 'cancelled', 'timeout']);
 
+function normalizeV1Base(url) {
+  const clean = (url || '').trim().replace(/\/+$/, '');
+  return clean.endsWith('/v1') ? clean : `${clean}/v1`;
+}
+
+function resolveVideoEndpoints(baseUrl, model = '') {
+  const v1 = normalizeV1Base(baseUrl);
+  const isMiniMax = /minimax|hailuo/i.test(model);
+  if (isMiniMax) {
+    return {
+      submitUrl: `${v1}/videos`,
+      pollUrl: (taskId) => `${v1}/videos/${taskId}`,
+      contentUrl: (taskId) => `${v1}/videos/${taskId}/content`,
+      protocol: 'minimax-videos'
+    };
+  }
+  return {
+    submitUrl: `${v1}/videos/generations`,
+    pollUrl: (taskId) => `${v1}/videos/generations/${taskId}`,
+    contentUrl: (taskId) => `${v1}/videos/generations/${taskId}`,
+    protocol: 'standard-generations'
+  };
+}
+
 function isObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
@@ -139,12 +163,24 @@ function buildVideoPayload({ model = 'MiniMax-H3', prompt = '', duration = 5, si
   const chosenModel = typeof model === 'string' && model.trim() ? model.trim() : 'MiniMax-H3';
   const isGrokVideo = /grok-imagine-video/i.test(chosenModel);
   const seconds = Number.isFinite(duration) ? Math.max(1, Math.min(30, Math.round(duration))) : 5;
+  let resolution;
+  if (/minimax-h3-2k/i.test(chosenModel)) {
+    resolution = '2K';
+  } else if (/minimax/i.test(chosenModel)) {
+    resolution = '768P';
+  } else if (isGrokVideo) {
+    resolution = (typeof size === 'string' && size.includes('1080')) ? '1080P' : '720P';
+  } else {
+    resolution = (typeof size === 'string' && (size.includes('2K') || size.startsWith('2560') || size.startsWith('1440')))
+      ? '2K'
+      : ((typeof size === 'string' && size.includes('1080')) ? '1080P' : '768P');
+  }
   const payload = {
     model: chosenModel,
     prompt: typeof prompt === 'string' ? prompt.trim().slice(0, 4000) : '',
     seconds,
     duration: seconds,
-    resolution: (typeof size === 'string' && size.includes('1080')) ? '1080P' : (isGrokVideo ? '720P' : '768P')
+    resolution
   };
   const first = typeof firstFrameUrl === 'string' ? firstFrameUrl.trim() : '';
   const last = typeof lastFrameUrl === 'string' ? lastFrameUrl.trim() : '';
@@ -175,5 +211,6 @@ module.exports = {
   applyVideoState,
   isBusy,
   isTerminal,
-  buildVideoPayload
+  buildVideoPayload,
+  resolveVideoEndpoints
 };

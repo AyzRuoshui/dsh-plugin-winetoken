@@ -9,6 +9,7 @@ const path = require('path');
 const { homedir } = require('os');
 const { addHistoryItem } = require('./history.js');
 const { resolveApiKey, getResolvedBaseUrl } = require('./credentials.js');
+const { resolveVideoEndpoints } = require('./canvas-video.js');
 
 // 对标 infinite-canvas 的本地 Canvas Agent: 宿主侧画布状态桥 (磁盘工程文件为唯一权威)
 // 可选加载，模块缺失时画布工具自动禁用，绝不拖垮既有生图/生视频工具注册
@@ -214,23 +215,52 @@ async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_
 async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration, size, image_url }) {
   const chosenModel = model || 'MiniMax-H3';
   const isGrokVideo = /grok-imagine-video/i.test(chosenModel);
+  let resolution;
+  if (/minimax-h3-2k/i.test(chosenModel)) {
+    resolution = '2K';
+  } else if (/minimax/i.test(chosenModel)) {
+    resolution = '768P';
+  } else if (isGrokVideo) {
+    resolution = resolveGrokVideoResolution(size);
+  } else {
+    resolution = (typeof size === 'string' && (size.includes('2K') || size.startsWith('2560') || size.startsWith('1440')))
+      ? '2K'
+      : ((typeof size === 'string' && size.includes('1080')) ? '1080P' : '768P');
+  }
+
   const payload = {
     model: chosenModel,
     prompt: prompt.trim(),
     seconds: duration || 5,
     duration: duration || 5,
-    // Grok Imagine 视频族：xAI 仅接受 480p/720p/1080p，768P 会被上游 400 拒绝
-    resolution: isGrokVideo ? resolveGrokVideoResolution(size) : ((size && size.includes('1080')) ? '1080P' : '768P')
+    resolution
   };
 
   if (image_url) {
     payload.image = image_url;
     payload.image_url = image_url;
     payload.first_frame_image = image_url;
+    if (/minimax|hailuo/i.test(chosenModel)) {
+      payload.metadata = { first_frame_image: image_url };
+    }
   }
 
-  const endpoint = baseUrl.endsWith('/') ? `${baseUrl}videos/generations` : `${baseUrl}/videos/generations`;
-  const res = await fetch(endpoint, {
+  const endpoints = (typeof resolveVideoEndpoints === 'function')
+    ? resolveVideoEndpoints(baseUrl, chosenModel)
+    : (() => {
+        const clean = (baseUrl || '').trim().replace(/\/+$/, '');
+        const v1 = clean.endsWith('/v1') ? clean : `${clean}/v1`;
+        const isMiniMax = /minimax|hailuo/i.test(chosenModel);
+        return isMiniMax ? {
+          submitUrl: `${v1}/videos`,
+          pollUrl: (taskId) => `${v1}/videos/${taskId}`
+        } : {
+          submitUrl: `${v1}/videos/generations`,
+          pollUrl: (taskId) => `${v1}/videos/generations/${taskId}`
+        };
+      })();
+
+  const res = await fetch(endpoints.submitUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -265,7 +295,7 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
   }
 
   // 轮询最多 40 次，每次间隔 3 秒 (共最长 120 秒)
-  const pollUrl = `${endpoint}/${taskId}`;
+  const pollUrl = endpoints.pollUrl(taskId);
   for (let attempt = 0; attempt < 40; attempt++) {
     await new Promise(r => setTimeout(r, 3000));
     try {
@@ -454,20 +484,20 @@ function registerWineTokenTools(ctx) {
           },
           model: {
             type: 'string',
-            enum: ['MiniMax-H3', 'grok-imagine-video-1.5'],
-            description: '视频基底模型：MiniMax-H3 (电影感/支持4~15秒)，grok-imagine-video-1.5 (物理真实/连贯运镜)',
+            enum: ['MiniMax-H3', 'MiniMax-H3-2K', 'grok-imagine-video-1.5'],
+            description: '视频基底模型：MiniMax-H3 (电影感/支持4~15秒)，MiniMax-H3-2K (2K超清/支持5~15秒)，grok-imagine-video-1.5 (物理真实/连贯运镜)',
             default: 'MiniMax-H3'
           },
           duration: {
             type: 'number',
             enum: [4, 5, 6, 10, 15],
-            description: '视频生成时长秒数（MiniMax-H3 支持 4, 5, 6, 10, 15 秒；Grok 支持 5, 10 秒）',
+            description: '视频生成时长秒数（MiniMax-H3 支持 4, 5, 6, 10, 15 秒；MiniMax-H3-2K 支持 5, 6, 10, 15 秒；Grok 支持 5, 10 秒）',
             default: 5
           },
           size: {
             type: 'string',
-            enum: ['1280x720', '720x1280', '1920x1080', '1080x1920'],
-            description: '视频画面分辨率与横竖屏，默认为 1280x720 (720P 横屏)',
+            enum: ['1280x720', '720x1280', '1920x1080', '1080x1920', '2560x1440', '1440x2560'],
+            description: '视频画面分辨率与横竖屏，默认为 1280x720 (720P 横屏)。2K 模型请选 2560x1440 或 1440x2560；MiniMax-H3 仅支持 720P (768P)，不推荐使用 1080P。',
             default: '1280x720'
           },
           image_url: {

@@ -446,12 +446,31 @@
         { val: 10, label: '10 秒', tag: '长片' },
         { val: 15, label: '15 秒', tag: '旗舰' }
       ],
-      desc: '768P/1080P 电影级光影，原生支持 4~15 秒超长生成时长，支持首帧 / 尾帧参考图精准驱动动态',
+      desc: '768P 电影级光影，原生支持 4~15 秒超长生成时长，支持首帧 / 尾帧参考图精准驱动动态',
       resolutions: [
         { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
-        { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' },
-        { label: '1080P 全高清', icon: 'ratio16_9', val: '1920x1080' },
-        { label: '1080P 竖屏', icon: 'ratio9_16', val: '1080x1920' }
+        { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }
+      ]
+    },
+    {
+      id: 'MiniMax-H3-2K',
+      name: 'MiniMax H3 2K',
+      tag: '2K超清',
+      pricePerSecond: 0.20,
+      vipPricePerSecond: 0.16,
+      priceText: '原¥0.20/秒 (5秒基准 ¥1.00)',
+      vipPriceText: '会员 ¥0.16/秒 (5秒基准 ¥0.80)',
+      unit: '秒',
+      durations: [
+        { val: 5, label: '5 秒', tag: '标配' },
+        { val: 6, label: '6 秒', tag: '延展' },
+        { val: 10, label: '10 秒', tag: '长片' },
+        { val: 15, label: '15 秒', tag: '旗舰' }
+      ],
+      desc: '768P 电影级光影，原生支持 4~15 秒超长生成时长，支持首帧 / 尾帧参考图精准驱动动态',
+      resolutions: [
+        { label: '2K 横屏', icon: 'ratio16_9', val: '2560x1440' },
+        { label: '2K 竖屏', icon: 'ratio9_16', val: '1440x2560' }
       ]
     },
     {
@@ -520,7 +539,7 @@
     if (raw.id === 'sensenova-6.8-flash' || (raw.name && raw.name.includes('商汤日日新 4K 动效'))) {
       return null;
     }
-    const isHoriz = (s) => s.startsWith('1280') || s.startsWith('1920');
+    const isHoriz = (s) => s.startsWith('1280') || s.startsWith('1920') || s.startsWith('2560');
     let resolutions = [];
     if (Array.isArray(raw.resolutions)) {
       resolutions = raw.resolutions.map(r => {
@@ -5082,14 +5101,15 @@ $owner.Dispose()
             if (item.data?.params?.generateAudio) {
               payload.audio = true;
             }
-            const endpoint = `${BASE_URL}/v1/videos/generations`;
+            const endpoints = CanvasVideoUtils.resolveVideoEndpoints(BASE_URL, chosenModel);
+            const submitUrl = endpoints.submitUrl;
             const controller = new AbortController();
             videoPollAbortRef.current.set(itemId, controller);
 
             if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
             updateVideoItem(itemId, { status: 'submitting', error: '', startedAt: Date.now() });
             try {
-              const submitRes = await fetch(endpoint, {
+              const submitRes = await fetch(submitUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                 body: JSON.stringify(payload),
@@ -5108,7 +5128,7 @@ $owner.Dispose()
 
               if (!videoUrl && parsed.taskId) {
                 updateVideoItem(itemId, { status: 'polling', taskId: parsed.taskId });
-                const pollUrl = `${endpoint}/${parsed.taskId}`;
+                const pollUrl = endpoints.pollUrl(parsed.taskId);
                 for (let attempt = 1; attempt <= CanvasVideoUtils.DEFAULT_MAX_ATTEMPTS; attempt++) {
                   if (controller.signal.aborted) throw new Error('已由用户取消');
                   await new Promise(r => setTimeout(r, CanvasVideoUtils.DEFAULT_POLL_INTERVAL_MS));
@@ -7282,166 +7302,213 @@ $owner.Dispose()
                         }
                       }, itemData.generating ? '生成中...' : (displaySrc ? `重跑 ${priceBadge}` : `生成 ${priceBadge}`))
                     ])
-                  ] : (item.type === 'video' ? [
-                    // =================== 视频节点 (LibTV 规格 + 全能参考) ===================
-                    // 参考模式角标与模型行
-                    h('div', {
-                      style: {
-                        padding: '5px 8px', borderBottom: `1px solid ${theme.borderSubtle}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px'
-                      }
-                    }, [
-                      h('span', {
-                        title: itemCtx.mode === 'multi_reference' ? '多张上游图片连线汇入，已开启全能多图参考模式' : '视频参考模式',
-                        style: {
-                          fontSize: '9.5px', color: itemCtx.mode === 'multi_reference' ? '#10b981' : '#06b6d4',
-                          border: `1px solid ${itemCtx.mode === 'multi_reference' ? 'rgba(16,185,129,0.4)' : 'rgba(6,182,212,0.3)'}`,
-                          padding: '1px 5px', borderRadius: '4px', whiteSpace: 'nowrap', fontWeight: 600
-                        }
-                      }, itemCtx.mode === 'multi_reference' ? `全能参考(${itemCtx.multiReferenceCount}图)` : (itemCtx.mode === 'single_reference' ? '首帧参考' : '文生视频')),
-                      h('select', {
-                        value: itemData.params?.model || (availableVideoModels[0]?.id) || 'MiniMax-H3',
-                        onPointerDown: (ev) => ev.stopPropagation(),
-                        onChange: (e) => {
-                          const val = e.target.value;
-                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), model: val } } } : x));
-                        },
-                        title: '选择视频模型 (以线上 Manifest 为准)',
-                        style: {
-                          flex: 1, background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`,
-                          color: theme.textPrimary, fontSize: '10.5px', borderRadius: '4px', padding: '2px 4px', outline: 'none', cursor: 'pointer'
-                        }
-                      }, availableVideoModels.map(m => h('option', { key: m.id, value: m.id }, `${m.name} [${m.tag || '推荐'}]`)))
-                    ]),
+                  ] : (item.type === 'video' ? (() => {
+                    const chosenNodeModel = itemData.params?.model || (availableVideoModels[0]?.id) || 'MiniMax-H3';
+                    const is2KNode = /minimax-h3-2k/i.test(chosenNodeModel);
+                    const isH3Node = !is2KNode && /minimax/i.test(chosenNodeModel);
+                    const nodeModelObj = availableVideoModels.find(m => m.id === chosenNodeModel);
+                    const nodeDurationOpts = is2KNode
+                      ? [5, 6, 10, 15]
+                      : ((nodeModelObj?.durations && nodeModelObj.durations.length)
+                          ? nodeModelObj.durations.map(d => typeof d === 'object' ? d.val : d)
+                          : [4, 5, 6, 10, 15]);
 
-                    // 视频提示词
-                    h('textarea', {
-                      value: itemData.prompt || '',
-                      onPointerDown: (ev) => ev.stopPropagation(),
-                      onChange: (e) => {
-                        const val = e.target.value;
-                        setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, prompt: val } } : x));
-                      },
-                      placeholder: '输入该节点的视频动态与运镜提示词...',
-                      style: {
-                        height: '52px', resize: 'none', border: 'none', borderBottom: `1px solid ${theme.borderSubtle}`,
-                        padding: '6px 8px', fontSize: '11px', backgroundColor: 'transparent',
-                        color: theme.textPrimary, outline: 'none', boxSizing: 'border-box', lineHeight: 1.4
-                      }
-                    }),
-
-                    // 视频参数控制行: 时长 / 分辨率 / 比例 / 音频 / 数量
-                    h('div', {
-                      style: {
-                        padding: '4px 8px', borderBottom: `1px solid ${theme.borderSubtle}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', overflowX: 'auto', scrollbarWidth: 'none'
-                      }
-                    }, [
-                      h('select', {
-                        value: String(itemData.params?.duration || 5),
-                        onPointerDown: (ev) => ev.stopPropagation(),
-                        onChange: (e) => {
-                          const val = Number(e.target.value) || 5;
-                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), duration: val } } } : x));
-                        },
-                        title: '生成时长',
-                        style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
-                      }, [4, 5, 6, 10, 15].map(d => h('option', { key: d, value: String(d) }, `${d}秒`))),
-                      h('select', {
-                        value: itemData.params?.resolution || '720P',
-                        onPointerDown: (ev) => ev.stopPropagation(),
-                        onChange: (e) => {
-                          const val = e.target.value;
-                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), resolution: val, size: val === '1080P' ? '1920x1080' : '1280x720' } } } : x));
-                        },
-                        title: '分辨率',
-                        style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
-                      }, [
+                    let nodeResolutionOpts;
+                    let effectiveResolution;
+                    if (is2KNode) {
+                      nodeResolutionOpts = [{ val: '2K', label: '2K' }];
+                      effectiveResolution = '2K';
+                    } else if (isH3Node) {
+                      nodeResolutionOpts = [{ val: '720P', label: '720P' }];
+                      effectiveResolution = '720P';
+                    } else {
+                      nodeResolutionOpts = [
                         { val: '720P', label: '720P' },
                         { val: '1080P', label: '1080P' }
-                      ].map(opt => h('option', { key: opt.val, value: opt.val }, opt.label))),
-                      h('select', {
-                        value: itemData.params?.aspectRatio || '16:9',
+                      ];
+                      effectiveResolution = itemData.params?.resolution === '1080P' ? '1080P' : '720P';
+                    }
+                    const effectiveDuration = (is2KNode && itemData.params?.duration === 4)
+                      ? 5
+                      : (itemData.params?.duration || 5);
+
+                    const resolveNodeSize = (res, aspect) => {
+                      const isVert = (aspect === '9:16');
+                      if (res === '2K') return isVert ? '1440x2560' : '2560x1440';
+                      if (res === '1080P') return isVert ? '1080x1920' : '1920x1080';
+                      return isVert ? '720x1280' : '1280x720';
+                    };
+
+                    return [
+                      // =================== 视频节点 (LibTV 规格 + 全能参考) ===================
+                      // 参考模式角标与模型行
+                      h('div', {
+                        style: {
+                          padding: '5px 8px', borderBottom: `1px solid ${theme.borderSubtle}`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px'
+                        }
+                      }, [
+                        h('span', {
+                          title: itemCtx.mode === 'multi_reference' ? '多张上游图片连线汇入，已开启全能多图参考模式' : '视频参考模式',
+                          style: {
+                            fontSize: '9.5px', color: itemCtx.mode === 'multi_reference' ? '#10b981' : '#06b6d4',
+                            border: `1px solid ${itemCtx.mode === 'multi_reference' ? 'rgba(16,185,129,0.4)' : 'rgba(6,182,212,0.3)'}`,
+                            padding: '1px 5px', borderRadius: '4px', whiteSpace: 'nowrap', fontWeight: 600
+                          }
+                        }, itemCtx.mode === 'multi_reference' ? `全能参考(${itemCtx.multiReferenceCount}图)` : (itemCtx.mode === 'single_reference' ? '首帧参考' : '文生视频')),
+                        h('select', {
+                          value: chosenNodeModel,
+                          onPointerDown: (ev) => ev.stopPropagation(),
+                          onChange: (e) => {
+                            const val = e.target.value;
+                            const nextIs2K = /minimax-h3-2k/i.test(val);
+                            const nextIsH3 = !nextIs2K && /minimax/i.test(val);
+                            let nextRes = itemData.params?.resolution || '720P';
+                            let nextDuration = itemData.params?.duration || 5;
+                            if (nextIs2K) {
+                              nextRes = '2K';
+                              if (nextDuration === 4) nextDuration = 5;
+                            } else if (nextIsH3 && nextRes === '1080P') {
+                              nextRes = '720P';
+                            }
+                            const nextSize = resolveNodeSize(nextRes, itemData.params?.aspectRatio || '16:9');
+                            setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), model: val, resolution: nextRes, duration: nextDuration, size: nextSize } } } : x));
+                          },
+                          title: '选择视频模型 (以线上 Manifest 为准)',
+                          style: {
+                            flex: 1, background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`,
+                            color: theme.textPrimary, fontSize: '10.5px', borderRadius: '4px', padding: '2px 4px', outline: 'none', cursor: 'pointer'
+                          }
+                        }, availableVideoModels.map(m => h('option', { key: m.id, value: m.id }, `${m.name} [${m.tag || '推荐'}]`)))
+                      ]),
+
+                      // 视频提示词
+                      h('textarea', {
+                        value: itemData.prompt || '',
                         onPointerDown: (ev) => ev.stopPropagation(),
                         onChange: (e) => {
                           const val = e.target.value;
-                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), aspectRatio: val } } } : x));
+                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, prompt: val } } : x));
                         },
-                        title: '视频比例',
-                        style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
+                        placeholder: '输入该节点的视频动态与运镜提示词...',
+                        style: {
+                          height: '52px', resize: 'none', border: 'none', borderBottom: `1px solid ${theme.borderSubtle}`,
+                          padding: '6px 8px', fontSize: '11px', backgroundColor: 'transparent',
+                          color: theme.textPrimary, outline: 'none', boxSizing: 'border-box', lineHeight: 1.4
+                        }
+                      }),
+
+                      // 视频参数控制行: 时长 / 分辨率 / 比例 / 音频 / 数量
+                      h('div', {
+                        style: {
+                          padding: '4px 8px', borderBottom: `1px solid ${theme.borderSubtle}`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', overflowX: 'auto', scrollbarWidth: 'none'
+                        }
                       }, [
-                        { val: '16:9', label: '16:9 横屏' },
-                        { val: '9:16', label: '9:16 竖屏' }
-                      ].map(opt => h('option', { key: opt.val, value: opt.val }, opt.label))),
-                      h('button', {
-                        type: 'button',
-                        onClick: () => {
-                          const nextAudio = !itemData.params?.generateAudio;
-                          setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), generateAudio: nextAudio } } } : x));
-                        },
-                        title: '音频开关 (按模型能力支持)',
-                        style: {
-                          background: itemData.params?.generateAudio ? '#06b6d4' : theme.bgInput,
-                          color: itemData.params?.generateAudio ? '#ffffff' : theme.textMuted,
-                          border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', fontSize: '9.5px', padding: '1px 4px', cursor: 'pointer'
-                        }
-                      }, itemData.params?.generateAudio ? '音频:开' : '音频:关')
-                    ]),
-
-                    // 视频播放与轮询渲染区域
-                    h('div', {
-                      style: { flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', overflow: 'hidden', position: 'relative' }
-                    }, [
-                      (() => {
-                        const vState = itemData.videoState || { status: 'idle' };
-                        let videoSrc = itemData.url || '';
-                        if (videoSrc.startsWith('asset:') && canvasAssetsDriver) {
-                          try { videoSrc = canvasAssetsDriver.readAsDataUrl(videoSrc.slice(6)); } catch (_) {}
-                        }
-                        if (videoSrc) {
-                          return h('video', {
-                            src: videoSrc, controls: true, loop: true,
-                            onPointerDown: (ev) => ev.stopPropagation(),
-                            style: { width: '100%', height: '100%', objectFit: 'contain' }
-                          });
-                        }
-                        const busy = ['submitting', 'polling'].includes(vState.status);
-                        return h('div', {
-                          style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', color: theme.textMuted, fontSize: '11px', textAlign: 'center', padding: '12px' }
+                        h('select', {
+                          value: String(effectiveDuration),
+                          onPointerDown: (ev) => ev.stopPropagation(),
+                          onChange: (e) => {
+                            const val = Number(e.target.value) || 5;
+                            setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), duration: val } } } : x));
+                          },
+                          title: '生成时长',
+                          style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
+                        }, nodeDurationOpts.map(d => h('option', { key: d, value: String(d) }, `${d}秒`))),
+                        h('select', {
+                          value: effectiveResolution,
+                          onPointerDown: (ev) => ev.stopPropagation(),
+                          onChange: (e) => {
+                            const val = e.target.value;
+                            const curAspect = itemData.params?.aspectRatio || '16:9';
+                            setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), resolution: val, size: resolveNodeSize(val, curAspect) } } } : x));
+                          },
+                          title: '分辨率',
+                          style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
+                        }, nodeResolutionOpts.map(opt => h('option', { key: opt.val, value: opt.val }, opt.label))),
+                        h('select', {
+                          value: itemData.params?.aspectRatio || '16:9',
+                          onPointerDown: (ev) => ev.stopPropagation(),
+                          onChange: (e) => {
+                            const val = e.target.value;
+                            setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), aspectRatio: val, size: resolveNodeSize(effectiveResolution, val) } } } : x));
+                          },
+                          title: '视频比例',
+                          style: { background: theme.bgInput, border: `1px solid ${theme.borderSubtle}`, color: theme.textPrimary, fontSize: '10px', borderRadius: '4px', padding: '1px 3px', cursor: 'pointer' }
                         }, [
-                          busy ? h(Icon, { name: 'spinner', size: 18, style: { animation: 'wt-spin 1s linear infinite', color: '#06b6d4' } }) : null,
-                          h('div', {}, busy ? `视频生成中 (第 ${vState.attempt || 1} 次轮询 / 120秒)` : (vState.error || '连线多张图片后点击下方「生成视频」')),
-                          busy ? h('button', {
-                            type: 'button', onClick: () => handleCancelVideoItem(item.id),
-                            style: { background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', color: theme.textMuted, cursor: 'pointer', fontSize: '10px', padding: '2px 8px', marginTop: '4px' }
-                          }, '取消轮询') : null
-                        ]);
-                      })()
-                    ]),
+                          { val: '16:9', label: '16:9 横屏' },
+                          { val: '9:16', label: '9:16 竖屏' }
+                        ].map(opt => h('option', { key: opt.val, value: opt.val }, opt.label))),
+                        h('button', {
+                          type: 'button',
+                          onClick: () => {
+                            const nextAudio = !itemData.params?.generateAudio;
+                            setCanvasItems(prev => prev.map(x => x.id === item.id ? { ...x, data: { ...x.data, params: { ...(x.data?.params || {}), generateAudio: nextAudio } } } : x));
+                          },
+                          title: '音频开关 (按模型能力支持)',
+                          style: {
+                            background: itemData.params?.generateAudio ? '#06b6d4' : theme.bgInput,
+                            color: itemData.params?.generateAudio ? '#ffffff' : theme.textMuted,
+                            border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', fontSize: '9.5px', padding: '1px 4px', cursor: 'pointer'
+                          }
+                        }, itemData.params?.generateAudio ? '音频:开' : '音频:关')
+                      ]),
 
-                    // 视频底部明码标价行
-                    h('div', {
-                      style: {
-                        padding: '6px 10px', borderTop: `1px solid ${theme.borderSubtle}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'
-                      }
-                    }, [
-                      h('div', { style: { fontSize: '10px', color: theme.textMuted } }, itemData.videoState?.status === 'succeeded' ? '已完成' : '待渲染'),
-                      h('button', {
-                        type: 'button',
-                        disabled: ['submitting', 'polling'].includes(itemData.videoState?.status),
-                        onClick: () => handleGenerateVideoItem(item.id),
-                        title: `按当前参数生成视频 ${priceBadge}`,
+                      // 视频播放与轮询渲染区域
+                      h('div', {
+                        style: { flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', overflow: 'hidden', position: 'relative' }
+                      }, [
+                        (() => {
+                          const vState = itemData.videoState || { status: 'idle' };
+                          let videoSrc = itemData.url || '';
+                          if (videoSrc.startsWith('asset:') && canvasAssetsDriver) {
+                            try { videoSrc = canvasAssetsDriver.readAsDataUrl(videoSrc.slice(6)); } catch (_) {}
+                          }
+                          if (videoSrc) {
+                            return h('video', {
+                              src: videoSrc, controls: true, loop: true,
+                              onPointerDown: (ev) => ev.stopPropagation(),
+                              style: { width: '100%', height: '100%', objectFit: 'contain' }
+                            });
+                          }
+                          const busy = ['submitting', 'polling'].includes(vState.status);
+                          return h('div', {
+                            style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', color: theme.textMuted, fontSize: '11px', textAlign: 'center', padding: '12px' }
+                          }, [
+                            busy ? h(Icon, { name: 'spinner', size: 18, style: { animation: 'wt-spin 1s linear infinite', color: '#06b6d4' } }) : null,
+                            h('div', {}, busy ? `视频生成中 (第 ${vState.attempt || 1} 次轮询 / 120秒)` : (vState.error || '连线多张图片后点击下方「生成视频」')),
+                            busy ? h('button', {
+                              type: 'button', onClick: () => handleCancelVideoItem(item.id),
+                              style: { background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', color: theme.textMuted, cursor: 'pointer', fontSize: '10px', padding: '2px 8px', marginTop: '4px' }
+                            }, '取消轮询') : null
+                          ]);
+                        })()
+                      ]),
+
+                      // 视频底部明码标价行
+                      h('div', {
                         style: {
-                          backgroundColor: ['submitting', 'polling'].includes(itemData.videoState?.status) ? theme.borderSubtle : '#06b6d4',
-                          border: 'none', borderRadius: '5px', color: '#ffffff',
-                          fontSize: '11px', fontWeight: 600, padding: '4px 10px',
-                          cursor: ['submitting', 'polling'].includes(itemData.videoState?.status) ? 'not-allowed' : 'pointer'
+                          padding: '6px 10px', borderTop: `1px solid ${theme.borderSubtle}`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'
                         }
-                      }, ['submitting', 'polling'].includes(itemData.videoState?.status) ? '渲染中...' : (displaySrc ? `重跑视频 ${priceBadge}` : `生成视频 ${priceBadge}`))
-                    ])
-                  ] : [
+                      }, [
+                        h('div', { style: { fontSize: '10px', color: theme.textMuted } }, itemData.videoState?.status === 'succeeded' ? '已完成' : '待渲染'),
+                        h('button', {
+                          type: 'button',
+                          disabled: ['submitting', 'polling'].includes(itemData.videoState?.status),
+                          onClick: () => handleGenerateVideoItem(item.id),
+                          title: `按当前参数生成视频 ${priceBadge}`,
+                          style: {
+                            backgroundColor: ['submitting', 'polling'].includes(itemData.videoState?.status) ? theme.borderSubtle : '#06b6d4',
+                            border: 'none', borderRadius: '5px', color: '#ffffff',
+                            fontSize: '11px', fontWeight: 600, padding: '4px 10px',
+                            cursor: ['submitting', 'polling'].includes(itemData.videoState?.status) ? 'not-allowed' : 'pointer'
+                          }
+                        }, ['submitting', 'polling'].includes(itemData.videoState?.status) ? '渲染中...' : (displaySrc ? `重跑视频 ${priceBadge}` : `生成视频 ${priceBadge}`))
+                      ])
+                    ];
+                  })() : [
                     // =================== 文本便签节点 ===================
                     h('textarea', {
                       value: itemData.text || '',
@@ -7870,7 +7937,7 @@ $owner.Dispose()
         const CanvasWorkspace = LegacyCanvasWorkspace;
 
         // ==========================================
-        // 5.1 React Flow 漫剧画布工作台挂接 (v2.5.0)
+        // 5.1 React Flow 漫剧画布工作台挂接 (v2.5.1)
         // ==========================================
         let createReactFlowWorkspace = null;
         let initXyFlow = null;
@@ -8449,12 +8516,24 @@ $owner.Dispose()
                 setStatusMsg(`AI 正在向云端提交视频渲染任务 (${selectedModel}, ${duration}秒)...`);
                 // Grok Imagine 视频族：xAI 仅接受 480p/720p/1080p，768P 会被上游 400 拒绝
                 const isGrokVideo = /grok-imagine-video/i.test(selectedModel || '');
+                let resolution;
+                if (/minimax-h3-2k/i.test(selectedModel || '')) {
+                  resolution = '2K';
+                } else if (/minimax/i.test(selectedModel || '')) {
+                  resolution = '768P';
+                } else if (isGrokVideo) {
+                  resolution = (size && size.includes('1080')) ? '1080P' : '720P';
+                } else {
+                  resolution = (size && (size.includes('2K') || size.startsWith('2560') || size.startsWith('1440')))
+                    ? '2K'
+                    : ((size && size.includes('1080')) ? '1080P' : '768P');
+                }
                 const videoPayload = {
                   model: selectedModel || 'MiniMax-H3',
                   prompt: prompt.trim(),
                   seconds: duration || 5,
                   duration: duration || 5,
-                  resolution: (size && size.includes('1080')) ? '1080P' : (isGrokVideo ? '720P' : '768P')
+                  resolution
                 };
                 // 首帧 / 尾帧独立槽位：按模型族选择上行字段，交给 New-API 内置插件显式映射帧角色，
                 // 告别「多图数组按序猜帧」歧义 (hailuo → metadata.first/last_frame_image；xai → image + last_frame)。
@@ -8478,8 +8557,22 @@ $owner.Dispose()
                   if (frameLastUrl) videoPayload.last_frame = frameLastUrl;
                 }
 
-                const endpoint = `${BASE_URL}/v1/videos/generations`;
-                const submitRes = await fetch(endpoint, {
+                const endpoints = CanvasVideoUtils
+                  ? CanvasVideoUtils.resolveVideoEndpoints(BASE_URL, videoPayload.model)
+                  : (() => {
+                      const clean = (BASE_URL || '').trim().replace(/\/+$/, '');
+                      const v1 = clean.endsWith('/v1') ? clean : `${clean}/v1`;
+                      const isMiniMax = /minimax|hailuo/i.test(videoPayload.model || '');
+                      return isMiniMax ? {
+                        submitUrl: `${v1}/videos`,
+                        pollUrl: (id) => `${v1}/videos/${id}`
+                      } : {
+                        submitUrl: `${v1}/videos/generations`,
+                        pollUrl: (id) => `${v1}/videos/generations/${id}`
+                      };
+                    })();
+                const submitUrl = endpoints.submitUrl;
+                const submitRes = await fetch(submitUrl, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
@@ -8507,7 +8600,7 @@ $owner.Dispose()
                   const taskId = submitData.task_id || submitData.id || (submitData.data && submitData.data.id);
                   if (!taskId) throw new Error('视频接口未返回任务 ID 或直接视频链接');
 
-                  const pollUrl = `${endpoint}/${taskId}`;
+                  const pollUrl = endpoints.pollUrl(taskId);
                   const maxAttempts = 40;
                   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                     setStatusMsg(`视频正在加速渲染中 (${attempt * 3}秒 / 最长120秒)...`);

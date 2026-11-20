@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseModelList, isNonChatModel } = require('../src/parser.js');
 
-test('ModelParser - 7 款生图与视频模型必须被 isNonChatModel 准确识别并过滤', () => {
+test('ModelParser - 8 款生图与视频模型必须被 isNonChatModel 准确识别并过滤', () => {
   const nonChatIds = [
     'gpt-image-2.6-flare',
     'gpt-image-2.6-sunburst',
@@ -11,6 +11,7 @@ test('ModelParser - 7 款生图与视频模型必须被 isNonChatModel 准确识
     'gemini-imagen-3',
     'sensenova-u1.5-lite',
     'MiniMax-H3',
+    'MiniMax-H3-2K',
     'grok-imagine-video-1.5'
   ];
 

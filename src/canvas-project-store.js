@@ -12,7 +12,7 @@ const path = require('path');
 const os = require('os');
 
 const REGISTRY_VERSION = 1;
-const PROJECT_VERSION = '2.5.0';
+const PROJECT_VERSION = '2.5.1';
 const SAFE_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
 /** 过滤控制字符并限制长度，杜绝把换行/ANSI 写进注册表 */
@@ -218,7 +218,7 @@ function migrateToReactFlow(legacyProject) {
 
   return {
     ...src,
-    version: '2.5.0',
+    version: '2.5.1',
     nodes,
     edges,
     characters: chars,

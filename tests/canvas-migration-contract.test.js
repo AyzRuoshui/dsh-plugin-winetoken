@@ -105,8 +105,8 @@ test('CanvasMigrationContract - v2.2.0 旧工程打开自动无损迁移为 node
     // 打开工程触发无损自动迁移
     const loaded = store.loadProject(meta.id);
 
-    // 契约断言 1：版本升级为 2.5.0
-    assert.equal(loaded.version, '2.5.0');
+    // 契约断言 1：版本升级为 2.5.1
+    assert.equal(loaded.version, '2.5.1');
     assert.equal(loaded.version, PROJECT_VERSION);
 
     // 契约断言 2：生成了 .bak 物理备份文件，且内容与原旧工程一致
@@ -158,9 +158,9 @@ test('CanvasMigrationContract - v2.2.0 旧工程打开自动无损迁移为 node
       assert.notEqual(e.type, 'bezier', '不得出现 bezier 边');
     });
 
-    // 契约断言 5：物理回读检查，落盘文件已是 2.5.0 格式且包含 nodes
+    // 契约断言 5：物理回读检查，落盘文件已是 2.5.1 格式且包含 nodes
     const onDisk = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    assert.equal(onDisk.version, '2.5.0');
+    assert.equal(onDisk.version, '2.5.1');
     assert.ok(Array.isArray(onDisk.nodes));
     assert.equal(onDisk.nodes.length, loaded.nodes.length);
   } finally {
@@ -191,7 +191,7 @@ test('CanvasMigrationContract - 脏数据（NaN坐标、缺字段、孤立边）
 
     // 验证不崩溃，且脏数据被完全钳制/清洗
     const loaded = store.loadProject(meta.id);
-    assert.equal(loaded.version, '2.5.0');
+    assert.equal(loaded.version, '2.5.1');
     assert.ok(Array.isArray(loaded.nodes));
     assert.ok(Array.isArray(loaded.edges));
 

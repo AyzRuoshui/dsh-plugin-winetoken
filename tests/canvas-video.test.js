@@ -10,7 +10,8 @@ const {
   applyVideoState,
   isBusy,
   isTerminal,
-  buildVideoPayload
+  buildVideoPayload,
+  resolveVideoEndpoints
 } = require('../src/canvas-video.js');
 
 test('CanvasVideo - parseSubmitResponse 兼容直接 URL / task_id / data 嵌套', () => {
@@ -96,6 +97,45 @@ test('CanvasVideo - buildVideoPayload 与 StudioPage 已验证协议完全一致
   assert.equal(grokFrames.image_url, 'F');
   assert.equal(grokFrames.last_frame, 'L');
   assert.equal(grokFrames.metadata, undefined);
+
+  // MiniMax-H3-2K 分辨率强制收敛为 2K，横竖屏均合规
+  const h32kHoriz = buildVideoPayload({ model: 'MiniMax-H3-2K', size: '2560x1440' });
+  assert.equal(h32kHoriz.resolution, '2K');
+  const h32kVert = buildVideoPayload({ model: 'MiniMax-H3-2K', size: '1440x2560' });
+  assert.equal(h32kVert.resolution, '2K');
+
+  // 破坏性断言：对 MiniMax-H3-2K 即使传入 size: '1920x1080'，也必须产出 resolution: '2K'
+  const h32kDirty = buildVideoPayload({ model: 'MiniMax-H3-2K', size: '1920x1080' });
+  assert.equal(h32kDirty.resolution, '2K');
+
+  // 破坏性断言：对 MiniMax-H3 即使传入 size: '1920x1080'（旧工程脏数据），也必须强制产出 resolution: '768P'
+  const h3Dirty = buildVideoPayload({ model: 'MiniMax-H3', size: '1920x1080' });
+  assert.equal(h3Dirty.resolution, '768P');
+});
+
+test('CanvasVideo - resolveVideoEndpoints 模型端点收敛', () => {
+  const epH3 = resolveVideoEndpoints('https://www.winetoken.asia', 'MiniMax-H3');
+  assert.equal(epH3.submitUrl, 'https://www.winetoken.asia/v1/videos');
+  assert.equal(epH3.pollUrl('task_123'), 'https://www.winetoken.asia/v1/videos/task_123');
+  assert.equal(epH3.contentUrl('task_123'), 'https://www.winetoken.asia/v1/videos/task_123/content');
+  assert.equal(epH3.protocol, 'minimax-videos');
+
+  const ep2K = resolveVideoEndpoints('https://www.winetoken.asia/v1', 'MiniMax-H3-2K');
+  assert.equal(ep2K.submitUrl, 'https://www.winetoken.asia/v1/videos');
+  assert.equal(ep2K.pollUrl('task_456'), 'https://www.winetoken.asia/v1/videos/task_456');
+  assert.equal(ep2K.contentUrl('task_456'), 'https://www.winetoken.asia/v1/videos/task_456/content');
+  assert.equal(ep2K.protocol, 'minimax-videos');
+
+  const epGrok = resolveVideoEndpoints('https://www.winetoken.asia/v1/', 'grok-imagine-video-1.5');
+  assert.equal(epGrok.submitUrl, 'https://www.winetoken.asia/v1/videos/generations');
+  assert.equal(epGrok.pollUrl('task_789'), 'https://www.winetoken.asia/v1/videos/generations/task_789');
+  assert.equal(epGrok.contentUrl('task_789'), 'https://www.winetoken.asia/v1/videos/generations/task_789');
+  assert.equal(epGrok.protocol, 'standard-generations');
+
+  // 基准 URL 无论是带 /v1 还是不带 /v1 或带尾随斜杠，拼接结果均唯一标准化
+  assert.equal(resolveVideoEndpoints('http://api.test', 'MiniMax-H3').submitUrl, 'http://api.test/v1/videos');
+  assert.equal(resolveVideoEndpoints('http://api.test/v1', 'MiniMax-H3').submitUrl, 'http://api.test/v1/videos');
+  assert.equal(resolveVideoEndpoints('http://api.test/v1/', 'MiniMax-H3').submitUrl, 'http://api.test/v1/videos');
 });
 
 test('CanvasVideo - 破坏性契约: 超时/越界参数被 clamp，绝不臆造非法上游参数', () => {

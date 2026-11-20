@@ -5,7 +5,7 @@ const { buildGenerationContext, listNodes } = require('../src/canvas-nodes.js');
 
 test('CanvasEdgeInjection - 0 图汇入视频节点：纯文生视频 text_to_video', () => {
   const project = {
-    version: '2.5.0',
+    version: '2.5.1',
     nodes: [
       {
         id: 'txt1',
@@ -42,7 +42,7 @@ test('CanvasEdgeInjection - 0 图汇入视频节点：纯文生视频 text_to_vi
 
 test('CanvasEdgeInjection - 1 图汇入视频节点：单图首帧参考 single_reference', () => {
   const project = {
-    version: '2.5.0',
+    version: '2.5.1',
     nodes: [
       {
         id: 'img1',
@@ -74,7 +74,7 @@ test('CanvasEdgeInjection - 1 图汇入视频节点：单图首帧参考 single_
 
 test('CanvasEdgeInjection - 多图汇入视频节点：自动升级全能多图参考 multi_reference', () => {
   const project = {
-    version: '2.5.0',
+    version: '2.5.1',
     nodes: [
       {
         id: 'img1',
@@ -140,7 +140,7 @@ test('CanvasEdgeInjection - 多图汇入视频节点：自动升级全能多图�
 
 test('CanvasEdgeInjection - 连线类型契约：React Flow 连线类型必须为 default 而非 bezier', () => {
   const project = {
-    version: '2.5.0',
+    version: '2.5.1',
     nodes: [
       { id: 'n1', type: 'imageNode', position: { x: 0, y: 0 }, data: { url: 'a.png' } },
       { id: 'n2', type: 'panelNode', position: { x: 200, y: 0 }, data: { prompt: '分镜' } }

@@ -1,6 +1,6 @@
 // -*- coding: utf-8 -*-
 /**
- * WineToken 漫剧 AI 画布 React Flow 工作台组件 (v2.5.0)
+ * WineToken 漫剧 AI 画布 React Flow 工作台组件 (v2.5.1)
  * 基于 @xyflow/react (React Flow v12) 原生视图层，深度契合 Linear / Raycast 极简纯净工程美学
  * 1. 6 个自定义节点：characterNode / panelNode / imageNode / videoNode / textNode / groupNode
  * 2. 节点参数集照现行全量：
@@ -975,7 +975,7 @@ function VideoNode({ id, data, selected }) {
               padding: '2px 4px',
               outline: 'none'
             }
-          }, ['720P', '1080P'].map(r => h('option', { key: r, value: r }, r)))
+          }, ['720P', '1080P', '2K'].map(r => h('option', { key: r, value: r }, r)))
         ),
 
         // 比例
@@ -1260,7 +1260,7 @@ function createReactFlowWorkspace(deps = {}) {
 
   // 默认初始模板
   const defaultInitialProject = {
-    version: '2.5.0',
+    version: '2.5.1',
     nodes: [
       {
         id: 'char_chuyun',
@@ -1402,7 +1402,7 @@ function createReactFlowWorkspace(deps = {}) {
     // 持久化同步
     R.useEffect(() => {
       const proj = {
-        version: '2.5.0',
+        version: '2.5.1',
         nodes,
         edges,
         viewport,
@@ -1448,7 +1448,7 @@ function createReactFlowWorkspace(deps = {}) {
     const genContextMap = R.useMemo(() => {
       const map = {};
       if (nodeUtils && typeof nodeUtils.buildGenerationContext === 'function') {
-        const proj = { version: '2.5.0', nodes, edges };
+        const proj = { version: '2.5.1', nodes, edges };
         nodes.forEach((n) => {
           try {
             map[n.id] = nodeUtils.buildGenerationContext(proj, n.id);
