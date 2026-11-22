@@ -434,10 +434,10 @@
       id: 'MiniMax-H3',
       name: 'MiniMax H3',
       tag: '电影感',
-      pricePerSecond: 0.15,
-      vipPricePerSecond: 0.12,
-      priceText: '原¥0.15/秒 (5秒基准 ¥0.75)',
-      vipPriceText: '会员 ¥0.12/秒 (5秒基准 ¥0.60)',
+      pricePerSecond: 0.12,
+      vipPricePerSecond: 0.096,
+      priceText: '原¥0.12/秒 (5秒基准 ¥0.60)',
+      vipPriceText: '会员 ¥0.096/秒 (5秒基准 ¥0.48)',
       unit: '秒',
       durations: [
         { val: 4, label: '4 秒', tag: '轻量' },
@@ -1294,7 +1294,10 @@ $owner.Dispose()
 
   // 初始化定时轮询 (合理设为 120 秒，避免频繁请求触发限流)
   updateBilling();
-  setInterval(updateBilling, 120000);
+  const billingTimer = setInterval(updateBilling, 120000);
+  if (billingTimer && typeof billingTimer.unref === 'function') {
+    billingTimer.unref();
+  }
 
   // 窗口聚焦时按需刷新
   if (typeof window !== 'undefined') {
@@ -1313,6 +1316,223 @@ $owner.Dispose()
         document.head.appendChild(styleEl);
       }
     } catch (_) {}
+  }
+
+  // DataURL 转标准 File 对象 (用于将工坊图片挂载到 DSH 对话框 / multipart 上传)
+  function dataURLtoFile(dataurl, filename = 'artwork.png') {
+    try {
+      const arr = dataurl.split(',');
+      const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) u8arr[n] = bstr.charCodeAt(n);
+      if (typeof File !== 'undefined') {
+        return new File([u8arr], filename, { type: mime });
+      }
+      if (typeof Blob !== 'undefined') {
+        const b = new Blob([u8arr], { type: mime });
+        b.name = filename;
+        return b;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // xAI 生图比例对齐预设与算法
+  const XAI_RATIOS = [
+    { label: '1:1', v: 1 }, { label: '9:16', v: 9 / 16 }, { label: '16:9', v: 16 / 9 },
+    { label: '3:4', v: 3 / 4 }, { label: '4:3', v: 4 / 3 }, { label: '2:3', v: 2 / 3 },
+    { label: '3:2', v: 3 / 2 }, { label: '21:9', v: 21 / 9 }, { label: '5:2', v: 5 / 2 }
+  ];
+  const snapAspectRatio = (sizeStr) => {
+    try {
+      const parts = String(sizeStr).toLowerCase().split('x');
+      const w = Number(parts[0]);
+      const hgt = Number(parts[1]);
+      if (!w || !hgt) return '1:1';
+      const r = w / hgt;
+      let best = '1:1';
+      let bestDiff = Infinity;
+      for (const it of XAI_RATIOS) {
+        const d = Math.abs(Math.log(r) - Math.log(it.v));
+        if (d < bestDiff) { bestDiff = d; best = it.label; }
+      }
+      return best;
+    } catch (_) { return '1:1'; }
+  };
+
+  // 校验模型是否支持垫图改图 (支持 sensenova-* 与 gpt-image-*)
+  function validateImageModelSupport(model, hasReference) {
+    if (!hasReference) return { supported: true, protocol: 'generations' };
+    const m = String(model || '').toLowerCase();
+    if (m.includes('sensenova')) return { supported: true, protocol: 'sensenova-edits' };
+    if (m.includes('gpt-image')) return { supported: true, protocol: 'openai-multipart-edits' };
+    return {
+      supported: false,
+      error: '当前模型不支持垫图改图，请切换 sensenova 或 gpt-image 模型，或清空参考图'
+    };
+  }
+
+  // 构建生图 / 垫图改图标准请求 (严格按协议路由，杜绝往 generations 塞图)
+  function buildImageRequest({
+    baseUrl = BASE_URL,
+    apiKey,
+    model,
+    prompt,
+    size,
+    n = 1,
+    referenceSlots = []
+  }) {
+    const hasRef = Array.isArray(referenceSlots) && referenceSlots.length > 0;
+    const cleanBase = (baseUrl || '').trim().replace(/\/+$/, '');
+
+    if (hasRef) {
+      const check = validateImageModelSupport(model, true);
+      if (!check.supported) {
+        throw new Error(check.error);
+      }
+
+      // 1. 商汤 sensenova-*: JSON 格式 edits (POST /v1/images/edits, Content-Type: application/json, watermark=false)
+      if (check.protocol === 'sensenova-edits') {
+        const images = referenceSlots.slice(0, 5).map(s => {
+          const imgUrl = (typeof s === 'string') ? s : (s.dataUrl || s.url || '');
+          return { image_url: imgUrl };
+        });
+        const editPayload = {
+          model,
+          prompt,
+          images,
+          size: size || 'auto',
+          n: n || 1,
+          response_format: 'url',
+          watermark: false
+        };
+        return {
+          url: `${cleanBase}/v1/images/edits`,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { 'Authorization': 'Bearer ' + apiKey } : {})
+          },
+          body: JSON.stringify(editPayload),
+          isMultipart: false,
+          payload: editPayload
+        };
+      }
+
+      // 2. 环灵 gpt-image-*: OpenAI 标准 multipart/form-data edits
+      if (check.protocol === 'openai-multipart-edits') {
+        const formData = new FormData();
+        formData.append('model', model);
+        formData.append('prompt', prompt);
+        formData.append('n', String(n || 1));
+        if (size) formData.append('size', size);
+        formData.append('response_format', 'url');
+
+        // 多张时按 OpenAI 规范首张为主图并注入重复 image 字段 (上限 5 张)
+        referenceSlots.slice(0, 5).forEach((slot, i) => {
+          const rawUrl = (typeof slot === 'string') ? slot : (slot.dataUrl || slot.url || '');
+          if (rawUrl && rawUrl.startsWith('data:')) {
+            const file = dataURLtoFile(rawUrl, `reference_${i + 1}.png`);
+            if (file) {
+              formData.append('image', file, `reference_${i + 1}.png`);
+            }
+          } else if (rawUrl) {
+            formData.append('image_url', rawUrl);
+          }
+        });
+
+        return {
+          url: `${cleanBase}/v1/images/edits`,
+          method: 'POST',
+          headers: {
+            ...(apiKey ? { 'Authorization': 'Bearer ' + apiKey } : {})
+          },
+          body: formData,
+          isMultipart: true
+        };
+      }
+    }
+
+    // 3. 无垫图: 纯文生图走 POST /v1/images/generations (坚决彻底剔除任何图像字段)
+    const genPayload = {
+      model,
+      prompt,
+      n: n || 1,
+      size,
+      response_format: 'url'
+    };
+    if (/grok-imagine-image/i.test(model)) {
+      delete genPayload.size;
+      genPayload.aspect_ratio = snapAspectRatio(size);
+    }
+
+    return {
+      url: `${cleanBase}/v1/images/generations`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { 'Authorization': 'Bearer ' + apiKey } : {})
+      },
+      body: JSON.stringify(genPayload),
+      isMultipart: false,
+      payload: genPayload
+    };
+  }
+
+  // 发送生图 / 垫图请求
+  async function sendImageRequest({
+    baseUrl = BASE_URL,
+    apiKey,
+    model,
+    prompt,
+    size,
+    n = 1,
+    referenceSlots = [],
+    fetchFn = (typeof fetch !== 'undefined' ? fetch : null)
+  }) {
+    if (!fetchFn) throw new Error('全局 fetch 未就绪');
+    const req = buildImageRequest({ baseUrl, apiKey, model, prompt, size, n, referenceSlots });
+    const res = await fetchFn(req.url, {
+      method: req.method,
+      headers: req.headers,
+      body: req.body
+    });
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error?.message || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  // 统一创建工坊创作历史项 (强制注入唯一 ID 与 createdAt，杜绝串图)
+  function createStudioHistoryItem({ url, prompt, model, size, hasRef, type = 'image', duration }) {
+    const prefix = type === 'video' ? 'vid_' : 'img_';
+    return {
+      id: prefix + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      createdAt: Date.now(),
+      url,
+      prompt: (prompt || '').trim(),
+      model,
+      size,
+      hasRef: Boolean(hasRef),
+      ...(type === 'video' ? { type: 'video', duration } : {}),
+      time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    };
+  }
+
+  // 纯函数更新历史条目的本地物理路径 (严格按 ID 匹配，杜绝 undefined===undefined 全量串线覆盖)
+  function updateHistoryLocalPath(historyList, targetItem, localPath) {
+    if (!Array.isArray(historyList) || !targetItem) return historyList || [];
+    return historyList.map(x => {
+      const isMatch = (targetItem.id && x.id)
+        ? (x.id === targetItem.id)
+        : (Boolean(targetItem.url && x.url) && x.url === targetItem.url);
+      return isMatch ? { ...x, localPath } : x;
+    });
   }
 
   // 官方标准 ModuleLoader 注册
@@ -1480,21 +1700,6 @@ $owner.Dispose()
             };
           }, [query]);
           return isNarrow;
-        }
-
-        // DataURL 转标准 File 对象 (用于将工坊图片挂载到 DSH 对话框)
-        function dataURLtoFile(dataurl, filename = 'artwork.png') {
-          try {
-            const arr = dataurl.split(',');
-            const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
-            const bstr = atob(arr[1]);
-            let n = bstr.length;
-            const u8arr = new Uint8Array(n);
-            while (n--) u8arr[n] = bstr.charCodeAt(n);
-            return new File([u8arr], filename, { type: mime });
-          } catch (_) {
-            return null;
-          }
         }
 
         // 极简现代单色 SVG 图标集 (彻底去表情，全量采用 16px/18px 矢量)
@@ -4889,18 +5094,8 @@ $owner.Dispose()
               if (!apiKey) throw new Error('未检测到 API Key，请先点击顶栏钥匙图标输入');
 
               const chosenModel = genContext.params.model || canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
-              const payload = {
-                model: chosenModel,
-                prompt: fullPrompt,
-                size: reqSize,
-                n: 1
-              };
               // 参考图优先级: 连到分镜的上游节点 > 角色定妆照 (对齐上游 referenceImages 语义)
               const primaryRef = upstreamRefs.length ? resolveRef(upstreamRefs[0]) : (char && char.avatar ? char.avatar : '');
-              if (primaryRef) {
-                payload.image = primaryRef;
-                payload.image_url = primaryRef;
-              }
 
               // WAL 预写日志: 发包前先落盘任务存根，切 Tab / F5 后仍可水合 (工程铁律: 资产绝不丢)
               const walJob = CanvasJobQueueSingleton ? CanvasJobQueueSingleton.createJob({
@@ -4908,22 +5103,16 @@ $owner.Dispose()
                 characterId: target.characterId || null
               }) : null;
 
-              // 优先使用当前激活的限免 4K 模型
-              const res = await fetch(`${BASE_URL}/v1/images/generations`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify(payload)
+              const refSlots = primaryRef ? [{ dataUrl: primaryRef }] : [];
+              const data = await sendImageRequest({
+                baseUrl: BASE_URL,
+                apiKey,
+                model: chosenModel,
+                prompt: fullPrompt,
+                size: reqSize,
+                n: 1,
+                referenceSlots: refSlots
               });
-
-              if (!res.ok) {
-                const errJson = await res.json().catch(() => ({}));
-                throw new Error(errJson.error?.message || `HTTP ${res.status}`);
-              }
-
-              const data = await res.json();
               const url = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : '');
               if (!url) throw new Error('接口未返回有效图像');
               if (walJob && CanvasJobQueueSingleton) CanvasJobQueueSingleton.completeJob(walJob.id, url);
@@ -4985,29 +5174,22 @@ $owner.Dispose()
                 size = ratioSizeMap[ratio] || '1792x1024';
               }
               const count = Math.max(1, Math.min(4, Number(item.data?.params?.count) || 1));
-              const payload = {
-                model: chosenModel,
-                prompt,
-                size,
-                n: count
-              };
-              if (primaryRef) { payload.image = primaryRef; payload.image_url = primaryRef; }
 
               // WAL 任务队列记录
               walJob = CanvasJobQueueSingleton ? CanvasJobQueueSingleton.createJob({
                 panelId: itemId, prompt, model: chosenModel, size
               }) : null;
 
-              const res = await fetch(`${BASE_URL}/v1/images/generations`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                body: JSON.stringify(payload)
+              const refSlots = primaryRef ? [{ dataUrl: primaryRef }] : [];
+              const data = await sendImageRequest({
+                baseUrl: BASE_URL,
+                apiKey,
+                model: chosenModel,
+                prompt,
+                size,
+                n: count,
+                referenceSlots: refSlots
               });
-              if (!res.ok) {
-                const errJson = await res.json().catch(() => ({}));
-                throw new Error(errJson.error?.message || `HTTP ${res.status}`);
-              }
-              const data = await res.json();
               const url = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : '');
               if (!url) throw new Error('接口未返回有效图像');
               if (walJob && CanvasJobQueueSingleton) CanvasJobQueueSingleton.completeJob(walJob.id, url);
@@ -8033,7 +8215,7 @@ $owner.Dispose()
                   const map = new Map();
                   diskList.forEach(item => map.set(item.id || item.url, item));
                   localList.forEach(item => map.set(item.id || item.url, item));
-                  return Array.from(map.values()).sort((a, b) => (new Date(b.createdAt || 0) - new Date(a.createdAt || 0))).slice(0, 60);
+                  return Array.from(map.values()).sort((a, b) => ((b.createdAt || 0) - (a.createdAt || 0))).slice(0, 60);
                 }
               }
             } catch (_) {}
@@ -8372,28 +8554,6 @@ $owner.Dispose()
           // 发起生图 / 生视频请求 (彻底根除 invalid n 并支持并发自动分批发包)
           // Grok Imagine 协议适配：xAI 生图原生协议没有 size 参数（用固定档 aspect_ratio），
           // 视频 resolution 仅接受 480p/720p/1080p —— 非法参数会被上游以 400 拒绝
-          const XAI_RATIOS = [
-            { label: '1:1', v: 1 }, { label: '9:16', v: 9 / 16 }, { label: '16:9', v: 16 / 9 },
-            { label: '3:4', v: 3 / 4 }, { label: '4:3', v: 4 / 3 }, { label: '2:3', v: 2 / 3 },
-            { label: '3:2', v: 3 / 2 }, { label: '21:9', v: 21 / 9 }, { label: '5:2', v: 5 / 2 }
-          ];
-          const snapAspectRatio = (sizeStr) => {
-            try {
-              const parts = String(sizeStr).toLowerCase().split('x');
-              const w = Number(parts[0]);
-              const hgt = Number(parts[1]);
-              if (!w || !hgt) return '1:1';
-              const r = w / hgt;
-              let best = '1:1';
-              let bestDiff = Infinity;
-              for (const it of XAI_RATIOS) {
-                const d = Math.abs(Math.log(r) - Math.log(it.v));
-                if (d < bestDiff) { bestDiff = d; best = it.label; }
-              }
-              return best;
-            } catch (_) { return '1:1'; }
-          };
-
           const handleGenerate = async () => {
             const hasVideoFrame = Boolean((firstFrame && firstFrame.dataUrl) || (lastFrame && lastFrame.dataUrl));
             if (!prompt.trim() && referenceSlots.length === 0 && (mode !== 'video' || !hasVideoFrame)) {
@@ -8404,6 +8564,15 @@ $owner.Dispose()
             if (!key) {
               alert('未检测到 API Key，请在上方或下方状态栏中配置');
               return;
+            }
+
+            // 垫图改图模型支持性前置拦截: 当前仅 sensenova 与 gpt-image 支持 edits
+            if (mode === 'image' && referenceSlots.length > 0) {
+              const check = validateImageModelSupport(selectedModel, true);
+              if (!check.supported) {
+                alert(check.error);
+                return;
+              }
             }
 
             setIsGenerating(true);
@@ -8422,37 +8591,15 @@ $owner.Dispose()
                 const singleNOnly = Boolean(currentImgModel.singleNOnly);
 
                 const requestSingleBatch = async (nVal) => {
-                  const payload = {
+                  return await sendImageRequest({
+                    baseUrl: BASE_URL,
+                    apiKey: key,
                     model: selectedModel,
                     prompt: finalPrompt,
-                    n: nVal,
                     size: size,
-                    response_format: 'url'
-                  };
-                  // Grok Imagine 生图族：xAI 原生协议没有 size 参数，改发最近档位 aspect_ratio，杜绝 400
-                  if (/grok-imagine-image/i.test(selectedModel)) {
-                    delete payload.size;
-                    payload.aspect_ratio = snapAspectRatio(size);
-                  }
-                  if (referenceSlots.length > 0) {
-                    payload.image = referenceSlots[0].dataUrl;
-                    payload.image_url = referenceSlots[0].dataUrl;
-                    payload.reference_image = referenceSlots[0].dataUrl;
-                    payload.images = referenceSlots.map(s => s.dataUrl);
-                  }
-                  const res = await fetch(BASE_URL + '/v1/images/generations', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': 'Bearer ' + key
-                    },
-                    body: JSON.stringify(payload)
+                    n: nVal,
+                    referenceSlots: referenceSlots
                   });
-                  if (!res.ok) {
-                    const errJson = await res.json().catch(() => ({}));
-                    throw new Error(errJson.error?.message || `HTTP ${res.status}`);
-                  }
-                  return await res.json();
                 };
 
                 // 前置可用额度与余额校验，杜绝透支双花 (BILLING-03)
@@ -8486,13 +8633,13 @@ $owner.Dispose()
                 }
 
                 if (generatedData.length > 0) {
-                  const newItems = generatedData.map(d => ({
+                  const newItems = generatedData.map(d => createStudioHistoryItem({
                     url: d.url || (d.b64_json ? 'data:image/png;base64,' + d.b64_json : ''),
                     prompt: prompt.trim(),
                     model: selectedModel,
                     size: size,
                     hasRef: referenceSlots.length > 0,
-                    time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                    type: 'image'
                   })).filter(x => !!x.url);
 
                   setResultImages(newItems);
@@ -8630,15 +8777,14 @@ $owner.Dispose()
                   throw new Error('视频生成已提交但轮询超时，稍后可在创作工坊历史中核对');
                 }
 
-                const videoItem = {
+                const videoItem = createStudioHistoryItem({
                   url: finalVideoUrl,
                   prompt: prompt.trim(),
                   model: selectedModel,
                   size: size,
                   duration: duration,
-                  type: 'video',
-                  time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                };
+                  type: 'video'
+                });
 
                 setResultImages([videoItem]);
                 setActiveImage(videoItem);
@@ -8678,7 +8824,7 @@ $owner.Dispose()
               const localPath = await WineTokenFileUtil.saveMedia(item.url, fileName, item.type);
               item.localPath = localPath;
               setHistory(prev => {
-                const next = prev.map(x => (x.id === item.id || x.url === item.url) ? { ...x, localPath } : x);
+                const next = updateHistoryLocalPath(prev, item, localPath);
                 try {
                   localStorage.setItem('WINETOKEN_STUDIO_HISTORY', JSON.stringify(next));
                   const fs = require('fs');
@@ -8731,7 +8877,7 @@ $owner.Dispose()
               const localPath = await WineTokenFileUtil.writeMediaToFile(item.url, targetPath);
               item.localPath = localPath;
               setHistory(prev => {
-                const next = prev.map(x => (x.id === item.id || x.url === item.url) ? { ...x, localPath } : x);
+                const next = updateHistoryLocalPath(prev, item, localPath);
                 try {
                   localStorage.setItem('WINETOKEN_STUDIO_HISTORY', JSON.stringify(next));
                   const fs = require('fs');
@@ -10551,7 +10697,16 @@ $owner.Dispose()
   }
 
   if (typeof module !== 'undefined') {
-    module.exports = { updateBilling };
+    module.exports = {
+      updateBilling,
+      validateImageModelSupport,
+      buildImageRequest,
+      sendImageRequest,
+      createStudioHistoryItem,
+      updateHistoryLocalPath,
+      dataURLtoFile,
+      snapAspectRatio
+    };
   }
 })();
 

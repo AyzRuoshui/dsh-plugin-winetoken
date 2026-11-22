@@ -164,6 +164,14 @@ async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_
     payload.aspect_ratio = snapAspectRatio(finalSize);
   }
 
+  const cleanBase = baseUrl.replace(/\/+$/, '');
+  let endpoint = `${cleanBase}/images/generations`;
+  let reqBody = payload;
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`
+  };
+
   if (image_url) {
     let finalImageUrl = image_url;
     // 本地垫图文件自动转 Base64 管道 (TOOL-02)
@@ -176,17 +184,27 @@ async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_
         console.warn('[WineToken Tool] 读取本地垫图失败，降级使用原始路径:', err.message);
       }
     }
-    payload.image_url = finalImageUrl;
+    if (/sensenova/i.test(payload.model)) {
+      endpoint = `${cleanBase}/images/edits`;
+      reqBody = {
+        model: payload.model,
+        prompt: payload.prompt,
+        images: [{ image_url: finalImageUrl }],
+        size: finalSize,
+        n: 1,
+        response_format: 'url',
+        watermark: false
+      };
+    } else {
+      endpoint = `${cleanBase}/images/generations`;
+      reqBody = payload;
+    }
   }
 
-  const endpoint = baseUrl.endsWith('/') ? `${baseUrl}images/generations` : `${baseUrl}/images/generations`;
   const res = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(payload)
+    headers,
+    body: JSON.stringify(reqBody)
   });
 
   if (!res.ok) {
