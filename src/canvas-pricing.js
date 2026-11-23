@@ -61,11 +61,9 @@ function calculateImagePrice(model, options = {}) {
   if (isSuper || isSvip) {
     if (vipPrice !== null) effectiveUnitPrice = vipPrice;
   } else if (isVip) {
-    if (vipPrice !== null) {
-      effectiveUnitPrice = vipPrice;
-    } else {
-      effectiveUnitPrice = Number((basePrice * 0.9).toFixed(2));
-    }
+    // vipCost/vipPrice 是 8 折价（SVIP/Super 档），VIP 实扣 9 折（New API GroupRatio vip=0.9），
+    // 不能拿 8 折价给 VIP 显示，必须按原价现算 9 折。
+    effectiveUnitPrice = Number((basePrice * 0.9).toFixed(2));
   }
 
   const totalPrice = Number((effectiveUnitPrice * count).toFixed(2));
@@ -120,11 +118,8 @@ function calculateVideoPrice(model, options = {}) {
   if (isSuper || isSvip) {
     if (vipSecPrice !== null) effectiveSecPrice = vipSecPrice;
   } else if (isVip) {
-    if (vipSecPrice !== null) {
-      effectiveSecPrice = vipSecPrice;
-    } else {
-      effectiveSecPrice = Number((baseSecPrice * 0.9).toFixed(2));
-    }
+    // 同生图：vipCostPerSec 是 8 折价（SVIP/Super 档），VIP 实扣 9 折，按原价现算。
+    effectiveSecPrice = Number((baseSecPrice * 0.9).toFixed(3));
   }
 
   const totalPrice = Number((effectiveSecPrice * duration).toFixed(2));

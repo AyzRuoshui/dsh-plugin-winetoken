@@ -371,8 +371,8 @@
       id: 'gpt-image-2.6-flare',
       name: 'GPT-Image 2.6 Flare',
       tag: '超快极速',
-      price: 0.30,
-      vipPrice: 0.24,
+      price: 0.20,
+      vipPrice: 0.16,
       enabled: true,
       singleNOnly: true,
       unit: '张',
@@ -383,8 +383,8 @@
       id: 'gpt-image-2.6-sunburst',
       name: 'GPT-Image 2.6 Sunburst',
       tag: '细腻逼真',
-      price: 0.40,
-      vipPrice: 0.32,
+      price: 0.30,
+      vipPrice: 0.24,
       enabled: true,
       singleNOnly: true,
       unit: '张',
@@ -6005,7 +6005,7 @@ $owner.Dispose()
                   } else if (isSvip && m.vipPrice != null) {
                     priceText = `${isSuper ? 'SUPER' : 'SVIP'} ¥${formatCNY(m.vipPrice)}/张`;
                   } else if (isVip) {
-                    const vipP = m.vipPrice != null ? m.vipPrice : (m.price != null ? Number((m.price * 0.9).toFixed(2)) : null);
+                    const vipP = m.price != null ? Number((m.price * 0.9).toFixed(2)) : (m.vipPrice != null ? m.vipPrice : null);
                     priceText = vipP != null ? `VIP ¥${formatCNY(vipP)}/张` : (m.vipPriceText || '');
                   } else if (m.price != null) {
                     priceText = `¥${formatCNY(m.price)}/张`;

@@ -137,6 +137,11 @@ test('CanvasPricing - 生图明码标价：限免、原价、VIP 折扣、多张
   assert.equal(rVip.unitPrice, 0.90);
   assert.equal(rVip.totalPrice, 0.90);
 
+  // VIP 用户有 vipPrice（8 折价）时仍按 9 折算，不能拿 8 折价显示 (0.30 * 0.9 = 0.27)
+  const rVipWithField = calculateImagePrice(paidModel, { count: 1, isVip: true });
+  assert.equal(rVipWithField.unitPrice, 0.27);
+  assert.equal(rVipWithField.totalPrice, 0.27);
+
   // 脏输入/无价格模型：返回空，绝不臆造数字
   const rMissing = calculateImagePrice({ id: 'unknown-model' });
   assert.equal(rMissing.priceText, '');
@@ -159,10 +164,15 @@ test('CanvasPricing - 视频明码标价：时长联动、单秒单价、VIP 费
   assert.equal(rNormal.priceText, '¥0.75');
   assert.equal(formatPriceBadge(rNormal.priceText), '[¥0.75]');
 
-  // VIP 10 秒: 10 * 0.12 = 1.20
+  // VIP 10 秒: 9 折 10 * (0.15 * 0.9) = 1.35（vipPricePerSecond 0.12 是 8 折价，VIP 不能用）
   const rVip = calculateVideoPrice(videoModel, { duration: 10, isVip: true });
-  assert.equal(rVip.totalPrice, 1.20);
-  assert.equal(rVip.priceText, '¥1.20');
+  assert.equal(rVip.totalPrice, 1.35);
+  assert.equal(rVip.priceText, '¥1.35');
+
+  // SVIP 10 秒: 8 折 10 * 0.12 = 1.20
+  const rSvip = calculateVideoPrice(videoModel, { duration: 10, isSvip: true });
+  assert.equal(rSvip.totalPrice, 1.20);
+  assert.equal(rSvip.priceText, '¥1.20');
 
   // 脏模型返回空
   assert.equal(calculateVideoPrice(null).available, false);
