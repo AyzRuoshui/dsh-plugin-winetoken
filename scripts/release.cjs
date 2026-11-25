@@ -61,22 +61,22 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 修复 cordis.patch.yml 空列表写入损坏与安全备份`;
+  const releaseTitle = `Release ${version} - 离线基线对齐线上 Manifest、模型名称尾部括号清洗与 xhigh/ultra 档位透传`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-本版为稳定性修复版本，解决特定场景下 \`cordis.patch.yml\` 被追加损坏的问题，并增加覆写前一次性原始备份机制。
+本版将离线基线阵容与规格库全面对齐线上 Manifest，并在补丁写入与同步链路引入模型名称防御性清洗及扩展思考档位透传支持。
 
-### 1. 修复：空补丁文件 \`[]\` 不再损坏 cordis.patch.yml
-- 当 \`cordis.patch.yml\` 仅包含空流式列表 \`[]\`（或仅含注释与 \`[]\` / \`[ ]\`）时，合并引擎现将其识别为空文档并生成标准根级块列表，不再于 \`[]\` 下方错误追加 \`- id: llm-pi-ai\` 导致 YAML 损坏；
-- 合法的块级序列文件保持原有增量合并行为，完整保留其他 provider 与用户注释并保持幂等。
+### 1. 离线基线与规格库全面对齐线上 Manifest (共 21 款模型)
+- **名称规范化**：统一对齐线上 Manifest 展示名，移除冗余厂商前缀与尾部括号修饰词（含 \`cordis.patch.yml\`、\`getBaselineModels\` 与 \`EXACT_MODEL_SPECS\`）；
+- **下架清理**：移除已下架的 \`kimi-k2.8-preview\`、\`step-5-preview\`、\`gemini-3.8-flash\`；
+- **新增模型**：加入 \`gpt-5.6-luna\`、\`gpt-5.6-terra\`、\`gpt-6-luna\`（272K 上下文 / 128K 输出 / 视觉多模态）与 \`mimo-v2.6-flash\`（200K 上下文 / 32K 输出 / 纯文本），并完整保留 DeepSeek 384K 输出规格。
 
-### 2. 防护：不支持的补丁文件结构原样保留并告警
-- 在未找到顶层 \`- id: llm-pi-ai\` 需走文末追加分支时，仅当首个有效行以 \`- \` 开头（块级序列根节点）才执行追加；
-- 对于映射根节点、流式映射、非空流式列表、标量、缩进序列或多文档 \`---\` 等不支持格式，保持原文件内容完全不变并输出 \`console.warn\` 告警。
+### 2. 防御性清洗器：写入补丁前自动剥离尾部括号描述符
+- 在 \`serializeProviderYaml\`（\`src/patch-engine.js\`）及 \`buildManifestModels\`（实时 Manifest 同步链路）中统一剥离模型显示名称末尾的 ASCII \`(...)\` 与全角 \`（...）\` 修饰符（含连续或空白分隔的多个括号）；
+- 若剥离后导致名称为空，自动回退保留原始名称，防止异常空白显示名写入配置。
 
-### 3. 保护：覆写前一次性生成 cordis.patch.yml.bak 备份
-- \`updateCordisPatch\` 在覆写已存在且内容实际发生变更的 \`cordis.patch.yml\` 之前，若同目录尚无 \`cordis.patch.yml.bak\`，自动将原有内容保存为一次性备份；
-- 后续定时同步不会覆盖已有备份；文件尚不存在或内容未发生变更时不创建备份。
+### 3. 扩展思考档位透传：支持 \`xhigh\` 与 \`ultra\`
+- 同步白名单 \`EFFORT_KEYS\` 新增 \`xhigh\` 与 \`ultra\`，基线解析同步兼容，确保 \`gpt-5.6-terra\` 的 \`ultra\` 及 \`gpt-5.6-luna\` / \`gpt-6-luna\` 的 \`xhigh\` 思考档位在在线同步与离线基线中完整保留。
 
 ### 4. 工程状态
 - 自动化测试全部通过；零 Emoji 工业风；零新增运行依赖。

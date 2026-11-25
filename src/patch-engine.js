@@ -7,6 +7,24 @@ const fs = require('fs');
 const path = require('path');
 
 /**
+ * 剥离模型显示名称末尾的括号修饰词 (ASCII (...) 与全角 （...），支持连续/空白分隔多个)；
+ * 若剥离后为空串则保留原名。
+ */
+function sanitizeModelDisplayName(name, fallback = '') {
+  const raw = typeof name === 'string' && name.length > 0 ? name : (typeof fallback === 'string' ? fallback : '');
+  if (!raw) return '';
+  let stripped = raw.trim();
+  while (stripped) {
+    const next = stripped
+      .replace(/(?:\((?:[^()]|\([^()]*\))*\)|（(?:[^（）]|（[^（）]*）)*）)$/, '')
+      .trim();
+    if (next === stripped) break;
+    stripped = next;
+  }
+  return stripped || raw;
+}
+
+/**
  * 将 Provider 配置对象序列化为标准 YAML 文本块 (纯原生，无外部依赖)
  */
 function serializeProviderYaml(providerConfig, indent = '      ') {
@@ -26,8 +44,9 @@ function serializeProviderYaml(providerConfig, indent = '      ') {
   const models = Array.isArray(providerConfig.models) ? providerConfig.models : [];
 
   for (const m of models) {
+    const safeName = sanitizeModelDisplayName(m.name, m.id).replace(/"/g, '\\"');
     lines.push(`${mIndent}- id: ${m.id}`);
-    lines.push(`${mIndent}  name: "${(m.name || m.id).replace(/"/g, '\\"')}"`);
+    lines.push(`${mIndent}  name: "${safeName}"`);
     if (m.contextWindow) lines.push(`${mIndent}  contextWindow: ${m.contextWindow}`);
     if (m.maxTokens) lines.push(`${mIndent}  maxTokens: ${m.maxTokens}`);
 
@@ -213,7 +232,7 @@ function mergeProviderIntoPatchContent(content, providerConfig) {
 }
 
 /**
- * 从当前插件自带的 cordis.patch.yml 中提取 20 个静态基线模型
+ * 从当前插件自带的 cordis.patch.yml 中提取 21 个静态基线模型
  */
 function getBaselineModels() {
   const bundlePatchPath = path.join(__dirname, '..', 'cordis.patch.yml');
@@ -226,6 +245,7 @@ function getBaselineModels() {
       const models = [];
       const finalizeModel = (m) => {
         if (!m) return;
+        m.name = sanitizeModelDisplayName(m.name, m.id);
         if (m.reasoningEfforts && Object.keys(m.reasoningEfforts).length === 0) {
           m.reasoningEfforts = { low: 'low', medium: 'medium', high: 'high' };
         }
@@ -271,7 +291,7 @@ function getBaselineModels() {
               continue;
             }
 
-            const matchEffort = line.match(/^[ \t]+(low|medium|high|max|minimal):\s*([^\r\n#]+)/);
+            const matchEffort = line.match(/^[ \t]+(low|medium|high|xhigh|max|ultra|minimal):\s*([^\r\n#]+)/);
             if (matchEffort && currentModel.reasoningEfforts) {
               currentModel.reasoningEfforts[matchEffort[1]] = matchEffort[2].trim();
             }
@@ -288,29 +308,31 @@ function getBaselineModels() {
 
   // 内存硬编码终极兜底
   return [
-    { id: 'grok-4.7', name: 'xAI Grok 4.7 (全模态推理)', contextWindow: 500000, maxTokens: 16384, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'minimax-m3.1-flash', name: 'MiniMax M3.1 Flash (高速多模态)', contextWindow: 1048576, maxTokens: 32768, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'kimi-k2.8-preview', name: '月之暗面 Kimi K2.8 Preview (多模态)', contextWindow: 1048576, maxTokens: 16384, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'claude-opus-5-5', name: 'Claude 5.5 Opus (旗舰长文本)', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'claude-fable-5-2', name: 'Claude 5.2 Fable (全能前沿推理)', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'glm-5.2', name: '智谱 GLM-5.2 (夜间免费/推理)', contextWindow: 1048576, maxTokens: 131072, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'sensenova-6.8-flash', name: '商汤日日新 6.8 Flash (多模态推理)', contextWindow: 262144, maxTokens: 65536, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'glm-5.3', name: '智谱 GLM-5.3 (旗舰推理)', contextWindow: 1048576, maxTokens: 131072, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash (多模态推理)', contextWindow: 1048576, maxTokens: 393216, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', max: 'max' } },
-    { id: 'gpt-6.2-astra', name: 'GPT-6.2 Astra (全模态推理)', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'kimi-k3.1-pro', name: '月之暗面 Kimi K3.1 Pro (多模态推理)', contextWindow: 1048576, maxTokens: 32768, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'mimo-v2.6-pro', name: '小米 MiMo 2.6 Pro (全模态推理)', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro (旗舰推理)', contextWindow: 1048576, maxTokens: 393216, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', max: 'max' } },
-    { id: 'glm-5.3-flash', name: '智谱 GLM-5.3 Flash (多模态推理)', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'step-5-preview', name: '阶跃星辰 Step-5 Preview (全模态基模)', contextWindow: 1048576, maxTokens: 65536, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol (严谨逻辑推理)', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'gemini-3.8-flash', name: 'Google Gemini 3.8 Flash (多模态推理)', contextWindow: 1048576, maxTokens: 65536, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'hy4', name: '腾讯混元 Hy4 (旗舰全模态)', contextWindow: 1048576, maxTokens: 65536, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'hy4-flash', name: '腾讯混元 Hy4 Flash (限免/多模态推理)', contextWindow: 1048576, maxTokens: 65536, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } }
+    { id: 'claude-fable-5-2', name: 'Claude 5.2 Fable', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'claude-opus-5-5', name: 'Claude 5.5 Opus', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', contextWindow: 1048576, maxTokens: 393216, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', max: 'max' } },
+    { id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', contextWindow: 1048576, maxTokens: 393216, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', max: 'max' } },
+    { id: 'glm-5.2', name: 'GLM-5.2', contextWindow: 1048576, maxTokens: 131072, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 1048576, maxTokens: 131072, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'glm-5.3-flash', name: 'GLM-5.3 Flash', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', contextWindow: 272000, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' } },
+    { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', contextWindow: 272000, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max', ultra: 'ultra' } },
+    { id: 'gpt-6-luna', name: 'GPT-6 Luna', contextWindow: 272000, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' } },
+    { id: 'gpt-6.2-astra', name: 'GPT-6.2 Astra', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'gpt-6.2-sol', name: 'GPT-6.2 Sol', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'grok-4.7', name: 'Grok 4.7', contextWindow: 500000, maxTokens: 16384, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'hy4', name: '腾讯混元 Hy4', contextWindow: 1048576, maxTokens: 65536, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'hy4-flash', name: '腾讯混元 Hy4 Flash', contextWindow: 1048576, maxTokens: 65536, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro', contextWindow: 1048576, maxTokens: 32768, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'mimo-v2.6-flash', name: 'MiMo V2.6 Flash', contextWindow: 200000, maxTokens: 32768, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'mimo-v2.6-pro', name: 'MiMo V2.6 Pro', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'minimax-m3.1-flash', name: 'MiniMax M3.1 Flash', contextWindow: 1048576, maxTokens: 32768, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'sensenova-6.8-flash', name: 'SenseNova 6.8 Flash', contextWindow: 262144, maxTokens: 65536, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } }
   ];
 }
 
 module.exports = {
+  sanitizeModelDisplayName,
   serializeProviderYaml,
   mergeProviderIntoPatchContent,
   getBaselineModels

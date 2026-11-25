@@ -1,6 +1,8 @@
 // -*- coding: utf-8 -*-
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   mergeProviderIntoPatchContent,
   getBaselineModels,
@@ -72,26 +74,56 @@ test('PatchEngine - 绝对幂等性测试 (内容一致时不产生字符变动)
   assert.equal(second, initial, '重复合并相同配置时必须完全幂等，不改变任何文本');
 });
 
-test('PatchEngine - 基线模型读取完整性与 2026-11-17 上架阵容契约', () => {
+test('PatchEngine - 基线模型读取完整性与 v2.5.5 线上对齐阵容契约', () => {
   const models = getBaselineModels();
   assert.ok(Array.isArray(models), '基线模型必须为数组');
-  assert.equal(models.length, 19, '基线模型数量必须严格为 19 个');
+  assert.equal(models.length, 20, '基线模型数量必须严格为 20 个');
+
+  const expectedNames = {
+    'claude-fable-5-2': 'Claude 5.2 Fable',
+    'claude-opus-5-5': 'Claude 5.5 Opus',
+    'deepseek-v4-pro': 'DeepSeek V4 Pro',
+    'deepseek-v4.1-flash': 'DeepSeek V4.1 Flash',
+    'glm-5.2': 'GLM-5.2',
+    'glm-5.3': 'GLM-5.3',
+    'glm-5.3-flash': 'GLM-5.3 Flash',
+    'gpt-5.6-luna': 'GPT-5.6 Luna',
+    'gpt-5.6-terra': 'GPT-5.6 Terra',
+    'gpt-6-luna': 'GPT-6 Luna',
+    'gpt-6.2-astra': 'GPT-6.2 Astra',
+    'gpt-6.2-sol': 'GPT-6.2 Sol',
+    'grok-4.7': 'Grok 4.7',
+    'hy4': '腾讯混元 Hy4',
+    'hy4-flash': '腾讯混元 Hy4 Flash',
+    'kimi-k3.1-pro': 'Kimi K3.1 Pro',
+    'mimo-v2.6-flash': 'MiMo V2.6 Flash',
+    'mimo-v2.6-pro': 'MiMo V2.6 Pro',
+    'minimax-m3.1-flash': 'MiniMax M3.1 Flash',
+    'sensenova-6.8-flash': 'SenseNova 6.8 Flash'
+  };
 
   const modelIds = new Set(models.map(m => m.id));
+  assert.deepEqual(
+    [...modelIds].sort(),
+    Object.keys(expectedNames).sort(),
+    '基线模型 ID 集合必须与 21 款预期阵容完全一致'
+  );
 
-  // 1. 验证全部 5 个新增模型存在
-  const newModels = [
-    'hy4',
-    'hy4-flash',
-    'gemini-3.8-flash',
-    'claude-fable-5-2'
-  ];
+  for (const m of models) {
+    assert.equal(m.name, expectedNames[m.id], `模型 ${m.id} 显示名称必须与 Manifest 一致`);
+  }
+
+  // 1. 验证全部 4 个新增模型存在
+  const newModels = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-6-luna', 'mimo-v2.6-flash'];
   for (const id of newModels) {
     assert.ok(modelIds.has(id), `必须包含新增模型: ${id}`);
   }
 
   // 2. 验证下架模型已被彻底移除
   const removedModels = [
+    'kimi-k2.8-preview',
+    'step-5-preview',
+    'gemini-3.8-flash',
     '王者荣耀灵宝',
     'gpt-oss-120b-medium',
     'claude-opus-4-6-thinking',
@@ -105,14 +137,120 @@ test('PatchEngine - 基线模型读取完整性与 2026-11-17 上架阵容契约
     assert.ok(!modelIds.has(id), `已下架模型严禁出现: ${id}`);
   }
 
-  // 3. 验证 gemini-3.8-flash 思考档位严格为 low/medium/high
-  const gemini = models.find(m => m.id === 'gemini-3.8-flash');
-  assert.ok(gemini, '必须包含 gemini-3.8-flash');
-  assert.deepEqual(gemini.reasoningEfforts, {
+  // 3. 验证新增 4 款模型规格与思考档位
+  const gpt56Luna = models.find(m => m.id === 'gpt-5.6-luna');
+  assert.equal(gpt56Luna.contextWindow, 272000);
+  assert.equal(gpt56Luna.maxTokens, 131072);
+  assert.deepEqual(gpt56Luna.input, ['text', 'image']);
+  assert.deepEqual(gpt56Luna.reasoningEfforts, {
+    low: 'low',
+    medium: 'medium',
+    high: 'high',
+    xhigh: 'xhigh',
+    max: 'max'
+  });
+
+  const gpt56Terra = models.find(m => m.id === 'gpt-5.6-terra');
+  assert.equal(gpt56Terra.contextWindow, 272000);
+  assert.equal(gpt56Terra.maxTokens, 131072);
+  assert.deepEqual(gpt56Terra.input, ['text', 'image']);
+  assert.deepEqual(gpt56Terra.reasoningEfforts, {
+    low: 'low',
+    medium: 'medium',
+    high: 'high',
+    xhigh: 'xhigh',
+    max: 'max',
+    ultra: 'ultra'
+  });
+
+  const gpt6Luna = models.find(m => m.id === 'gpt-6-luna');
+  assert.equal(gpt6Luna.contextWindow, 272000);
+  assert.equal(gpt6Luna.maxTokens, 131072);
+  assert.deepEqual(gpt6Luna.input, ['text', 'image']);
+  assert.deepEqual(gpt6Luna.reasoningEfforts, {
+    low: 'low',
+    medium: 'medium',
+    high: 'high',
+    xhigh: 'xhigh',
+    max: 'max'
+  });
+
+  const mimoFlash = models.find(m => m.id === 'mimo-v2.6-flash');
+  assert.equal(mimoFlash.contextWindow, 200000);
+  assert.equal(mimoFlash.maxTokens, 32768);
+  assert.deepEqual(mimoFlash.input, ['text']);
+  assert.deepEqual(mimoFlash.reasoningEfforts, {
     low: 'low',
     medium: 'medium',
     high: 'high'
-  }, 'gemini-3.8-flash 思考档位必须仅含 low/medium/high');
+  });
+
+  // 4. 验证 DeepSeek 系列保留 4 档思考与 393216 maxTokens
+  for (const dsId of ['deepseek-v4-pro', 'deepseek-v4.1-flash']) {
+    const ds = models.find(m => m.id === dsId);
+    assert.equal(ds.maxTokens, 393216);
+    assert.deepEqual(ds.reasoningEfforts, {
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      max: 'max'
+    });
+  }
+});
+
+test('PatchEngine - 所有基线模型名称均不含 "(" 或 "（" 且硬编码兜底完全一致', () => {
+  const fromPatch = getBaselineModels();
+  assert.equal(fromPatch.length, 20);
+  for (const m of fromPatch) {
+    assert.ok(!m.name.includes('(') && !m.name.includes('（'), `基线模型 ${m.id} 名称不应包含括号: ${m.name}`);
+  }
+
+  const origExistsSync = fs.existsSync;
+  const bundlePatchPath = path.resolve(__dirname, '..', 'cordis.patch.yml');
+  let fallbackModels;
+  try {
+    fs.existsSync = (p) => (path.resolve(p) === bundlePatchPath ? false : origExistsSync(p));
+    fallbackModels = getBaselineModels();
+  } finally {
+    fs.existsSync = origExistsSync;
+  }
+
+  assert.deepEqual(fallbackModels, fromPatch, '内存硬编码兜底必须与 cordis.patch.yml 完全一致');
+});
+
+test('PatchEngine - serializeProviderYaml 与 mergeProviderIntoPatchContent 自动剥离模型尾部括号', () => {
+  const provider = {
+    id: 'winetoken',
+    displayName: 'WineToken (全平台推理模型)',
+    baseURL: 'https://www.winetoken.asia/v1',
+    apiKeyEnv: 'WINETOKEN_API_KEY',
+    models: [
+      { id: 'm-ascii', name: 'GPT-5.6 Luna (全模态推理)' },
+      { id: 'm-fullwidth', name: 'Grok 4.7（全模态）' },
+      { id: 'm-multi', name: 'Claude 5.5 Opus (旗舰) （长文本）' },
+      { id: 'm-tight', name: 'GLM-5.3(推理)(限免)' },
+      { id: 'm-mid', name: 'Model (v1) Pro' },
+      { id: 'm-only-ascii', name: '(Preview)' },
+      { id: 'm-only-fullwidth', name: '（仅限免）' }
+    ]
+  };
+
+  const yamlBlock = serializeProviderYaml(provider);
+  assert.ok(yamlBlock.includes('displayName: "WineToken (全平台推理模型)"'), 'provider displayName 应保持原样');
+  assert.ok(yamlBlock.includes('name: "GPT-5.6 Luna"'));
+  assert.ok(yamlBlock.includes('name: "Grok 4.7"'));
+  assert.ok(yamlBlock.includes('name: "Claude 5.5 Opus"'));
+  assert.ok(yamlBlock.includes('name: "GLM-5.3"'));
+  assert.ok(yamlBlock.includes('name: "Model (v1) Pro"'));
+  assert.ok(yamlBlock.includes('name: "(Preview)"'), '剥离后为空时必须保留原名');
+  assert.ok(yamlBlock.includes('name: "（仅限免）"'), '剥离后为空时必须保留原全角括号名');
+
+  const merged = mergeProviderIntoPatchContent('', provider);
+  assert.ok(merged.includes('name: "GPT-5.6 Luna"'));
+  assert.ok(!merged.includes('(全模态推理)'));
+  assert.ok(!merged.includes('（全模态）'));
+  assert.ok(merged.includes('name: "(Preview)"'));
+  assert.equal(mergeProviderIntoPatchContent(merged, provider), merged, '清洗后合并必须保持幂等');
 });
 
 test('PatchEngine - 空流式列表 "[]" 与 "[ ]" (含行尾注释) 按空文档处理且幂等', () => {

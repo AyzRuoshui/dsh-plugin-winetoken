@@ -21,7 +21,8 @@ const {
 
 const {
   mergeProviderIntoPatchContent,
-  getBaselineModels
+  getBaselineModels,
+  sanitizeModelDisplayName
 } = require('./patch-engine.js');
 
 const BASE_DIR = __dirname;
@@ -29,7 +30,7 @@ const CONFIG_PATH = path.join(BASE_DIR, 'config.json');
 
 const { parseModelList } = require('./parser');
 
-const EFFORT_KEYS = ['low', 'medium', 'high', 'max'];
+const EFFORT_KEYS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
 // 服务器 Manifest 下发的档位是第一数据源：只保留合法档位键与字符串值，非法/缺失返回 null 走本地兜底
 function sanitizeServerEfforts(raw) {
@@ -47,7 +48,7 @@ function buildManifestModels(chatModels) {
     .map(m => {
       const item = {
         id: m.id,
-        name: m.name || m.id,
+        name: sanitizeModelDisplayName(m.name, m.id),
         contextWindow: m.contextWindow || 131072,
         maxTokens: m.maxTokens || 16384,
         input: m.vision ? ['text', 'image'] : ['text']
@@ -77,6 +78,10 @@ async function applyProviderModelsWithConfigEditor(ctx, models) {
   const entry = resolveLlmPiAiEntry(ctx);
   if (!editor || typeof editor.edit !== 'function' || !entry || !entry.fiber) return false;
 
+  const sanitizedModels = Array.isArray(models)
+    ? models.map(m => (m && typeof m === 'object' ? { ...m, name: sanitizeModelDisplayName(m.name, m.id) } : m))
+    : models;
+
   await editor.edit(entry, (current) => {
     const providers = { ...(current.providers || {}) };
     const existing = providers.winetoken || {};
@@ -88,7 +93,7 @@ async function applyProviderModelsWithConfigEditor(ctx, models) {
       apiKeyEnv: 'WINETOKEN_API_KEY',
       defaultContextWindow: 1000000,
       defaultMaxTokens: 128000,
-      models
+      models: sanitizedModels
     };
     return { ...current, providers };
   });
