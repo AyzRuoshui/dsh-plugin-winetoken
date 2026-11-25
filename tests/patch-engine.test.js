@@ -85,7 +85,7 @@ test('PatchEngine - 基线模型读取完整性与 v2.5.5 线上对齐阵容契�
     'deepseek-v4-pro': 'DeepSeek V4 Pro',
     'deepseek-v4.1-flash': 'DeepSeek V4.1 Flash',
     'glm-5.2': 'GLM-5.2',
-    'glm-5.3': 'GLM-5.3',
+    'glm-5.4': 'GLM-5.4',
     'glm-5.3-flash': 'GLM-5.3 Flash',
     'gpt-5.6-luna': 'GPT-5.6 Luna',
     'gpt-5.6-terra': 'GPT-5.6 Terra',

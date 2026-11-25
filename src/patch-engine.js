@@ -313,7 +313,7 @@ function getBaselineModels() {
     { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', contextWindow: 1048576, maxTokens: 393216, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', max: 'max' } },
     { id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', contextWindow: 1048576, maxTokens: 393216, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', max: 'max' } },
     { id: 'glm-5.2', name: 'GLM-5.2', contextWindow: 1048576, maxTokens: 131072, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
-    { id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 1048576, maxTokens: 131072, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+    { id: 'glm-5.4', name: 'GLM-5.4', contextWindow: 1048576, maxTokens: 131072, input: ['text'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
     { id: 'glm-5.3-flash', name: 'GLM-5.3 Flash', contextWindow: 1048576, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
     { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', contextWindow: 272000, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' } },
     { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', contextWindow: 272000, maxTokens: 131072, input: ['text', 'image'], reasoningEfforts: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max', ultra: 'ultra' } },

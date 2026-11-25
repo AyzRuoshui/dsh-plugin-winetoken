@@ -30,7 +30,7 @@ test('ModelParser - 21 款在架对话推理模型必须全部通过解析并具
     'deepseek-v4-pro',
     'deepseek-v4.1-flash',
     'glm-5.2',
-    'glm-5.3',
+    'glm-5.4',
     'glm-5.3-flash',
     'gpt-5.6-luna',
     'gpt-5.6-terra',

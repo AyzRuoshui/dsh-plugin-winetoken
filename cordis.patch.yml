@@ -68,8 +68,8 @@
               low: low
               medium: medium
               high: high
-          - id: glm-5.3
-            name: GLM-5.3
+          - id: glm-5.4
+            name: GLM-5.4
             contextWindow: 1048576
             maxTokens: 131072
             input:

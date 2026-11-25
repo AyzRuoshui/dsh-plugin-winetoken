@@ -88,9 +88,9 @@ const EXACT_MODEL_SPECS = {
       high: 'high'
     }
   },
-  'glm-5.3': {
-    name: 'GLM-5.3',
-    contextWindow: 1048576, // 1M 上下文 (智谱官方 GLM-5.2/5.3 规格，最大输出 128K)
+  'glm-5.4': {
+    name: 'GLM-5.4',
+    contextWindow: 1048576, // 1M 上下文 (智谱官方 GLM-5.4 规格，Loop Transformer，最大输出 128K)
     maxTokens: 131072,
     input: ['text'],        // 纯文本
     isReasoning: true,
