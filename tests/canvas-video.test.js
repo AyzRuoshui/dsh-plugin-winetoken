@@ -92,10 +92,10 @@ test('CanvasVideo - buildVideoPayload 与 StudioPage 已验证协议完全一致
   });
   assert.equal(minimaxFrames.image, 'data:image/png;base64,AAA');
   assert.equal(minimaxFrames.metadata.first_frame_image, 'data:image/png;base64,AAA');
-  assert.equal(minimaxFrames.metadata.last_frame_image, 'data:image/png;base64,BBB');
+  assert.equal(minimaxFrames.metadata.last_frame_image, undefined, '尾帧已下线：绝不下发 last_frame_image');
   const grokFrames = buildVideoPayload({ model: 'grok-imagine-video-1.5', firstFrameUrl: 'F', lastFrameUrl: 'L' });
   assert.equal(grokFrames.image_url, 'F');
-  assert.equal(grokFrames.last_frame, 'L');
+  assert.equal(grokFrames.last_frame, undefined, '尾帧已下线：绝不下发 last_frame');
   assert.equal(grokFrames.metadata, undefined);
 
   // MiniMax-H3-2K 分辨率强制收敛为 2K，横竖屏均合规

@@ -198,7 +198,7 @@ test('CanvasNodes - 连线驱动生成输入：视频节点汇入多图自动成
   assert.equal(ctx.mode, 'multi_reference', '多图汇入视频节点必须自动标记为全能参考 multi_reference');
   assert.equal(ctx.multiReferenceCount, 2);
   assert.equal(ctx.firstFrameUrl, 'http://assets/1.png');
-  assert.equal(ctx.lastFrameUrl, 'http://assets/2.png');
+  assert.equal(ctx.lastFrameUrl, undefined, '尾帧已下线：上下文不再派生 lastFrameUrl');
   assert.deepEqual(ctx.allReferenceImages, ['http://assets/1.png', 'http://assets/2.png']);
   assert.match(ctx.prompt, /运镜推进/);
   assert.match(ctx.prompt, /夜色渐浓，雨丝飘落/);

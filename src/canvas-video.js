@@ -159,7 +159,7 @@ function isTerminal(state) {
  * 生成请求体 (与 StudioPage 已验证协议完全一致，绝不臆造上游参数)。
  * 首帧参考图按模型族填入对应字段，Grok 族绝不用 images 数组。
  */
-function buildVideoPayload({ model = 'MiniMax-H3', prompt = '', duration = 5, size = '1280x720', firstFrameUrl = '', lastFrameUrl = '' } = {}) {
+function buildVideoPayload({ model = 'MiniMax-H3', prompt = '', duration = 5, size = '1280x720', firstFrameUrl = '' } = {}) {
   const chosenModel = typeof model === 'string' && model.trim() ? model.trim() : 'MiniMax-H3';
   const isGrokVideo = /grok-imagine-video/i.test(chosenModel);
   const seconds = Number.isFinite(duration) ? Math.max(1, Math.min(30, Math.round(duration))) : 5;
@@ -183,19 +183,14 @@ function buildVideoPayload({ model = 'MiniMax-H3', prompt = '', duration = 5, si
     resolution
   };
   const first = typeof firstFrameUrl === 'string' ? firstFrameUrl.trim() : '';
-  const last = typeof lastFrameUrl === 'string' ? lastFrameUrl.trim() : '';
+  // 尾帧已下线 (2026-11-25 站长决定)：上游中转接口不收 last_frame，载荷绝不下发任何尾帧字段。
   if (/minimax|hailuo/i.test(chosenModel)) {
     if (first) {
       payload.image = first;
       payload.metadata = { first_frame_image: first };
     }
-    if (last) {
-      payload.metadata = payload.metadata || {};
-      payload.metadata.last_frame_image = last;
-    }
   } else {
     if (first) { payload.image = first; payload.image_url = first; }
-    if (last) payload.last_frame = last;
   }
   return payload;
 }

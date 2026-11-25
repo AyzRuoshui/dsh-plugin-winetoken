@@ -4893,27 +4893,59 @@ $owner.Dispose()
           };
 
           const handleImportAssetFile = (e) => {
-            const file = e.target.files && e.target.files[0];
+            const input = e.target;
+            const file = input.files && input.files[0];
+            // 立即重置输入值：否则失败后重选同一文件不再触发 change，表现为「点了没反应」
+            if (input) input.value = '';
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
+            if (!canvasAssetsDriver || !assetLibraryStore) {
+              alert('导入资产失败: 本地资产模块未加载，请重启应用后再试');
+              return;
+            }
+            const finishImport = (dataUrl) => {
               try {
-                const dataUrl = String(reader.result);
-                if (canvasAssetsDriver && assetLibraryStore) {
-                  const saved = canvasAssetsDriver.saveDataUrl(dataUrl);
-                  assetLibraryStore.addItem({
-                    assetKey: saved.assetKey,
-                    name: file.name.replace(/\.[^/.]+$/, ''),
-                    category: assetLibCategory === '全部' ? '自定义' : assetLibCategory,
-                    description: '从本地导入',
-                    tags: []
-                  });
-                  setAssetLibTick(t => t + 1);
-                }
+                const saved = canvasAssetsDriver.saveDataUrl(dataUrl);
+                assetLibraryStore.addItem({
+                  assetKey: saved.assetKey,
+                  name: file.name.replace(/\.[^/.]+$/, ''),
+                  category: assetLibCategory === '全部' ? '自定义' : assetLibCategory,
+                  description: '从本地导入',
+                  tags: []
+                });
+                setAssetLibTick(t => t + 1);
               } catch (err) {
                 alert(`导入资产失败: ${err.message}`);
               }
             };
+            const reader = new FileReader();
+            reader.onload = () => {
+              const dataUrl = String(reader.result);
+              const mime = ((/^data:([^;]+);/.exec(dataUrl) || [])[1] || '').toLowerCase();
+              if (['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'video/mp4', 'video/webm'].includes(mime)) {
+                finishImport(dataUrl);
+                return;
+              }
+              // 白名单外图片 (bmp/avif/heic/tiff 等)：经画布转码为 PNG 再落盘，不再静默拒绝
+              if (mime.startsWith('image/')) {
+                const img = new Image();
+                img.onload = () => {
+                  try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth || img.width;
+                    canvas.height = img.naturalHeight || img.height;
+                    canvas.getContext('2d').drawImage(img, 0, 0);
+                    finishImport(canvas.toDataURL('image/png'));
+                  } catch (err) {
+                    alert(`导入资产失败: 图片转码失败 (${err.message})`);
+                  }
+                };
+                img.onerror = () => alert(`导入资产失败: 无法解码该图片格式 (${mime})，请先另存为 PNG/JPG 再导入`);
+                img.src = dataUrl;
+                return;
+              }
+              alert(`导入资产失败: 不支持的文件类型 (${mime || '未知'})，仅支持图片与 MP4/WebM 视频`);
+            };
+            reader.onerror = () => alert('导入资产失败: 读取本地文件失败，请重试');
             reader.readAsDataURL(file);
           };
 
@@ -5266,7 +5298,6 @@ $owner.Dispose()
             };
             const refs = ctx.referenceImages.filter(r => typeof r === 'string' && r.trim());
             const firstFrame = refs.length ? resolveRef(refs[0]) : '';
-            const lastFrame = refs.length > 1 ? resolveRef(refs[refs.length - 1]) : '';
             const prompt = (item.data?.prompt || ctx.prompt || '电影感运镜，光线流动').trim().slice(0, 4000);
             const chosenModel = (item.data?.params?.model) || ctx.params.model || (availableVideoModels[0]?.id) || 'MiniMax-H3';
             const duration = Number(item.data?.params?.duration) || 5;
@@ -5277,8 +5308,7 @@ $owner.Dispose()
               prompt,
               duration,
               size,
-              firstFrameUrl: firstFrame,
-              lastFrameUrl: lastFrame
+              firstFrameUrl: firstFrame
             });
             if (item.data?.params?.generateAudio) {
               payload.audio = true;
@@ -8190,11 +8220,10 @@ $owner.Dispose()
           const [savingId, setSavingId] = React.useState(null);
           const [fileToast, setFileToast] = React.useState('');
           const fileInputRef = React.useRef(null);
-          // 首帧 / 尾帧独立槽位 (视频模式专用：语义在 UI 层定死，模型按显式字段识别开场与收尾，不再猜图)
+          // 首帧独立槽位 (视频模式专用：语义在 UI 层定死，模型按显式字段识别开场画面，不再猜图)
+          // 尾帧已下线 (2026-11-25 站长决定)：上游中转接口不支持 last_frame，工坊不再提供尾帧。
           const [firstFrame, setFirstFrame] = React.useState(null);  // { id, name, dataUrl, size }
-          const [lastFrame, setLastFrame] = React.useState(null);
           const firstFrameInputRef = React.useRef(null);
-          const lastFrameInputRef = React.useRef(null);
 
           const [history, setHistory] = React.useState(() => {
             let localList = [];
@@ -8388,11 +8417,6 @@ $owner.Dispose()
             if (e.target) e.target.value = '';
           };
 
-          const handleLastFrameChange = (e) => {
-            loadImageFileToFrame(e.target.files && e.target.files[0], setLastFrame);
-            if (e.target) e.target.value = '';
-          };
-
           // 模式切换时的首尾帧与多参考图槽位双向迁移 (旧创作素材无缝升级，不丢图)
           const frameMigrationRef = React.useRef(mode);
           React.useEffect(() => {
@@ -8406,16 +8430,10 @@ $owner.Dispose()
                 dataUrl: referenceSlots[0].dataUrl,
                 size: referenceSlots[0].size
               } : null));
-              setLastFrame(prev => prev || (referenceSlots[1] ? {
-                id: 'frame_' + Date.now() + '_l',
-                name: referenceSlots[1].name,
-                dataUrl: referenceSlots[1].dataUrl,
-                size: referenceSlots[1].size
-              } : null));
             } else if (prevMode === 'video' && mode === 'image') {
               setReferenceSlots(prev => {
                 if (prev.length > 0) return prev;
-                return [firstFrame, lastFrame].filter(Boolean).map((f, i) => ({ ...f, index: i + 1 }));
+                return [firstFrame].filter(Boolean).map((f, i) => ({ ...f, index: i + 1 }));
               });
             }
           }, [mode]);
@@ -8555,7 +8573,7 @@ $owner.Dispose()
           // Grok Imagine 协议适配：xAI 生图原生协议没有 size 参数（用固定档 aspect_ratio），
           // 视频 resolution 仅接受 480p/720p/1080p —— 非法参数会被上游以 400 拒绝
           const handleGenerate = async () => {
-            const hasVideoFrame = Boolean((firstFrame && firstFrame.dataUrl) || (lastFrame && lastFrame.dataUrl));
+            const hasVideoFrame = Boolean(firstFrame && firstFrame.dataUrl);
             if (!prompt.trim() && referenceSlots.length === 0 && (mode !== 'video' || !hasVideoFrame)) {
               alert('请输入画面描述提示词 (Prompt)，或上传参考图片');
               return;
@@ -8579,9 +8597,7 @@ $owner.Dispose()
             const actionName = mode === 'image'
               ? (referenceSlots.length > 0 ? '多参考图垫图绘制' : '画面绘制')
               : (hasVideoFrame
-                  ? ((firstFrame && firstFrame.dataUrl) && (lastFrame && lastFrame.dataUrl)
-                      ? '首尾帧图生视频渲染'
-                      : ((lastFrame && lastFrame.dataUrl) && !(firstFrame && firstFrame.dataUrl) ? '尾帧图生视频渲染' : '首帧图生视频渲染'))
+                  ? '首帧图生视频渲染'
                   : '视频生成');
             setStatusMsg(`AI 正在进行${actionName}，请稍候...`);
 
@@ -8682,26 +8698,19 @@ $owner.Dispose()
                   duration: duration || 5,
                   resolution
                 };
-                // 首帧 / 尾帧独立槽位：按模型族选择上行字段，交给 New-API 内置插件显式映射帧角色，
-                // 告别「多图数组按序猜帧」歧义 (hailuo → metadata.first/last_frame_image；xai → image + last_frame)。
-                // 注意：Grok (xai) 下顶层 images 数组会被解读为 reference_images，故绝不对视频帧使用 images。
+                // 首帧独立槽位：按模型族选择上行字段，交给 New-API 内置插件显式映射帧角色
+                // (hailuo → metadata.first_frame_image；xai → image)。尾帧已下线，绝不下发 last_frame。
                 const frameFirstUrl = firstFrame && firstFrame.dataUrl ? firstFrame.dataUrl : '';
-                const frameLastUrl = lastFrame && lastFrame.dataUrl ? lastFrame.dataUrl : '';
                 if (/minimax|hailuo/i.test(videoPayload.model)) {
                   if (frameFirstUrl) {
                     videoPayload.image = frameFirstUrl;
                     videoPayload.metadata = { first_frame_image: frameFirstUrl };
-                  }
-                  if (frameLastUrl) {
-                    videoPayload.metadata = videoPayload.metadata || {};
-                    videoPayload.metadata.last_frame_image = frameLastUrl;
                   }
                 } else {
                   if (frameFirstUrl) {
                     videoPayload.image = frameFirstUrl;
                     videoPayload.image_url = frameFirstUrl;
                   }
-                  if (frameLastUrl) videoPayload.last_frame = frameLastUrl;
                 }
 
                 const endpoints = CanvasVideoUtils
@@ -9376,13 +9385,13 @@ $owner.Dispose()
                   h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' } }, [
                     h('div', { style: { display: 'flex', alignItems: 'center', gap: '5px' } }, [
                       h('label', { style: { fontSize: '12px', fontWeight: '500', color: theme.textSecondary } },
-                        mode === 'image' ? `参考图库 (${referenceSlots.length}/5)` : '视频画面帧 (首帧 → 尾帧)'
+                        mode === 'image' ? `参考图库 (${referenceSlots.length}/5)` : '视频画面帧 (首帧)'
                       ),
                       mode === 'image' && referenceSlots.length > 0 && h('span', { style: { fontSize: '10.5px', color: theme.textMuted } }, '可拖拽至输入框')
                     ]),
-                    h('span', { style: { fontSize: '11px', color: (mode === 'video' ? (firstFrame || lastFrame) : referenceSlots.length > 0) ? '#22c55e' : theme.textMuted } },
+                    h('span', { style: { fontSize: '11px', color: (mode === 'video' ? Boolean(firstFrame) : referenceSlots.length > 0) ? '#22c55e' : theme.textMuted } },
                       mode === 'video'
-                        ? ((firstFrame && lastFrame) ? '首尾帧驱动 · 模型明确识别开场与收尾' : (firstFrame ? '首帧驱动' : '可选'))
+                        ? (firstFrame ? '首帧驱动 · 模型明确识别开场画面' : '可选')
                         : (referenceSlots.length > 0 ? `已启用 ${referenceSlots.length} 张垫图` : '可选')
                     )
                   ]),
@@ -9397,7 +9406,7 @@ $owner.Dispose()
                     onChange: handleFileChange
                   }),
 
-                  // 首帧 / 尾帧专用隐藏文件输入框 (视频模式)
+                  // 首帧专用隐藏文件输入框 (视频模式)
                   h('input', {
                     ref: firstFrameInputRef,
                     type: 'file',
@@ -9405,15 +9414,8 @@ $owner.Dispose()
                     style: { display: 'none' },
                     onChange: handleFirstFrameChange
                   }),
-                  h('input', {
-                    ref: lastFrameInputRef,
-                    type: 'file',
-                    accept: 'image/png,image/jpeg,image/webp,image/gif',
-                    style: { display: 'none' },
-                    onChange: handleLastFrameChange
-                  }),
 
-                  // 视频模式：首帧 / 尾帧独立双槽位 (语义在 UI 层固定，模型按显式字段识别帧角色)
+                  // 视频模式：首帧独立槽位 (语义在 UI 层固定，模型按显式字段识别帧角色；尾帧已下线)
                   mode === 'video' ? h('div', {
                     style: {
                       display: 'flex',
@@ -9421,11 +9423,7 @@ $owner.Dispose()
                       alignItems: 'stretch'
                     }
                   }, [
-                    renderFrameCard('首帧 · 开场画面', firstFrame, setFirstFrame, firstFrameInputRef, '上传开场画面', '#22c55e', '视频将以此画面开场 (推荐与成片比例一致)'),
-                    h('div', {
-                      style: { display: 'flex', alignItems: 'center', flexShrink: 0, color: theme.textMuted, fontSize: '15px', fontWeight: '600', padding: '0 1px' }
-                    }, '→'),
-                    renderFrameCard('尾帧 · 收尾画面', lastFrame, setLastFrame, lastFrameInputRef, '上传收尾画面', '#a855f7', '可选 · 视频将平滑过渡到该画面结束')
+                    renderFrameCard('首帧 · 开场画面', firstFrame, setFirstFrame, firstFrameInputRef, '上传开场画面', '#22c55e', '视频将以此画面开场 (推荐与成片比例一致)')
                   ]) : referenceSlots.length > 0 ? h('div', {
                     style: {
                       display: 'flex',
@@ -9913,11 +9911,9 @@ $owner.Dispose()
                       ? (referenceSlots.length > 0
                           ? `立即垫图生成 · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
                           : `立即生成 · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`)
-                      : ((firstFrame && lastFrame)
-                          ? `提交首尾帧生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
-                          : ((firstFrame || lastFrame)
-                              ? `${firstFrame ? '提交首帧' : '提交尾帧'}生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
-                              : `提交文生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`))
+                      : (firstFrame
+                          ? `提交首帧生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
+                          : `提交文生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`)
                     )
                   ])
                 ])
@@ -10372,13 +10368,9 @@ $owner.Dispose()
                       h('p', { style: { margin: '0', fontSize: '12px', color: theme.textMuted, lineHeight: '1.5' } },
                         isGenerating ? (statusMsg || '请稍候片刻，正在生成高分辨率细节...') : (
                           mode === 'video'
-                            ? ((firstFrame && lastFrame)
-                                ? '已设置首帧 + 尾帧画面，点击「提交生视频」即可开始渲染'
-                                : (firstFrame
-                                    ? '已设置首帧画面，点击「提交生视频」即可开始渲染'
-                                    : (lastFrame
-                                        ? '已设置尾帧画面，点击「提交生视频」即可开始渲染'
-                                        : '在左侧配置模型或上传首帧画面，点击「提交生视频」即可在此呈现成果')))
+                            ? (firstFrame
+                                ? '已设置首帧画面，点击「提交生视频」即可开始渲染'
+                                : '在左侧配置模型或上传首帧画面，点击「提交生视频」即可在此呈现成果')
                             : (referenceSlots.length > 0 ? `已选择 ${referenceSlots.length} 张参考图，点击「立即垫图生成」即可开始` : '在左侧配置模型或上传参考底图，点击「立即生成」即可在此呈现成果')
                         )
                       )

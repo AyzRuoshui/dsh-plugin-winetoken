@@ -32,7 +32,7 @@ test('CanvasEdgeInjection - 0 图汇入视频节点：纯文生视频 text_to_vi
   assert.equal(ctx.mode, 'text_to_video');
   assert.equal(ctx.referenceImages.length, 0);
   assert.equal(ctx.firstFrameUrl, '');
-  assert.equal(ctx.lastFrameUrl, '');
+  assert.equal(ctx.lastFrameUrl, undefined, '尾帧已下线：上下文不再派生 lastFrameUrl');
   assert.equal(ctx.multiReferenceCount, 0);
   assert.match(ctx.prompt, /慢动作特写镜头/);
   assert.match(ctx.prompt, /暴风雪席卷雪原，狂风呼啸/);
@@ -65,7 +65,7 @@ test('CanvasEdgeInjection - 1 图汇入视频节点：单图首帧参考 single_
   const ctx = buildGenerationContext(project, 'vid1');
   assert.equal(ctx.mode, 'single_reference');
   assert.equal(ctx.firstFrameUrl, 'https://cdn.example.com/start_frame.png');
-  assert.equal(ctx.lastFrameUrl, '');
+  assert.equal(ctx.lastFrameUrl, undefined, '尾帧已下线：上下文不再派生 lastFrameUrl');
   assert.equal(ctx.multiReferenceCount, 1);
   assert.deepEqual(ctx.referenceImages, ['https://cdn.example.com/start_frame.png']);
   assert.match(ctx.prompt, /剑锋挥斩/);
@@ -122,7 +122,7 @@ test('CanvasEdgeInjection - 多图汇入视频节点：自动升级全能多图�
   assert.equal(ctx.mode, 'multi_reference');
   assert.equal(ctx.multiReferenceCount, 3);
   assert.equal(ctx.firstFrameUrl, 'https://cdn.example.com/frame1.png');
-  assert.equal(ctx.lastFrameUrl, 'https://cdn.example.com/frame3.png');
+  assert.equal(ctx.lastFrameUrl, undefined, '尾帧已下线：上下文不再派生 lastFrameUrl');
   assert.deepEqual(ctx.referenceImages, [
     'https://cdn.example.com/frame1.png',
     'asset:frame2_key.png',

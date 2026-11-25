@@ -5,7 +5,7 @@ const https = require('https');
 
 const REPO_OWNER = 'AyzRuoshui';
 const REPO_NAME = 'dsh-plugin-winetoken';
-const GITHUB_TOKEN = process.argv[2] || process.env.GITHUB_TOKEN || '';
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
 
 const rootDir = path.resolve(__dirname, '..');
 const pkgPath = path.join(rootDir, 'package.json');
@@ -61,25 +61,23 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 离线基线对齐线上 Manifest、模型名称尾部括号清洗与 xhigh/ultra 档位透传`;
+    const releaseTitle = `Release ${version} - 视频尾帧下线与素材资产库导入修复`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-本版将离线基线阵容与规格库全面对齐线上 Manifest，并在补丁写入与同步链路引入模型名称防御性清洗及扩展思考档位透传支持。
+本版下线视频尾帧功能，并修复素材资产库导入无反应的问题。
 
-### 1. 离线基线与规格库全面对齐线上 Manifest (共 21 款模型)
-- **名称规范化**：统一对齐线上 Manifest 展示名，移除冗余厂商前缀与尾部括号修饰词（含 \`cordis.patch.yml\`、\`getBaselineModels\` 与 \`EXACT_MODEL_SPECS\`）；
-- **下架清理**：移除已下架的 \`kimi-k2.8-preview\`、\`step-5-preview\`、\`gemini-3.8-flash\`；
-- **新增模型**：加入 \`gpt-5.6-luna\`、\`gpt-5.6-terra\`、\`gpt-6-luna\`（272K 上下文 / 128K 输出 / 视觉多模态）与 \`mimo-v2.6-flash\`（200K 上下文 / 32K 输出 / 纯文本），并完整保留 DeepSeek 384K 输出规格。
+### 1. 视频尾帧下线
+- 上游中转接口不支持 last_frame 参数，带尾帧的提交会被上游以 400 拒绝；工坊与画布即日起不再提供尾帧，视频画面帧仅保留首帧；
+- 工坊：移除尾帧槽位与全部尾帧文案，提交载荷绝不下发 last_frame / last_frame_image；
+- 画布：生成上下文不再派生尾帧，视频节点统一以首帧（第一张参考图）驱动生成。
 
-### 2. 防御性清洗器：写入补丁前自动剥离尾部括号描述符
-- 在 \`serializeProviderYaml\`（\`src/patch-engine.js\`）及 \`buildManifestModels\`（实时 Manifest 同步链路）中统一剥离模型显示名称末尾的 ASCII \`(...)\` 与全角 \`（...）\` 修饰符（含连续或空白分隔的多个括号）；
-- 若剥离后导致名称为空，自动回退保留原始名称，防止异常空白显示名写入配置。
+### 2. 素材资产库导入修复
+- 修复导入失败全程无提示的问题：资产模块未加载、文件读取失败、文件类型不支持等情况现在都会明确弹窗说明原因，不再点了没反应；
+- 修复失败后重选同一文件不触发导入的问题：选择文件后立即重置输入，可直接重选重试；
+- 新增图片格式兜底：浏览器可解码的 BMP/AVIF 等格式导入时自动转码为 PNG 落盘；无法解码的格式会明确提示先另存为 PNG/JPG 再导入。
 
-### 3. 扩展思考档位透传：支持 \`xhigh\` 与 \`ultra\`
-- 同步白名单 \`EFFORT_KEYS\` 新增 \`xhigh\` 与 \`ultra\`，基线解析同步兼容，确保 \`gpt-5.6-terra\` 的 \`ultra\` 及 \`gpt-5.6-luna\` / \`gpt-6-luna\` 的 \`xhigh\` 思考档位在在线同步与离线基线中完整保留。
-
-### 4. 工程状态
-- 自动化测试全部通过；零 Emoji 工业风；零新增运行依赖。
+### 3. 工程状态
+- 自动化测试 160/160 全部通过；零 Emoji 工业风；零新增运行依赖。
 
 ---
 

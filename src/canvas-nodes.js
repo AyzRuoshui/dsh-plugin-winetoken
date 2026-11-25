@@ -523,7 +523,6 @@ function buildGenerationContext(project, nodeId) {
     result.referenceImages = refs;
     result.allReferenceImages = [...refs];
     result.firstFrameUrl = refs[0] || '';
-    result.lastFrameUrl = refs.length > 1 ? refs[refs.length - 1] : '';
     result.multiReferenceCount = refs.length;
     if (target.type === 'video') {
       result.mode = refs.length > 1 ? 'multi_reference' : (refs.length === 1 ? 'single_reference' : 'text_to_video');
