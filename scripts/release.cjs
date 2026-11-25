@@ -61,22 +61,25 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 会员价格显示修正与 GPT-Image 2.6 降价同步`;
+  const releaseTitle = `Release ${version} - 修复 cordis.patch.yml 空列表写入损坏与安全备份`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-本版修正会员价格显示，并同步站端 GPT-Image 2.6 降价。
+本版为稳定性修复版本，解决特定场景下 \`cordis.patch.yml\` 被追加损坏的问题，并增加覆写前一次性原始备份机制。
 
-### 1. 修复：VIP 价格显示与实扣一致
-- 站内会员分两档：VIP 9 折、SVIP/Super 8 折。此前画布计价与一处模型列表把 8 折价直接显示给 VIP 用户，显示价低于实际扣费；
-- 已修正：VIP 一律按原价 9 折显示，SVIP/Super 继续显示 8 折价，生图与生视频同步生效；
-- 实际扣费规则未变，一直按用户组折扣结算，本版只修显示。
+### 1. 修复：空补丁文件 \`[]\` 不再损坏 cordis.patch.yml
+- 当 \`cordis.patch.yml\` 仅包含空流式列表 \`[]\`（或仅含注释与 \`[]\` / \`[ ]\`）时，合并引擎现将其识别为空文档并生成标准根级块列表，不再于 \`[]\` 下方错误追加 \`- id: llm-pi-ai\` 导致 YAML 损坏；
+- 合法的块级序列文件保持原有增量合并行为，完整保留其他 provider 与用户注释并保持幂等。
 
-### 2. 同步：GPT-Image 2.6 降价
-- 站端已降价：Flare ¥0.30 → ¥0.20/张，Sunburst ¥0.40 → ¥0.30/张（会员再按组折扣）；
-- 插件离线兜底价格已同步为新价；在线时仍以服务端清单为准，自动热更新。
+### 2. 防护：不支持的补丁文件结构原样保留并告警
+- 在未找到顶层 \`- id: llm-pi-ai\` 需走文末追加分支时，仅当首个有效行以 \`- \` 开头（块级序列根节点）才执行追加；
+- 对于映射根节点、流式映射、非空流式列表、标量、缩进序列或多文档 \`---\` 等不支持格式，保持原文件内容完全不变并输出 \`console.warn\` 告警。
 
-### 3. 工程状态
-- 自动化测试 151/151 全绿；发布脱敏门禁 0 违规；零 Emoji 工业风。
+### 3. 保护：覆写前一次性生成 cordis.patch.yml.bak 备份
+- \`updateCordisPatch\` 在覆写已存在且内容实际发生变更的 \`cordis.patch.yml\` 之前，若同目录尚无 \`cordis.patch.yml.bak\`，自动将原有内容保存为一次性备份；
+- 后续定时同步不会覆盖已有备份；文件尚不存在或内容未发生变更时不创建备份。
+
+### 4. 工程状态
+- 自动化测试全部通过；零 Emoji 工业风；零新增运行依赖。
 
 ---
 

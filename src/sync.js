@@ -227,9 +227,11 @@ function updateCordisPatch(providerConfig) {
   }
 
   let originalContent = '';
+  let hasExistingFile = false;
   if (fs.existsSync(CORDIS_PATCH_FILE)) {
     try {
       originalContent = fs.readFileSync(CORDIS_PATCH_FILE, 'utf-8');
+      hasExistingFile = true;
     } catch (e) {
       console.warn('读取 cordis.patch.yml 失败:', e.message);
     }
@@ -252,6 +254,13 @@ function updateCordisPatch(providerConfig) {
   if (newContent === originalContent) {
     console.log(`[模型同步] Provider [${targetConfig.id}] 模型与配置未变更，保持只读跳过写盘 (保护 YAML 用户注释)。`);
     return true;
+  }
+
+  // 覆写已存在且内容实际发生变更的 cordis.patch.yml 前，仅在 .bak 不存在时写入一次性备份
+  const backupFile = `${CORDIS_PATCH_FILE}.bak`;
+  if (hasExistingFile && !fs.existsSync(backupFile)) {
+    fs.writeFileSync(backupFile, originalContent, 'utf-8');
+    console.log(`[模型同步] 已创建一次性原始备份: ${backupFile}`);
   }
 
   fs.writeFileSync(CORDIS_PATCH_FILE, newContent, 'utf-8');

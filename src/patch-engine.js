@@ -49,6 +49,17 @@ function serializeProviderYaml(providerConfig, indent = '      ') {
   return lines.join('\n');
 }
 
+function buildFreshPatchContent(newProviderBlock) {
+  return [
+    '- id: llm-pi-ai',
+    '  name: "@deepseek-ai/dsh-llm-pi-ai"',
+    '  config:',
+    '    providers:',
+    newProviderBlock,
+    ''
+  ].join('\n');
+}
+
 /**
  * 将 winetoken provider 增量合并进已有 YAML 字符串
  * 严格保留现有用户的其他 provider (如 zhaizhu) 以及所有原始注释
@@ -57,19 +68,19 @@ function mergeProviderIntoPatchContent(content, providerConfig) {
   const pId = providerConfig.id || 'winetoken';
   const newProviderBlock = serializeProviderYaml(providerConfig, '      ');
 
-  if (!content || !content.trim()) {
-    return [
-      '- id: llm-pi-ai',
-      '  name: "@deepseek-ai/dsh-llm-pi-ai"',
-      '  config:',
-      '    providers:',
-      newProviderBlock,
-      ''
-    ].join('\n');
+  const rawContent = typeof content === 'string' ? content : '';
+  const lines = rawContent.split(/\r?\n/);
+  const meaningfulLines = lines.filter(line => line.trim().length > 0 && !/^[ \t]*#/.test(line));
+
+  // 若无有效内容，或唯一有效内容为空流式列表 ([] / [ ]，允许行尾内联注释)，按空文档处理
+  if (
+    meaningfulLines.length === 0 ||
+    (meaningfulLines.length === 1 && /^[ \t]*\[[ \t]*\](?:[ \t]*#.*)?[ \t]*$/.test(meaningfulLines[0]))
+  ) {
+    return buildFreshPatchContent(newProviderBlock);
   }
 
   // 1. 寻找 llm-pi-ai 补丁项范围
-  const lines = content.split(/\r?\n/);
   let llmPatchStartIndex = -1;
   let llmPatchEndIndex = lines.length;
 
@@ -82,8 +93,15 @@ function mergeProviderIntoPatchContent(content, providerConfig) {
     }
   }
 
-  // 如果根本没有 llm-pi-ai 补丁项，追加到文末
+  // 如果根本没有 llm-pi-ai 补丁项，仅当根结构为块级列表 (- ) 时追加到文末
   if (llmPatchStartIndex === -1) {
+    if (!meaningfulLines[0].startsWith('- ')) {
+      console.warn(
+        '[WineToken PatchEngine] Unsupported cordis.patch.yml root shape (expected block sequence starting with "- "); patch file was left untouched.'
+      );
+      return content;
+    }
+
     const appendBlock = [
       '',
       '# === 由 WineToken 插件自动注入模型提供商 ===',
