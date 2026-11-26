@@ -426,6 +426,18 @@
       unit: '张',
       desc: '4K超清直出，中英文字排版与概念艺术',
       resolutions: IMAGE_RESOLUTIONS_5
+    },
+    {
+      id: 'muse-image',
+      name: 'Muse Image',
+      tag: '超值',
+      price: 0.05,
+      vipPrice: 0.04,
+      enabled: true,
+      singleNOnly: true,
+      unit: '张',
+      desc: 'Muse 网页端生图引擎，支持文生图与参考图编辑，超高性价比',
+      resolutions: IMAGE_RESOLUTIONS_5
     }
   ];
 
@@ -487,6 +499,27 @@
         { val: 10, label: '10 秒', tag: '长片' }
       ],
       desc: '顶尖自然光影渲染与物理一致性模拟，运镜张力十足',
+      resolutions: [
+        { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
+        { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }
+      ]
+    },
+    {
+      id: 'muse-video',
+      name: 'Muse Video',
+      tag: '超值',
+      pricePerSecond: 0.05,
+      vipPricePerSecond: 0.04,
+      priceText: '原¥0.05/秒 (5秒基准 ¥0.25)',
+      vipPriceText: '会员 ¥0.04/秒 (5秒基准 ¥0.20)',
+      unit: '秒',
+      durations: [
+        { val: 5, label: '5 秒', tag: '标配' },
+        { val: 6, label: '6 秒', tag: '延展' },
+        { val: 10, label: '10 秒', tag: '长片' },
+        { val: 15, label: '15 秒', tag: '旗舰' }
+      ],
+      desc: 'Muse 网页端视频生成，720P 出片，时长与横竖画幅可选，支持文生视频与首帧图生视频',
       resolutions: [
         { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
         { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }
@@ -8690,6 +8723,8 @@ $owner.Dispose()
                   resolution = '768P';
                 } else if (isGrokVideo) {
                   resolution = (size && size.includes('1080')) ? '1080P' : '720P';
+                } else if (/^muse-video$/i.test(selectedModel || '')) {
+                  resolution = '720P';
                 } else {
                   resolution = (size && (size.includes('2K') || size.startsWith('2560') || size.startsWith('1440')))
                     ? '2K'
@@ -8702,6 +8737,11 @@ $owner.Dispose()
                   duration: duration || 5,
                   resolution
                 };
+                if (/^muse-video$/i.test(videoPayload.model)) {
+                  // Muse 走 sora 协议: seconds 必须字符串, 画幅靠 size 表达
+                  videoPayload.seconds = String(duration || 5);
+                  videoPayload.size = size || '1280x720';
+                }
                 // 首帧独立槽位：按模型族选择上行字段，交给 New-API 内置插件显式映射帧角色
                 // (hailuo → metadata.first_frame_image；xai → image)。尾帧已下线，绝不下发 last_frame。
                 const frameFirstUrl = firstFrame && firstFrame.dataUrl ? firstFrame.dataUrl : '';
@@ -8722,7 +8762,7 @@ $owner.Dispose()
                   : (() => {
                       const clean = (BASE_URL || '').trim().replace(/\/+$/, '');
                       const v1 = clean.endsWith('/v1') ? clean : `${clean}/v1`;
-                      const isMiniMax = /minimax|hailuo/i.test(videoPayload.model || '');
+                      const isMiniMax = /minimax|hailuo/i.test(videoPayload.model || '') || /^muse-video$/i.test(videoPayload.model || '');
                       return isMiniMax ? {
                         submitUrl: `${v1}/videos`,
                         pollUrl: (id) => `${v1}/videos/${id}`,
