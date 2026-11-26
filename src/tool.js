@@ -374,7 +374,7 @@ function registerWineTokenTools(ctx) {
       name: 'winetoken_generate_image',
       label: 'WineToken 创作工坊·AI绘图',
       category: 'creative',
-      description: '【WineToken 创作工坊·AI绘图工具（高耗付费操作）】仅在获得用户明确授权确认后方可调用，单次严格限出 1 张，绝对禁止并发多调。生成结果将内联渲染并存入工坊画廊。',
+      description: '【WineToken 创作工坊·AI绘图工具（高耗付费操作）】仅在获得用户明确授权确认后方可调用，单次严格限出 1 张，绝对禁止并发多调。用户指定了模型时必须严格使用那一个，不得自行替换；用户未指定时才可留空自动选用工坊可用列表中的首个模型。调用失败必须原样报告并停下等待用户指示，严禁擅自改用其他模型重新生成——换模型等于换作品，必须由用户本人决定。生成结果将内联渲染并存入工坊画廊。',
       permission: 'sensitive',
       parameters: {
         type: 'object',
@@ -385,7 +385,7 @@ function registerWineTokenTools(ctx) {
           },
           model: {
             type: 'string',
-            description: '生图基底模型：留空则自动使用工坊当前可用列表中的首个限免/默认模型；也可显式指定服务端 manifest 中已上架的模型 ID（如 gpt-image-2.6-flare、gpt-image-2.6-sunburst、sensenova-u1.5-lite、grok-imagine-image-2.0、gemini-imagen-3）',
+            description: '生图基底模型：留空则自动使用工坊当前可用列表中的首个限免/默认模型；也可显式指定服务端 manifest 中已上架的模型 ID（如 gpt-image-2.6-flare、gpt-image-2.6-sunburst、sensenova-u1.5-lite、grok-imagine-image-2.0、gemini-imagen-3）。用户已指定模型时只能用该模型，不得自行替换；仅在用户未指定时才可留空自动选用',
             default: ''
           },
           size: {
@@ -503,7 +503,7 @@ function registerWineTokenTools(ctx) {
           console.error('[WineToken Tool] 生图执行失败:', err.message);
           return {
             success: false,
-            error: err.message
+            error: err.message + '（注意：这是本次调用失败，必须原样向用户报告并等待指示，严禁擅自改用其他模型重新生成。）'
           };
         }
       }
