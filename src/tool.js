@@ -240,7 +240,7 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
     resolution = '768P';
   } else if (isGrokVideo) {
     resolution = resolveGrokVideoResolution(size);
-  } else if (/^muse-video$/i.test(chosenModel)) {
+  } else if (/^muse-video$/i.test(chosenModel) || /^omni-1\.2-flash$/i.test(chosenModel)) {
     resolution = '720P';
   } else {
     resolution = (typeof size === 'string' && (size.includes('2K') || size.startsWith('2560') || size.startsWith('1440')))
@@ -260,6 +260,10 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
     payload.seconds = String(duration || 5);
     payload.size = size || '1280x720';
   }
+  if (/^omni-1\.2-flash$/i.test(chosenModel)) {
+    // Omni 走 hailuo 协议: seconds 保持数字, 画幅靠 size 表达 (中转层据此选横竖屏)
+    payload.size = size || '1280x720';
+  }
 
   if (image_url) {
     let finalImageUrl = image_url;
@@ -276,7 +280,7 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
     payload.image = finalImageUrl;
     payload.image_url = finalImageUrl;
     payload.first_frame_image = finalImageUrl;
-    if (/minimax|hailuo/i.test(chosenModel)) {
+    if (/minimax|hailuo/i.test(chosenModel) || /^omni-1\.2-flash$/i.test(chosenModel)) {
       payload.metadata = { first_frame_image: finalImageUrl };
     }
   }
@@ -286,7 +290,7 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
     : (() => {
         const clean = (baseUrl || '').trim().replace(/\/+$/, '');
         const v1 = clean.endsWith('/v1') ? clean : `${clean}/v1`;
-        const isMiniMax = /minimax|hailuo/i.test(chosenModel) || /^muse-video$/i.test(chosenModel);
+        const isMiniMax = /minimax|hailuo/i.test(chosenModel) || /^muse-video$/i.test(chosenModel) || /^omni-1\.2-flash$/i.test(chosenModel);
         return isMiniMax ? {
           submitUrl: `${v1}/videos`,
           pollUrl: (taskId) => `${v1}/videos/${taskId}`,
@@ -392,7 +396,7 @@ function registerWineTokenTools(ctx) {
           },
           model: {
             type: 'string',
-            description: '生图基底模型：留空则自动使用工坊当前可用列表中的首个限免/默认模型；也可显式指定服务端 manifest 中已上架的模型 ID（如 gpt-image-2.6-flare、gpt-image-2.6-sunburst、sensenova-u1.5-lite、grok-imagine-image-2.0、gemini-imagen-3、muse-image）。用户已指定模型时只能用该模型，不得自行替换；仅在用户未指定时才可留空自动选用',
+            description: '生图基底模型：留空则自动使用工坊当前可用列表中的首个限免/默认模型；也可显式指定服务端 manifest 中已上架的模型 ID（如 gpt-image-2.6-flare、gpt-image-2.6-sunburst、sensenova-u1.5-lite、grok-imagine-image-2.0、gemini-imagen-3、muse-image、nano-banana-2.1）。用户已指定模型时只能用该模型，不得自行替换；仅在用户未指定时才可留空自动选用',
             default: ''
           },
           size: {
@@ -532,14 +536,14 @@ function registerWineTokenTools(ctx) {
           },
           model: {
             type: 'string',
-            enum: ['MiniMax-H3', 'MiniMax-H3-2K', 'grok-imagine-video-1.5', 'muse-video'],
-            description: '视频基底模型：MiniMax-H3 (电影感/支持5~15秒)，MiniMax-H3-2K (2K超清/支持5~15秒)，grok-imagine-video-1.5 (物理真实/连贯运镜)，muse-video (超值/720P/支持5、6、10、15秒)。只能用用户指定的模型，不得自行替换。',
+            enum: ['MiniMax-H3', 'MiniMax-H3-2K', 'grok-imagine-video-1.5', 'muse-video', 'omni-1.2-flash'],
+            description: '视频基底模型：MiniMax-H3 (电影感/支持5~15秒)，MiniMax-H3-2K (2K超清/支持5~15秒)，grok-imagine-video-1.5 (物理真实/连贯运镜)，muse-video (超值/720P/支持5、6、10、15秒)，omni-1.2-flash (谷歌出品/原生音频/720P/支持3~15秒任意整数秒)。只能用用户指定的模型，不得自行替换。',
             default: 'MiniMax-H3'
           },
           duration: {
             type: 'number',
-            enum: [5, 6, 10, 15],
-            description: '视频生成时长秒数（MiniMax-H3 / MiniMax-H3-2K / muse-video 支持 5, 6, 10, 15 秒；Grok 支持 5, 10 秒）',
+            enum: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            description: '视频生成时长秒数（omni-1.2-flash 支持 3~15 秒任意整数；MiniMax-H3 / MiniMax-H3-2K / muse-video 支持 5, 6, 10, 15 秒；Grok 支持 5, 10 秒）',
             default: 5
           },
           size: {

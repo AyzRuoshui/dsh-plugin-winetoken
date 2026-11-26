@@ -438,6 +438,18 @@
       unit: '张',
       desc: 'Muse 网页端生图引擎，支持文生图与参考图编辑，超高性价比',
       resolutions: IMAGE_RESOLUTIONS_5
+    },
+    {
+      id: 'nano-banana-2.1',
+      name: 'Nano Banana 2.1',
+      tag: '谷歌出图',
+      price: 0.03,
+      vipPrice: 0.024,
+      enabled: true,
+      singleNOnly: true,
+      unit: '张',
+      desc: '谷歌 Nano Banana 2.1 出图，指令遵循与文字渲染强，支持文生图与带图编辑，五种画幅',
+      resolutions: IMAGE_RESOLUTIONS_5
     }
   ];
 
@@ -520,6 +532,36 @@
         { val: 15, label: '15 秒', tag: '旗舰' }
       ],
       desc: 'Muse 网页端视频生成，720P 出片，时长与横竖画幅可选，支持文生视频与首帧图生视频',
+      resolutions: [
+        { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
+        { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }
+      ]
+    },
+    {
+      id: 'omni-1.2-flash',
+      name: 'Omni 1.2 Flash',
+      tag: '原生音频',
+      pricePerSecond: 0.08,
+      vipPricePerSecond: 0.064,
+      priceText: '原¥0.08/秒 (5秒基准 ¥0.40)',
+      vipPriceText: '会员 ¥0.064/秒 (5秒基准 ¥0.32)',
+      unit: '秒',
+      durations: [
+        { val: 3, label: '3 秒', tag: '轻量' },
+        { val: 4, label: '4 秒', tag: '标准' },
+        { val: 5, label: '5 秒', tag: '标配' },
+        { val: 6, label: '6 秒', tag: '延展' },
+        { val: 7, label: '7 秒', tag: '延展' },
+        { val: 8, label: '8 秒', tag: '长片' },
+        { val: 9, label: '9 秒', tag: '长片' },
+        { val: 10, label: '10 秒', tag: '长片' },
+        { val: 11, label: '11 秒', tag: '进阶' },
+        { val: 12, label: '12 秒', tag: '进阶' },
+        { val: 13, label: '13 秒', tag: '进阶' },
+        { val: 14, label: '14 秒', tag: '进阶' },
+        { val: 15, label: '15 秒', tag: '旗舰' }
+      ],
+      desc: '谷歌 Omni 1.2 Flash 视频生成，原生带音频，时长 3~15 秒可选，横竖画幅可选，支持参考图',
       resolutions: [
         { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
         { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }
@@ -8723,7 +8765,7 @@ $owner.Dispose()
                   resolution = '768P';
                 } else if (isGrokVideo) {
                   resolution = (size && size.includes('1080')) ? '1080P' : '720P';
-                } else if (/^muse-video$/i.test(selectedModel || '')) {
+                } else if (/^muse-video$/i.test(selectedModel || '') || /^omni-1\.2-flash$/i.test(selectedModel || '')) {
                   resolution = '720P';
                 } else {
                   resolution = (size && (size.includes('2K') || size.startsWith('2560') || size.startsWith('1440')))
@@ -8742,10 +8784,14 @@ $owner.Dispose()
                   videoPayload.seconds = String(duration || 5);
                   videoPayload.size = size || '1280x720';
                 }
+                if (/^omni-1\.2-flash$/i.test(videoPayload.model)) {
+                  // Omni 走 hailuo 协议: seconds 保持数字, 画幅靠 size 表达 (中转层据此选横竖屏)
+                  videoPayload.size = size || '1280x720';
+                }
                 // 首帧独立槽位：按模型族选择上行字段，交给 New-API 内置插件显式映射帧角色
                 // (hailuo → metadata.first_frame_image；xai → image)。尾帧已下线，绝不下发 last_frame。
                 const frameFirstUrl = firstFrame && firstFrame.dataUrl ? firstFrame.dataUrl : '';
-                if (/minimax|hailuo/i.test(videoPayload.model)) {
+                if (/minimax|hailuo/i.test(videoPayload.model) || /^omni-1\.2-flash$/i.test(videoPayload.model)) {
                   if (frameFirstUrl) {
                     videoPayload.image = frameFirstUrl;
                     videoPayload.metadata = { first_frame_image: frameFirstUrl };
@@ -8762,7 +8808,7 @@ $owner.Dispose()
                   : (() => {
                       const clean = (BASE_URL || '').trim().replace(/\/+$/, '');
                       const v1 = clean.endsWith('/v1') ? clean : `${clean}/v1`;
-                      const isMiniMax = /minimax|hailuo/i.test(videoPayload.model || '') || /^muse-video$/i.test(videoPayload.model || '');
+                      const isMiniMax = /minimax|hailuo/i.test(videoPayload.model || '') || /^muse-video$/i.test(videoPayload.model || '') || /^omni-1\.2-flash$/i.test(videoPayload.model || '');
                       return isMiniMax ? {
                         submitUrl: `${v1}/videos`,
                         pollUrl: (id) => `${v1}/videos/${id}`,

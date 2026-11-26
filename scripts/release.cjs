@@ -5,7 +5,7 @@ const https = require('https');
 
 const REPO_OWNER = 'AyzRuoshui';
 const REPO_NAME = 'dsh-plugin-winetoken';
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
+const GITHUB_TOKEN = process.argv[2] || process.env.GITHUB_TOKEN || '';
 
 const rootDir = path.resolve(__dirname, '..');
 const pkgPath = path.join(rootDir, 'package.json');
@@ -61,17 +61,20 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-    const releaseTitle = `Release ${version} - 生图工具模型约束对齐：指定模型不得擅自更换`;
+    const releaseTitle = `Release ${version} - 新增 Google Flow 双模型：Nano Banana 2.1 生图 + Omni 1.2 Flash 视频`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-本版把 v2.5.10 给视频工具加硬的模型约束对齐到生图工具：此前生图工具在用户指定模型时没有明文禁止模型擅自更换，调用失败后也存在被模型自行换模型重试的空间。本版补齐三处，与视频工具保持同一套规矩。
+本版新增两个 Google Flow 模型，与 v2.5.13 的 Muse 双模型并列：Nano Banana 2.1 生图（¥0.03/张）与 Omni 1.2 Flash 视频（¥0.08/秒），工坊、画布与工具三处同步可选。
 
-### 1. 生图工具模型约束对齐
-- 工具说明写明：用户指定了模型时必须严格使用那一个，不得自行替换；用户未指定时才可留空自动选用工坊可用列表中的首个模型；
-- 模型参数说明同步注明：已指定时只能用该模型，仅在未指定时可留空自动选用；
-- 调用失败返回的错误信息追加指示：必须原样向用户报告并等待指示，严禁擅自改用其他模型重新生成。
+### 1. Nano Banana 2.1 生图
+- 工坊生图目录与生图工具说明同步上架：谷歌 Gemini 3.1 Flash Image，指令遵循与文字渲染强，支持文生图与带图编辑、五种画幅；
+- 按张计费 ¥0.03，会员 ¥0.024。
 
-### 2. 其他
+### 2. Omni 1.2 Flash 视频
+- 工坊视频目录、画布视频节点与视频工具枚举同步上架：原生带音频，720P 横竖屏，时长 3~15 秒任意整数秒（工具时长枚举同步放宽至 3~15）；
+- 走 /v1/videos 任务协议，画幅经 size 透传中转层选横竖屏，首帧经 metadata 显式映射；按秒计费 ¥0.08，会员 ¥0.064。
+
+### 3. 其他
 - 自动化测试 160/160 全部通过；零 Emoji 工业风；零新增运行依赖。
 
 ---

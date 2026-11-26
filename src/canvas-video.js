@@ -28,7 +28,7 @@ function normalizeV1Base(url) {
 
 function resolveVideoEndpoints(baseUrl, model = '') {
   const v1 = normalizeV1Base(baseUrl);
-  const isMiniMax = /minimax|hailuo/i.test(model);
+  const isMiniMax = /minimax|hailuo/i.test(model) || /^omni-1\.2-flash$/i.test(model);
   if (/^muse-video$/i.test(model)) {
     // Muse 视频走 New-API 内置 sora 插件的标准 /v1/videos 任务协议
     return {
@@ -200,9 +200,14 @@ function buildVideoPayload({ model = 'MiniMax-H3', prompt = '', duration = 5, si
     payload.size = typeof size === 'string' && size ? size : '1280x720';
     payload.resolution = '720P';
   }
+  if (/^omni-1\.2-flash$/i.test(chosenModel)) {
+    // hailuo 协议: seconds 保持数字; 画幅靠 size 表达 (中转层据此选横竖屏), 分辨率固定 720P
+    payload.size = typeof size === 'string' && size ? size : '1280x720';
+    payload.resolution = '720P';
+  }
   const first = typeof firstFrameUrl === 'string' ? firstFrameUrl.trim() : '';
   // 尾帧已下线 (2026-11-25 站长决定)：上游中转接口不收 last_frame，载荷绝不下发任何尾帧字段。
-  if (/minimax|hailuo/i.test(chosenModel)) {
+  if (/minimax|hailuo/i.test(chosenModel) || /^omni-1\.2-flash$/i.test(chosenModel)) {
     if (first) {
       payload.image = first;
       payload.metadata = { first_frame_image: first };
