@@ -61,18 +61,22 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-    const releaseTitle = `Release ${version} - 视频生成结果收口修复：completed 状态识别与内容端点取流`;
+    const releaseTitle = `Release ${version} - 对话工具视频生成修复：completed 收口与模型约束加硬`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-本版修复视频生成「明明已出片、界面却报超时」的真因：站点轮询响应以 completed 表示完成且不回传成片地址，旧版客户端只认 succeeded 且必须等到直链地址，于是永远等不到结果（v2.5.8 提升的 300 秒上限只是把等待变长）。本版按站点真实响应形态收口全流程。
+本版修复对话里让大模型调用的视频生成工具（winetoken_generate_video）：它内部还留着一份旧轮询（120 秒、只认 succeeded、必须等直链），与工坊/画布同样的病，v2.5.9 未覆盖到这一处；同时按站长要求加硬模型约束，杜绝模型擅自更换用户指定的模型。
 
-### 1. 工坊与画布统一按 completed 收口
-- 轮询状态识别新增 completed，与 succeeded / success 同等对待；
-- 响应未回传成片地址时，凭任务 ID 到内容端点带登录凭证取回成片：工坊内嵌播放并写入历史，画布落盘为本地资产后播放；
-- 配合 v2.5.8 的 300 秒轮询上限，MiniMax H3 等长渲染任务可完整走完创建、渲染、取片全流程。
+### 1. 工具轮询与工坊/画布对齐
+- 轮询上限 120 秒提升至 300 秒，识别 completed 状态收口；
+- 响应无直链时，凭任务 ID 带凭证到内容端点取回成片（转 data URL 播放并存入工坊历史）。
 
-### 2. 工程状态
-- 自动化测试 160/160 全部通过（含 completed + 内容端点收口的新断言）；零 Emoji 工业风；零新增运行依赖。
+### 2. 模型约束加硬
+- 工具说明写明：必须严格使用用户指定的模型（未指定才用默认 MiniMax-H3）；失败或超时必须原样报告并等待用户指示，严禁擅自改用其他模型；
+- 超时报错同步注明「这是等待超时而非模型不可用」，防止模型误读为模型未接入而自行换模型。
+
+### 3. 其他
+- 时长选项去掉 4 秒（与站点清单一致，MiniMax H3 / H3-2K 为 5~15 秒）；
+- 自动化测试 160/160 全部通过；零 Emoji 工业风；零新增运行依赖。
 
 ---
 

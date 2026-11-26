@@ -271,10 +271,12 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
         const isMiniMax = /minimax|hailuo/i.test(chosenModel);
         return isMiniMax ? {
           submitUrl: `${v1}/videos`,
-          pollUrl: (taskId) => `${v1}/videos/${taskId}`
+          pollUrl: (taskId) => `${v1}/videos/${taskId}`,
+          contentUrl: (taskId) => `${v1}/videos/${taskId}/content`
         } : {
           submitUrl: `${v1}/videos/generations`,
-          pollUrl: (taskId) => `${v1}/videos/generations/${taskId}`
+          pollUrl: (taskId) => `${v1}/videos/generations/${taskId}`,
+          contentUrl: (taskId) => `${v1}/videos/generations/${taskId}`
         };
       })();
 
@@ -312,9 +314,9 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
     throw new Error('视频接口未返回任务 ID 或直接视频链接');
   }
 
-  // 轮询最多 40 次，每次间隔 3 秒 (共最长 120 秒)
+  // 轮询最多 100 次，每次间隔 3 秒 (共最长 300 秒, 与工坊/画布一致)
   const pollUrl = endpoints.pollUrl(taskId);
-  for (let attempt = 0; attempt < 40; attempt++) {
+  for (let attempt = 0; attempt < 100; attempt++) {
     await new Promise(r => setTimeout(r, 3000));
     try {
       const pollRes = await fetch(pollUrl, {
@@ -324,9 +326,19 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
 
       const pollData = await pollRes.json();
       const status = (pollData.status || pollData.state || '').toLowerCase();
-      if (status === 'succeeded' || status === 'success') {
+      if (status === 'succeeded' || status === 'success' || status === 'completed') {
         const directUrl = pollData.url || (pollData.data && pollData.data[0] && pollData.data[0].url) || (pollData.output && pollData.output.url);
         if (directUrl) return directUrl;
+        // 站点轮询响应不回传成片 URL: 带鉴权到内容端点取流, 转 data URL 返回
+        if (typeof endpoints.contentUrl === 'function') {
+          const contentRes = await fetch(endpoints.contentUrl(taskId), {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+          if (contentRes.ok) {
+            const buf = Buffer.from(await contentRes.arrayBuffer());
+            if (buf.length > 0) return `data:video/mp4;base64,${buf.toString('base64')}`;
+          }
+        }
       }
       if (status === 'failed' || status === 'error') {
         throw new Error(pollData.error?.message || pollData.message || '视频渲染失败');
@@ -336,7 +348,7 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
     }
   }
 
-  throw new Error(`视频生成超时 (Task ID: ${taskId})，请稍后在创作工坊历史中查看`);
+  throw new Error(`视频生成超时 (Task ID: ${taskId})，请稍后在创作工坊历史中查看。注意: 这是等待超时而非模型不可用，必须原样向用户报告并等待指示，严禁擅自改用其他模型重新生成。`);
 }
 
 /**
@@ -491,7 +503,7 @@ function registerWineTokenTools(ctx) {
       name: 'winetoken_generate_video',
       label: 'WineToken 创作工坊·AI视频生成',
       category: 'creative',
-      description: '【WineToken 创作工坊·AI视频生成工具（高额付费操作）】仅在获得用户明确授权确认后方可调用，单轮严格限生成 1 个视频，绝对禁止并发多调。成果直接在聊天中通过视频播放器预览并存入工坊画廊。',
+      description: '【WineToken 创作工坊·AI视频生成工具（高额付费操作）】仅在获得用户明确授权确认后方可调用，单轮严格限生成 1 个视频，绝对禁止并发多调。模型必须严格使用用户指定的那一个（用户未指定时用默认 MiniMax-H3）；调用失败或超时必须原样报告并停下等待用户指示，严禁擅自改用其他模型——换模型等于换作品，必须由用户本人决定。成果直接在聊天中通过视频播放器预览并存入工坊画廊。',
       permission: 'sensitive',
       parameters: {
         type: 'object',
@@ -503,13 +515,13 @@ function registerWineTokenTools(ctx) {
           model: {
             type: 'string',
             enum: ['MiniMax-H3', 'MiniMax-H3-2K', 'grok-imagine-video-1.5'],
-            description: '视频基底模型：MiniMax-H3 (电影感/支持4~15秒)，MiniMax-H3-2K (2K超清/支持5~15秒)，grok-imagine-video-1.5 (物理真实/连贯运镜)',
+            description: '视频基底模型：MiniMax-H3 (电影感/支持5~15秒)，MiniMax-H3-2K (2K超清/支持5~15秒)，grok-imagine-video-1.5 (物理真实/连贯运镜)。只能用用户指定的模型，不得自行替换。',
             default: 'MiniMax-H3'
           },
           duration: {
             type: 'number',
-            enum: [4, 5, 6, 10, 15],
-            description: '视频生成时长秒数（MiniMax-H3 支持 4, 5, 6, 10, 15 秒；MiniMax-H3-2K 支持 5, 6, 10, 15 秒；Grok 支持 5, 10 秒）',
+            enum: [5, 6, 10, 15],
+            description: '视频生成时长秒数（MiniMax-H3 / MiniMax-H3-2K 支持 5, 6, 10, 15 秒；Grok 支持 5, 10 秒）',
             default: 5
           },
           size: {
