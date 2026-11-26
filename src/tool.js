@@ -255,11 +255,22 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
   };
 
   if (image_url) {
-    payload.image = image_url;
-    payload.image_url = image_url;
-    payload.first_frame_image = image_url;
+    let finalImageUrl = image_url;
+    // 本地首帧文件自动转 Base64 管道 (与生图工具 TOOL-02 同款)：用户给本机图片路径时直接读文件随请求发送，无需先传图床
+    if (typeof image_url === 'string' && fs.existsSync(image_url)) {
+      try {
+        const fileBuf = fs.readFileSync(image_url);
+        const ext = path.extname(image_url).toLowerCase().replace('.', '') || 'png';
+        finalImageUrl = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${fileBuf.toString('base64')}`;
+      } catch (err) {
+        console.warn('[WineToken Tool] 读取本地首帧图失败，降级使用原始路径:', err.message);
+      }
+    }
+    payload.image = finalImageUrl;
+    payload.image_url = finalImageUrl;
+    payload.first_frame_image = finalImageUrl;
     if (/minimax|hailuo/i.test(chosenModel)) {
-      payload.metadata = { first_frame_image: image_url };
+      payload.metadata = { first_frame_image: finalImageUrl };
     }
   }
 
@@ -532,7 +543,7 @@ function registerWineTokenTools(ctx) {
           },
           image_url: {
             type: 'string',
-            description: '首帧参考图 URL（可选，用于首帧图生视频）'
+            description: '首帧参考图（可选，用于首帧图生视频）：可传公网 http/https 直链，也可直接传用户本机图片的完整文件路径，本地文件会自动读取并随请求发送，无需先传图床'
           }
         },
         required: ['prompt']
