@@ -7688,7 +7688,7 @@ $owner.Dispose()
                             style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', color: theme.textMuted, fontSize: '11px', textAlign: 'center', padding: '12px' }
                           }, [
                             busy ? h(Icon, { name: 'spinner', size: 18, style: { animation: 'wt-spin 1s linear infinite', color: '#06b6d4' } }) : null,
-                            h('div', {}, busy ? `视频生成中 (第 ${vState.attempt || 1} 次轮询 / 120秒)` : (vState.error || '连线多张图片后点击下方「生成视频」')),
+                            h('div', {}, busy ? `视频生成中 (第 ${vState.attempt || 1} 次轮询 / 300秒)` : (vState.error || '连线多张图片后点击下方「生成视频」')),
                             busy ? h('button', {
                               type: 'button', onClick: () => handleCancelVideoItem(item.id),
                               style: { background: 'none', border: `1px solid ${theme.borderSubtle}`, borderRadius: '4px', color: theme.textMuted, cursor: 'pointer', fontSize: '10px', padding: '2px 8px', marginTop: '4px' }
@@ -8757,9 +8757,9 @@ $owner.Dispose()
                   if (!taskId) throw new Error('视频接口未返回任务 ID 或直接视频链接');
 
                   const pollUrl = endpoints.pollUrl(taskId);
-                  const maxAttempts = 40;
+                  const maxAttempts = 100;
                   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                    setStatusMsg(`视频正在加速渲染中 (${attempt * 3}秒 / 最长120秒)...`);
+                    setStatusMsg(`视频正在加速渲染中 (${attempt * 3}秒 / 最长300秒)...`);
                     await new Promise(r => setTimeout(r, 3000));
 
                     try {

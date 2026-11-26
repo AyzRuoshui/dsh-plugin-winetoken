@@ -17,7 +17,7 @@ const VIDEO_STATUS = Object.freeze({
   TIMEOUT: 'timeout'
 });
 
-const DEFAULT_MAX_ATTEMPTS = 40;      // 与 StudioPage 一致: 3 秒 × 40 = 120 秒
+const DEFAULT_MAX_ATTEMPTS = 100;      // 与 StudioPage 一致: 3 秒 × 100 = 300 秒
 const DEFAULT_POLL_INTERVAL_MS = 3000;
 const TERMINAL_STATUSES = Object.freeze(['succeeded', 'failed', 'cancelled', 'timeout']);
 
