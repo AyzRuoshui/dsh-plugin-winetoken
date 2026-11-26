@@ -5355,7 +5355,7 @@ $owner.Dispose()
                     if (controller.signal.aborted) throw new Error('已由用户取消');
                     pollData = {}; // 单次轮询网络异常不误判失败，继续等待
                   }
-                  const reduced = CanvasVideoUtils.reducePollResponse(pollData, attempt, CanvasVideoUtils.DEFAULT_MAX_ATTEMPTS);
+                  const reduced = CanvasVideoUtils.reducePollResponse(pollData, attempt, CanvasVideoUtils.DEFAULT_MAX_ATTEMPTS, endpoints.contentUrl(parsed.taskId));
                   updateVideoItem(itemId, {
                     status: reduced.status, attempt, error: reduced.error, videoUrl: reduced.videoUrl
                   });
@@ -5371,7 +5371,11 @@ $owner.Dispose()
               let assetKey = '';
               if (canvasAssetsDriver) {
                 try {
-                  const binRes = await fetch(videoUrl, { signal: controller.signal });
+                  const isContentEndpoint = Boolean(parsed.taskId) && videoUrl === endpoints.contentUrl(parsed.taskId);
+                  const binRes = await fetch(videoUrl, {
+                    ...(isContentEndpoint ? { headers: { 'Authorization': `Bearer ${apiKey}` } } : {}),
+                    signal: controller.signal
+                  });
                   if (binRes.ok) {
                     const buf = Buffer.from(await binRes.arrayBuffer());
                     if (buf.length > 0) {
@@ -8721,10 +8725,12 @@ $owner.Dispose()
                       const isMiniMax = /minimax|hailuo/i.test(videoPayload.model || '');
                       return isMiniMax ? {
                         submitUrl: `${v1}/videos`,
-                        pollUrl: (id) => `${v1}/videos/${id}`
+                        pollUrl: (id) => `${v1}/videos/${id}`,
+                        contentUrl: (id) => `${v1}/videos/${id}/content`
                       } : {
                         submitUrl: `${v1}/videos/generations`,
-                        pollUrl: (id) => `${v1}/videos/generations/${id}`
+                        pollUrl: (id) => `${v1}/videos/generations/${id}`,
+                        contentUrl: (id) => `${v1}/videos/generations/${id}`
                       };
                     })();
                 const submitUrl = endpoints.submitUrl;
@@ -8769,8 +8775,23 @@ $owner.Dispose()
                       if (!pollRes.ok) continue;
                       const pollData = await pollRes.json();
                       const status = (pollData.status || pollData.state || '').toLowerCase();
-                      if (status === 'succeeded' || status === 'success') {
+                      if (status === 'succeeded' || status === 'success' || status === 'completed') {
                         finalVideoUrl = pollData.url || (pollData.data && pollData.data[0] && pollData.data[0].url) || (pollData.output && pollData.output.url);
+                        if (!finalVideoUrl && endpoints.contentUrl) {
+                          // 站点轮询响应不回传成片 URL: 带鉴权到内容端点取流, 转 data URL 供内嵌播放与历史保存
+                          const contentRes = await fetch(endpoints.contentUrl(taskId), {
+                            headers: { 'Authorization': `Bearer ${key}` }
+                          });
+                          if (contentRes.ok) {
+                            const blob = await contentRes.blob();
+                            finalVideoUrl = await new Promise((resolve, reject) => {
+                              const reader = new FileReader();
+                              reader.onload = () => resolve(reader.result);
+                              reader.onerror = () => reject(new Error('视频读取失败'));
+                              reader.readAsDataURL(blob);
+                            });
+                          }
+                        }
                         if (finalVideoUrl) break;
                       }
                       if (status === 'failed' || status === 'error') {

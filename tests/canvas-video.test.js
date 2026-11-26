@@ -41,6 +41,12 @@ test('CanvasVideo - reducePollResponse 成功/失败/无状态直链/进行中',
   assert.equal(pending.done, false);
   // 声称成功但缺 URL 不得误判完成
   assert.equal(reducePollResponse({ status: 'succeeded' }, 1).done, false);
+  // 站点形态: status=completed 且响应无 URL 时, 以内容端点地址收口; 未给内容端点则不误判完成
+  const viaContent = reducePollResponse({ status: 'completed' }, 5, 100, 'https://s/v1/videos/task_x/content');
+  assert.equal(viaContent.done, true);
+  assert.equal(viaContent.status, VIDEO_STATUS.SUCCEEDED);
+  assert.equal(viaContent.videoUrl, 'https://s/v1/videos/task_x/content');
+  assert.equal(reducePollResponse({ status: 'completed' }, 5).done, false);
   // 脏响应不抛错、保持轮询
   assert.equal(reducePollResponse(null, 1).done, false);
   assert.equal(reducePollResponse({ status: NaN }, NaN).done, false);

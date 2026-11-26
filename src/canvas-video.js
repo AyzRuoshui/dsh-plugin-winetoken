@@ -92,7 +92,7 @@ function firstString(...vals) {
  * 轮询状态归约: 输入一次轮询响应，输出推进后的状态。
  * 返回 { status, videoUrl, error, done } —— done=true 时调用方应停止轮询。
  */
-function reducePollResponse(payload, attempt = 1, maxAttempts = DEFAULT_MAX_ATTEMPTS) {
+function reducePollResponse(payload, attempt = 1, maxAttempts = DEFAULT_MAX_ATTEMPTS, contentUrl = '') {
   const at = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 1;
   const cap = Number.isFinite(maxAttempts) && maxAttempts > 0 ? Math.floor(maxAttempts) : DEFAULT_MAX_ATTEMPTS;
   if (!isObject(payload)) {
@@ -103,6 +103,9 @@ function reducePollResponse(payload, attempt = 1, maxAttempts = DEFAULT_MAX_ATTE
 
   if (rawStatus === 'succeeded' || rawStatus === 'success' || rawStatus === 'completed') {
     if (url) return { status: VIDEO_STATUS.SUCCEEDED, videoUrl: url, error: '', done: true };
+    // 站点轮询响应不带成片 URL: 成片在协议的内容端点, 以其为地址收口 (取流需鉴权, 由调用方负责)
+    const fallbackUrl = typeof contentUrl === 'string' ? contentUrl.trim() : '';
+    if (fallbackUrl) return { status: VIDEO_STATUS.SUCCEEDED, videoUrl: fallbackUrl, error: '', done: true };
     // 声称成功但没给 URL: 继续轮询，不误判完成
     return { status: VIDEO_STATUS.POLLING, videoUrl: '', error: '', done: false };
   }
