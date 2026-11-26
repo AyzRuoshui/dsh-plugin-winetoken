@@ -436,7 +436,7 @@
       enabled: true,
       singleNOnly: true,
       unit: '张',
-      desc: 'Muse 网页端生图引擎，支持文生图与参考图编辑，超高性价比',
+      desc: '提示词理解准确，擅长创意概念视觉、插画与写实画面，出图快，超高性价比',
       resolutions: IMAGE_RESOLUTIONS_5
     },
     {
@@ -448,7 +448,7 @@
       enabled: true,
       singleNOnly: true,
       unit: '张',
-      desc: '谷歌 Nano Banana 2.1 出图，指令遵循与文字渲染强，支持文生图与带图编辑，五种画幅',
+      desc: '提示词理解与文字渲染出色，细节丰富光影自然，支持文生图与带图编辑，五种画幅三档分辨率',
       resolutions: IMAGE_RESOLUTIONS_5
     }
   ];
@@ -531,7 +531,7 @@
         { val: 10, label: '10 秒', tag: '长片' },
         { val: 15, label: '15 秒', tag: '旗舰' }
       ],
-      desc: 'Muse 网页端视频生成，720P 出片，时长与横竖画幅可选，支持文生视频与首帧图生视频',
+      desc: '运动连贯自然、镜头语言丰富，720P 出片，时长与横竖画幅可选，支持文生视频与首帧图生视频',
       resolutions: [
         { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
         { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }
@@ -561,7 +561,7 @@
         { val: 14, label: '14 秒', tag: '进阶' },
         { val: 15, label: '15 秒', tag: '旗舰' }
       ],
-      desc: '谷歌 Omni 1.2 Flash 视频生成，原生带音频，时长 3~15 秒可选，横竖画幅可选，支持参考图',
+      desc: '原生带音频，运动连贯自然、镜头语言丰富，3~15 秒任意时长，横竖双画幅，支持参考图',
       resolutions: [
         { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
         { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }

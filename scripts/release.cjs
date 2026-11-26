@@ -61,18 +61,17 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-    const releaseTitle = `Release ${version} - 新增 Google Flow 双模型：Nano Banana 2.1 生图 + Omni 1.2 Flash 视频`;
+    const releaseTitle = `Release ${version} - 媒体模型介绍文案翻新：Flow 与 Muse 四模型`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-本版新增两个 Google Flow 模型，与 v2.5.13 的 Muse 双模型并列：Nano Banana 2.1 生图（¥0.03/张）与 Omni 1.2 Flash 视频（¥0.08/秒），工坊、画布与工具三处同步可选。
+本版翻新四个媒体模型的介绍文案：只讲模型本身的能力与特点，去除渠道与计费口径，与服务端模型表、工坊清单三处统一。
 
-### 1. Nano Banana 2.1 生图
-- 工坊生图目录与生图工具说明同步上架：谷歌 Gemini 3.1 Flash Image，指令遵循与文字渲染强，支持文生图与带图编辑、五种画幅；
-- 按张计费 ¥0.03，会员 ¥0.024。
+### 1. Google Flow 双模型（v2.5.14 上架）
+- Nano Banana 2.1：提示词理解与文字渲染出色，细节丰富光影自然，支持文生图与带图编辑，五种画幅三档分辨率；
+- Omni 1.2 Flash：原生带音频，运动连贯自然、镜头语言丰富，3~15 秒任意时长，横竖双画幅，支持参考图。
 
-### 2. Omni 1.2 Flash 视频
-- 工坊视频目录、画布视频节点与视频工具枚举同步上架：原生带音频，720P 横竖屏，时长 3~15 秒任意整数秒（工具时长枚举同步放宽至 3~15）；
-- 走 /v1/videos 任务协议，画幅经 size 透传中转层选横竖屏，首帧经 metadata 显式映射；按秒计费 ¥0.08，会员 ¥0.064。
+### 2. Muse 双模型（v2.5.13 上架）
+- Muse Image / Muse Video 的兜底目录文案同步服务端新版，去掉旧文案中的渠道表述。
 
 ### 3. 其他
 - 自动化测试 160/160 全部通过；零 Emoji 工业风；零新增运行依赖。
