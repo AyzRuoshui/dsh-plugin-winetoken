@@ -16,6 +16,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { makeHostRequire, SEED_WORDS } = require('./helpers/host-require-stub.cjs');
 
 const DIST_CLIENT = path.resolve(__dirname, '..', 'dist', 'client.js');
 const realRequire = require;
@@ -35,6 +36,29 @@ function withArtifact(t, fn) {
 function makeTestReact() {
   // 产物内 React 来自 seed（真实 react），SSR 直接用真实 react / react-dom/server。
   return realRequire('react');
+}
+
+// 簇 A：seed 桩必须与 helpers/host-require-stub.cjs 的忠实桩对齐——11 个 seed 全给，
+// react/jsx-runtime 用 Node 真实实现（产物中 jsx()/jsxs()/Fragment 靠它才能在 SSR 产出
+// react-flow 树）。旧桩只给 react 一个 seed，esbuild 产物里 react/jsx-runtime 的外部 require
+// 直接抛 "missed the module table"，4 个 artifact 用例全挂在这。
+// SEED_WORDS 由 helper 单一来源提供，这里为每个 seed 解析一个可用值：
+function makeSeedRequire(overrides = {}) {
+  const seedValues = {};
+  for (const id of SEED_WORDS) {
+    // 显式覆盖优先（如 react 用调用方桩）；其余 seed 用 Node 真实模块加载。
+    if (Object.prototype.hasOwnProperty.call(overrides, id)) {
+      seedValues[id] = overrides[id];
+      continue;
+    }
+    try {
+      seedValues[id] = realRequire(id);
+    } catch (_) {
+      // 某些 seed 在仓库里没有对应依赖时给出最小可用占位，保持"给全 11 个"的语义。
+      seedValues[id] = {};
+    }
+  }
+  return makeHostRequire({ seedValues });
 }
 
 // 在仅 seed 环境的 vm 宿主中加载产物：无 window.require、无 global require（除 factory 注入）。
@@ -73,10 +97,7 @@ function loadBundleFactory(code, factoryRequire) {
 test('Artifact - 产物在仅 seed 环境可 materialize（factory 同步执行不抛）', (t) => {
   withArtifact(t, (code) => {
     const React = makeTestReact();
-    const seed = (id) => {
-      if (id === 'react') return React;
-      throw new Error(`Cannot find module '${id}': missed the module table`);
-    };
+    const seed = makeSeedRequire({ react: React });
     let result = null;
     assert.doesNotThrow(() => {
       result = loadBundleFactory(code, seed);
@@ -90,10 +111,7 @@ test('Artifact - 产物在仅 seed 环境可 materialize（factory 同步执行�
 test('Artifact - Studio 载荷（buildImageRequest / sendImageRequest / buildVideoPayload）可构建且历史项唯一 id', (t) => {
   withArtifact(t, (code) => {
     const React = makeTestReact();
-    const seed = (id) => {
-      if (id === 'react') return React;
-      throw new Error(`Cannot find module '${id}': missed the module table`);
-    };
+    const seed = makeSeedRequire({ react: React });
     // 产物 factory 内 module.exports 需作为导出面；esbuild cjs 输出通过 module.exports 暴露。
     const sandbox = {
       module: { exports: {} }, exports: {},
@@ -129,11 +147,7 @@ test('Artifact - ReactFlowWorkspace 从打包表命中且 SSR 产出 react-flow 
   withArtifact(t, (code) => {
     const React = makeTestReact();
     const ReactDOMServer = realRequire('react-dom/server');
-    const seed = (id) => {
-      if (id === 'react') return React;
-      if (id === 'react-dom/client') return realRequire('react-dom/client');
-      throw new Error(`Cannot find module '${id}': missed the module table`);
-    };
+    const seed = makeSeedRequire({ react: React });
     const result = loadBundleFactory(code, seed);
     assert.ok(result.registered.length >= 1, 'factory 应注册');
 
@@ -154,10 +168,7 @@ test('Artifact - ReactFlowWorkspace 从打包表命中且 SSR 产出 react-flow 
 test('Artifact - CanvasVideoUtils 可用且 getCanvasVideoUnavailableError() 返回空串', (t) => {
   withArtifact(t, (code) => {
     const React = makeTestReact();
-    const seed = (id) => {
-      if (id === 'react') return React;
-      throw new Error(`Cannot find module '${id}': missed the module table`);
-    };
+    const seed = makeSeedRequire({ react: React });
     const result = loadBundleFactory(code, seed);
     assert.ok(result.registered.length >= 1, 'factory 应注册');
     // 产物中 canvas-video 来自打包表；等价验证 src 侧真实模块产出 payload。

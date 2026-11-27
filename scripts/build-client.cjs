@@ -7,7 +7,9 @@
  *  - bundle:true, format:'cjs', platform:'browser'
  *  - external = 11 个 seed word（本插件运行时只用 react/react-dom）
  *  - loader '.css' -> 'text'（xyflow CSS 内联进产物）
- *  - alias fs/path/os -> src/vendor/node-builtin-stub.cjs（4 个 fs 兄弟据此走内存垫片）
+ *  - onResolve fs/path/os/child_process/electron -> src/vendor/node-builtin-stub.cjs
+ *    （4 个 fs 兄弟走内存垫片；child_process/electron 为 client.js 原生文件能力的可选
+ *    依赖，重定向到空 stub 后 try/catch 自然降级，产物不留运行时 require）
  *  - minify:false（便于产物静态审计；体积过大时下游可加 --minify 变体）
  *  - outfile: dist/client.js
  */
@@ -36,12 +38,19 @@ const SEED_WORDS = [
   '@deepseek-ai/agent-client-ui-dockkit'
 ];
 
-// fs/path/os 兜底重定向插件：用 onResolve 保证这三个 Node 内置模块在 bundle 期
-// 被替换成空 stub（不依赖 alias 对内置模块的语义差异，双保险）。
+// Node / Electron 内置模块兜底重定向插件：onResolve 把这些模块在 bundle 期替换为
+// 空 stub（不依赖 alias 对内置模块的语义差异，双保险）。
+// fs/path/os：4 个 fs 兄弟据此走内存垫片。
+// child_process / electron（簇 B，v2.5.19）：来自 src/client.js 的 WineTokenFileUtil
+// （promptSaveLocation / openFile / revealFile / openFolder / writeMediaToFile 等原生
+// 文件对话框与打开文件的可选能力，均包在 try/catch 里）。这些调用在 DSH web 宿主里
+// 一旦执行必 miss（宿主只注入 11 个 seed，没有 node 内置），先重定向到空 stub，
+// 让 require 返回 {}，try/catch 内的能力探测自然降级，产物不再残留运行时
+// require('child_process') / require('electron')。
 const builtinStubPlugin = {
   name: 'winetoken-builtin-stub',
   setup(buildCtx) {
-    buildCtx.onResolve({ filter: /^(fs|path|os)$/ }, (args) => ({ path: STUB_FILE, namespace: 'file' }));
+    buildCtx.onResolve({ filter: /^(fs|path|os|child_process|electron)$/ }, (args) => ({ path: STUB_FILE, namespace: 'file' }));
   }
 };
 

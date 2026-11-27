@@ -88,6 +88,27 @@ function loadClientInVm({ bundled, factoryRequire, windowObj, hasGlobalRequire =
   if (bundled) sandbox.__WINETOKEN_BUNDLED_SIBLINGS__ = bundled;
   if (hasGlobalRequire) sandbox.require = globalRequire;
   if (windowObj !== undefined) sandbox.window = windowObj;
+  // v2.5.19：忠实宿主装载流程——factory 由 __ModuleLoader__.load 注册后，宿主在装载
+  // 阶段用注入的 require 执行它（与 noload-factory.test.js 的 harness 同款）。
+  // 旧 harness 收下 factoryRequire 却从不执行 factory，宿主 require 根本进不了
+  // ensureSiblingModules 的兜底链，loadSiblingModule 因此返回 error:null，报出无后缀
+  // 原文案——这是"测试场景与新架构不符"，不是实现缺陷。
+  // 只在显式注入 factoryRequire 时补建 __ModuleLoader__ 并执行 factory：
+  // 无 require 场景（用例 3）保持原样，仍走"完全没有任何 require 可用"的原文案语义。
+  if (typeof factoryRequire === 'function') {
+    let win = sandbox.window;
+    if (!win || typeof win !== 'object') {
+      win = {};
+      sandbox.window = win;
+    }
+    if (!win.__ModuleLoader__) {
+      win.__ModuleLoader__ = {
+        load(def) {
+          if (def && typeof def.factory === 'function') def.factory(factoryRequire);
+        }
+      };
+    }
+  }
   vm.runInNewContext(code, sandbox, { filename: CLIENT_PATH });
   return { exports: mod.exports, sandbox, errors };
 }
