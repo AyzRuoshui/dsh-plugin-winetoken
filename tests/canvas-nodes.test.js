@@ -244,7 +244,7 @@ test('CanvasNodes - prompt 上限 4000 字', () => {
   assert.ok(ctx.warnings.some(w => w.includes('4000')));
 });
 
-test('CanvasNodes - referenceImages 上限 8 张', () => {
+test('CanvasNodes - referenceImages 上限 9 张（视频模型再按各自能力裁剪）', () => {
   const items = [];
   const edges = [];
   for (let i = 0; i < 10; i++) {
@@ -254,9 +254,9 @@ test('CanvasNodes - referenceImages 上限 8 张', () => {
   const ctx = buildGenerationContext({
     panels: [{ id: 'p1', num: 1, prompt: 'x' }], canvasItems: items, edges
   }, 'p1');
-  assert.equal(ctx.referenceImages.length, 8);
-  assert.deepEqual(ctx.referenceImages, ['URL_0', 'URL_1', 'URL_2', 'URL_3', 'URL_4', 'URL_5', 'URL_6', 'URL_7']);
-  assert.ok(ctx.warnings.some(w => w.includes('8')));
+  assert.equal(ctx.referenceImages.length, 9);
+  assert.deepEqual(ctx.referenceImages, ['URL_0', 'URL_1', 'URL_2', 'URL_3', 'URL_4', 'URL_5', 'URL_6', 'URL_7', 'URL_8']);
+  assert.ok(ctx.warnings.some(w => w.includes('9')));
 });
 
 test('CanvasNodes - params 白名单 + 后者覆盖 + 拒绝原型污染与非法类型', () => {

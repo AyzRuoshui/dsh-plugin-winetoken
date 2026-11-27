@@ -220,7 +220,7 @@ test('④ 不支持模型 + 有垫图时被拦截不发请求', async () => {
   // 1. 能力校验函数拦截
   const checkGrok = validateImageModelSupport('grok-imagine-image-2.0', true);
   assert.equal(checkGrok.supported, false);
-  assert.match(checkGrok.error, /当前模型不支持垫图改图/);
+  assert.match(checkGrok.error, /不支持参考图输入|不支持垫图改图/);
 
   const checkGemini = validateImageModelSupport('gemini-imagen-3', true);
   assert.equal(checkGemini.supported, false);
@@ -248,7 +248,7 @@ test('④ 不支持模型 + 有垫图时被拦截不发请求', async () => {
         fetchFn: mockFetch
       });
     },
-    /当前模型不支持垫图改图/
+    /不支持参考图输入|不支持垫图改图/
   );
 
   assert.equal(fetchCalls, 0, '不支持模型有垫图时绝对不发起任何网络请求');

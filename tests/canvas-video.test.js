@@ -88,9 +88,9 @@ test('CanvasVideo - buildVideoPayload 与 StudioPage 已验证协议完全一致
   assert.equal(base.resolution, '768P');
 
   const grok = buildVideoPayload({ model: 'grok-imagine-video-1.5', size: '1920x1080' });
-  assert.equal(grok.resolution, '1080P');
+  assert.equal(grok.resolution, '1080p');
   const grok720 = buildVideoPayload({ model: 'grok-imagine-video-1.5', size: '1280x720' });
-  assert.equal(grok720.resolution, '720P');
+  assert.equal(grok720.resolution, '720p');
   assert.equal(grok720.images, undefined, 'Grok 族绝不使用 images 数组');
 
   const minimaxFrames = buildVideoPayload({
@@ -153,4 +153,228 @@ test('CanvasVideo - 破坏性契约: 超时/越界参数被 clamp，绝不臆造
   assert.equal(p.resolution, '768P');
   const p2 = buildVideoPayload({ duration: -5 });
   assert.equal(p2.seconds, 1);
+});
+
+const {
+  MAX_VIDEO_REF_TOTAL_BYTES,
+  getVideoModelCapabilities,
+  compileVideoPrompt,
+  findOutOfRangeVideoTags,
+  computeScaledDimensions,
+  estimateReferencePayloadBytes,
+  assertVideoPayloadBudget,
+  downscaleImageDataUrl
+} = require('../src/canvas-video.js');
+
+test('CanvasVideo - getVideoModelCapabilities 模型能力声明契约', () => {
+  const h3 = getVideoModelCapabilities('MiniMax-H3');
+  assert.equal(h3.supportsMultiRef, true);
+  assert.equal(h3.maxRefImages, 9);
+  assert.equal(h3.multiRefExclusiveWithFirstFrame, true);
+  assert.equal(h3.refField, 'metadata.content');
+  assert.equal(h3.protocol, 'minimax-videos');
+
+  const h32k = getVideoModelCapabilities('MiniMax-H3-2K');
+  assert.equal(h32k.supportsMultiRef, true);
+  assert.equal(h32k.maxRefImages, 9);
+  assert.equal(h32k.multiRefExclusiveWithFirstFrame, true);
+
+  const omni = getVideoModelCapabilities('omni-1.2-flash');
+  assert.equal(omni.supportsMultiRef, true);
+  assert.equal(omni.maxRefImages, 3);
+  assert.equal(omni.multiRefExclusiveWithFirstFrame, false);
+  assert.equal(omni.refField, 'metadata.reference_images');
+  assert.equal(omni.protocol, 'minimax-videos');
+
+  const muse = getVideoModelCapabilities('muse-video');
+  assert.equal(muse.supportsMultiRef, false);
+  assert.equal(muse.maxRefImages, 1);
+  assert.equal(muse.protocol, 'sora-videos');
+
+  const grok = getVideoModelCapabilities('grok-imagine-video-1.5');
+  assert.equal(grok.supportsMultiRef, false);
+  assert.equal(grok.maxRefImages, 1);
+  assert.equal(grok.disallowImagesArray, true);
+  assert.equal(grok.protocol, 'standard-generations');
+});
+
+test('CanvasVideo - H3 多图参考协议 (1~9张 metadata.content, 超 9 截断, 零首帧字段)', () => {
+  const refs = Array.from({ length: 11 }, (_, i) => `https://cdn.test/ref_${i + 1}.png`);
+  const p = buildVideoPayload({
+    model: 'MiniMax-H3',
+    prompt: '图1 与 图2 在雨夜交锋',
+    duration: 6,
+    size: '1280x720',
+    referenceImages: refs,
+    referenceMode: 'reference'
+  });
+
+  assert.equal(p.image, undefined);
+  assert.equal(p.image_url, undefined);
+  assert.equal(p.metadata.first_frame_image, undefined);
+  assert.ok(Array.isArray(p.metadata.content));
+  assert.equal(p.metadata.content.length, 10, '1条text + 最多9张参考图');
+  assert.deepEqual(p.metadata.content[0], { type: 'text', text: '图1 与 图2 在雨夜交锋' });
+  assert.deepEqual(p.metadata.content[1], {
+    type: 'image_url',
+    image_url: { url: 'https://cdn.test/ref_1.png' },
+    role: 'reference_image'
+  });
+  assert.deepEqual(p.metadata.content[9], {
+    type: 'image_url',
+    image_url: { url: 'https://cdn.test/ref_9.png' },
+    role: 'reference_image'
+  });
+
+  const p2k = buildVideoPayload({
+    model: 'MiniMax-H3-2K',
+    prompt: '特写推镜',
+    referenceImages: ['https://cdn.test/a.png'],
+    referenceMode: 'reference',
+    ratio: '16:9'
+  });
+  assert.equal(p2k.resolution, '2K');
+  assert.equal(p2k.metadata.ratio, '16:9');
+  assert.equal(p2k.metadata.content.length, 2);
+});
+
+test('CanvasVideo - H3 模式互斥契约 (firstFrameUrl 与 referenceImages 并存不串场)', () => {
+  const refModePayload = buildVideoPayload({
+    model: 'MiniMax-H3',
+    prompt: '全能参考模式',
+    firstFrameUrl: 'https://cdn.test/first.png',
+    referenceImages: ['https://cdn.test/r1.png', 'https://cdn.test/r2.png'],
+    referenceMode: 'reference'
+  });
+  assert.equal(refModePayload.image, undefined);
+  assert.equal(refModePayload.metadata.first_frame_image, undefined);
+  assert.equal(refModePayload.metadata.content.length, 3);
+
+  const emptyRefModePayload = buildVideoPayload({
+    model: 'MiniMax-H3',
+    prompt: '全能参考空槽位不漏首帧',
+    firstFrameUrl: 'https://cdn.test/stale_first.png',
+    referenceImages: [],
+    referenceMode: 'reference'
+  });
+  assert.equal(emptyRefModePayload.image, undefined);
+  assert.deepEqual(emptyRefModePayload.metadata, { ratio: '16:9' });
+  assert.equal(emptyRefModePayload.metadata.first_frame_image, undefined);
+  assert.equal(emptyRefModePayload.metadata.content, undefined);
+
+  const firstFrameModePayload = buildVideoPayload({
+    model: 'MiniMax-H3',
+    prompt: '首帧模式',
+    firstFrameUrl: 'https://cdn.test/first.png',
+    referenceImages: ['https://cdn.test/r1.png', 'https://cdn.test/r2.png'],
+    referenceMode: 'first_frame'
+  });
+  assert.equal(firstFrameModePayload.image, 'https://cdn.test/first.png');
+  assert.equal(firstFrameModePayload.metadata.first_frame_image, 'https://cdn.test/first.png');
+  assert.equal(firstFrameModePayload.metadata.content, undefined);
+});
+
+test('CanvasVideo - Omni 1.2 Flash 多图参考协议 (2/3/5张走 reference_images, 单首帧兼容)', () => {
+  const refs5 = ['u1', 'u2', 'u3', 'u4', 'u5'];
+  const p5 = buildVideoPayload({
+    model: 'omni-1.2-flash',
+    prompt: '角色同框',
+    duration: 8,
+    size: '720x1280',
+    referenceImages: refs5
+  });
+  assert.equal(p5.resolution, '720P');
+  assert.equal(p5.size, '720x1280');
+  assert.equal(p5.image, undefined, 'Omni 多图不得冗余重复塞入 image');
+  assert.equal(p5.metadata.first_frame_image, undefined, 'Omni 多图不得冗余塞入 first_frame_image');
+  assert.deepEqual(p5.metadata.reference_images, ['u1', 'u2', 'u3']);
+
+  const p2 = buildVideoPayload({
+    model: 'omni-1.2-flash',
+    prompt: '双图',
+    referenceImages: ['a', 'b']
+  });
+  assert.deepEqual(p2.metadata.reference_images, ['a', 'b']);
+
+  const p1Compat = buildVideoPayload({
+    model: 'omni-1.2-flash',
+    prompt: '旧单首帧兼容',
+    firstFrameUrl: 'single_first'
+  });
+  assert.equal(p1Compat.image, 'single_first');
+  assert.equal(p1Compat.metadata.first_frame_image, 'single_first');
+  assert.equal(p1Compat.metadata.reference_images, undefined);
+});
+
+test('CanvasVideo - 单首帧模型退化防御 (muse-video 与 grok-imagine-video-1.5)', () => {
+  const refs = ['img_1', 'img_2', 'img_3', 'img_4'];
+  const muse = buildVideoPayload({
+    model: 'muse-video',
+    prompt: '航拍',
+    duration: 10,
+    size: '1280x720',
+    referenceImages: refs
+  });
+  assert.equal(muse.seconds, '10');
+  assert.equal(muse.image, 'img_1');
+  assert.equal(muse.image_url, 'img_1');
+  assert.equal(muse.metadata, undefined);
+  assert.equal(muse.images, undefined);
+
+  const grok = buildVideoPayload({
+    model: 'grok-imagine-video-1.5',
+    prompt: '穿梭',
+    size: '1920x1080',
+    referenceImages: refs
+  });
+  assert.equal(grok.image, 'img_1');
+  assert.equal(grok.image_url, 'img_1');
+  assert.equal(grok.metadata, undefined);
+  assert.equal(grok.images, undefined);
+});
+
+test('CanvasVideo - compileVideoPrompt 顺序转换与跳过超界/空槽位', () => {
+  const slots = [
+    { index: 1, name: '主角', dataUrl: 'data:image/png;base64,A' },
+    { index: 2, name: '反派', dataUrl: 'data:image/png;base64,B' }
+  ];
+  assert.equal(
+    compileVideoPrompt('@[图1:主角] 与 @[图2:反派] 对峙', slots),
+    '图1(主角) 与 图2(反派) 对峙'
+  );
+
+  // 空槽位与超界标记自动跳过，后续有效槽位按 FIFO 重排序号
+  const sparseSlots = [
+    { index: 1, name: '主角', dataUrl: 'data:image/png;base64,A' },
+    { index: 2, name: '空图', dataUrl: '' },
+    { index: 3, name: '场景', dataUrl: 'data:image/png;base64,C' }
+  ];
+  assert.equal(
+    compileVideoPrompt('@[图1:主角] 在 @[图3:场景] 等待 @[图2:空图] 和 @[图5:路人]', sparseSlots),
+    '图1(主角) 在 图2(场景) 等待 和'
+  );
+  assert.deepEqual(
+    findOutOfRangeVideoTags('@[图1:主角] @[图4:越界]', slots),
+    ['@[图4:越界]']
+  );
+  // 手写自然序数原样保留
+  assert.equal(compileVideoPrompt('图1 和 第2张图 同框', slots), '图1 和 第2张图 同框');
+});
+
+test('CanvasVideo - 图片轻量化缩放计算与 40MB 总载荷预算守卫', async () => {
+  assert.deepEqual(computeScaledDimensions(4096, 2048, 2048), { width: 2048, height: 1024, scaled: true });
+  assert.deepEqual(computeScaledDimensions(1280, 720, 2048), { width: 1280, height: 720, scaled: false });
+  assert.equal(MAX_VIDEO_REF_TOTAL_BYTES, 40 * 1024 * 1024);
+
+  // 非 DOM 下安全原样返回
+  const passthrough = await downscaleImageDataUrl('data:image/png;base64,AAAA');
+  assert.equal(passthrough, 'data:image/png;base64,AAAA');
+
+  const big = 'data:image/jpeg;base64,' + 'A'.repeat(21 * 1024 * 1024);
+  assert.equal(estimateReferencePayloadBytes([big, big]), big.length * 2);
+  assert.throws(() => assertVideoPayloadBudget([big, big]), /超过安全上限/);
+  assert.throws(
+    () => buildVideoPayload({ model: 'MiniMax-H3', prompt: '过大', referenceImages: [big, big], referenceMode: 'reference' }),
+    /超过安全上限/
+  );
 });

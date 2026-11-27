@@ -361,8 +361,8 @@
   // 线上 manifest 可达时一律以线上为准，此表仅用于完全离线。
   const IMAGE_RESOLUTIONS_5 = [
     { label: '1:1 正方', icon: 'ratio1_1', val: '1024x1024' },
-    { label: '3:4 竖屏', icon: 'ratio9_16', val: '768x1344' },
-    { label: '4:3 横屏', icon: 'ratio16_9', val: '1344x768' },
+    { label: '3:4 竖屏', icon: 'ratio9_16', val: '1008x1344' },
+    { label: '4:3 横屏', icon: 'ratio16_9', val: '1344x1008' },
     { label: '9:16 竖屏', icon: 'ratio9_16', val: '1024x1792' },
     { label: '16:9 横屏', icon: 'ratio16_9', val: '1792x1024' }
   ];
@@ -401,18 +401,6 @@
       singleNOnly: true,
       unit: '张',
       desc: '具备顶级发散想象力与自然构图，色彩浓郁张力十足',
-      resolutions: IMAGE_RESOLUTIONS_5
-    },
-    {
-      id: 'gemini-imagen-3',
-      name: 'Google Imagen 3',
-      tag: '精准细节',
-      price: 0.15,
-      vipPrice: 0.12,
-      enabled: true,
-      singleNOnly: true,
-      unit: '张',
-      desc: '谷歌下一代生图旗舰，超高文字渲染能力与真实细节重现',
       resolutions: IMAGE_RESOLUTIONS_5
     },
     {
@@ -470,7 +458,7 @@
         { val: 10, label: '10 秒', tag: '长片' },
         { val: 15, label: '15 秒', tag: '旗舰' }
       ],
-      desc: '768P 电影级光影，原生支持 4~15 秒超长生成时长，支持首帧 / 尾帧参考图精准驱动动态',
+      desc: '768P 电影级光影，原生支持 4~15 秒生成时长，支持单首帧或最多 9 张全能多图参考驱动动态',
       resolutions: [
         { label: '720P 横屏', icon: 'ratio16_9', val: '1280x720' },
         { label: '720P 竖屏', icon: 'ratio9_16', val: '720x1280' }
@@ -491,7 +479,7 @@
         { val: 10, label: '10 秒', tag: '长片' },
         { val: 15, label: '15 秒', tag: '旗舰' }
       ],
-      desc: '768P 电影级光影，原生支持 4~15 秒超长生成时长，支持首帧 / 尾帧参考图精准驱动动态',
+      desc: '2K 超清电影级光影，原生支持 5~15 秒生成时长，支持单首帧或最多 9 张全能多图参考驱动动态',
       resolutions: [
         { label: '2K 横屏', icon: 'ratio16_9', val: '2560x1440' },
         { label: '2K 竖屏', icon: 'ratio9_16', val: '1440x2560' }
@@ -572,7 +560,7 @@
   function normalizeImageModel(raw) {
     if (!raw) return null;
     const isSquare = (s) => s.startsWith('1024x1024') || s.startsWith('512x512') || s.startsWith('2048x2048');
-    const isHoriz = (s) => s.startsWith('1792') || s.startsWith('1280') || s.startsWith('1536') || s.startsWith('1344x768');
+    const isHoriz = (s) => s.startsWith('1792') || s.startsWith('1280') || s.startsWith('1536') || s.startsWith('1344x1008');
     let resolutions = [];
     if (Array.isArray(raw.resolutions)) {
       resolutions = raw.resolutions.map(r => {
@@ -1439,16 +1427,57 @@ $owner.Dispose()
     } catch (_) { return '1:1'; }
   };
 
-  // 校验模型是否支持垫图改图 (支持 sensenova-* 与 gpt-image-*)
+  // 画布图片节点、Legacy 分镜与编辑请求共用的垫图能力及裁剪上限。
+  const IMAGE_REFERENCE_MAX = 5;
+
+  // 校验模型是否支持垫图改图；Nano Banana 由 flow-relay generations.images 接收参考图。
   function validateImageModelSupport(model, hasReference) {
-    if (!hasReference) return { supported: true, protocol: 'generations' };
     const m = String(model || '').toLowerCase();
-    if (m.includes('sensenova')) return { supported: true, protocol: 'sensenova-edits' };
-    if (m.includes('gpt-image')) return { supported: true, protocol: 'openai-multipart-edits' };
+    if (!hasReference) return { supported: true, protocol: 'generations', maxReferenceImages: IMAGE_REFERENCE_MAX };
+    if (m.includes('sensenova')) return { supported: true, protocol: 'sensenova-edits', maxReferenceImages: IMAGE_REFERENCE_MAX };
+    if (m.includes('gpt-image')) return { supported: true, protocol: 'openai-multipart-edits', maxReferenceImages: IMAGE_REFERENCE_MAX };
+    if (m.includes('nano-banana-2.1')) return { supported: true, protocol: 'flow-relay-generations', maxReferenceImages: IMAGE_REFERENCE_MAX };
     return {
       supported: false,
-      error: '当前模型不支持垫图改图，请切换 sensenova 或 gpt-image 模型，或清空参考图'
+      maxReferenceImages: 0,
+      error: `当前模型 ${model || '未知'} 不支持参考图输入，请切换支持垫图的模型或清空参考图`
     };
+  }
+
+  function normalizeNanoQuality(quality) {
+    const q = String(quality || '').trim().toLowerCase();
+    if (q === '2k' || q === 'medium') return 'medium';
+    if (q === '4k' || q === 'high') return 'high';
+    return '';
+  }
+
+  async function requestImageBatches(sendFn, requestArgs, count = 1, singleNOnly = true) {
+    const total = Math.max(1, Math.min(4, Number(count) || 1));
+    if (!singleNOnly) return [await sendFn({ ...requestArgs, n: total })];
+    const responses = [];
+    for (let i = 0; i < total; i += 2) {
+      const batchSize = Math.min(2, total - i);
+      const batch = await Promise.all(Array.from({ length: batchSize }, () => sendFn({ ...requestArgs, n: 1 })));
+      responses.push(...batch);
+    }
+    return responses;
+  }
+
+  function calculateImageBatchCost(pricePerImage, count) {
+    const price = Number(pricePerImage) || 0;
+    const qty = Math.max(1, Math.min(4, Number(count) || 1));
+    return price * qty;
+  }
+
+  function validateStudioVideoPrompt({ model, prompt, hasReference = false } = {}) {
+    const isH3 = /minimax-h3/i.test(String(model || ''));
+    if (isH3 && !hasReference && !String(prompt || '').trim()) {
+      return { valid: false, message: 'H3 / H3-2K 首帧模式必须填写视频描述提示词 (Prompt)' };
+    }
+    if (!String(prompt || '').trim() && !hasReference) {
+      return { valid: false, message: '请输入视频描述提示词 (Prompt)，或上传参考图片' };
+    }
+    return { valid: true, message: '' };
   }
 
   // 构建生图 / 垫图改图标准请求 (严格按协议路由，杜绝往 generations 塞图)
@@ -1459,7 +1488,8 @@ $owner.Dispose()
     prompt,
     size,
     n = 1,
-    referenceSlots = []
+    referenceSlots = [],
+    quality = ''
   }) {
     const hasRef = Array.isArray(referenceSlots) && referenceSlots.length > 0;
     const cleanBase = (baseUrl || '').trim().replace(/\/+$/, '');
@@ -1540,6 +1570,16 @@ $owner.Dispose()
       size,
       response_format: 'url'
     };
+    if (/nano-banana-2\.1/i.test(model)) {
+      const nanoQuality = normalizeNanoQuality(quality);
+      if (nanoQuality) genPayload.quality = nanoQuality;
+      if (hasRef) {
+        genPayload.images = referenceSlots.slice(0, IMAGE_REFERENCE_MAX).map((slot) => {
+          const url = (typeof slot === 'string') ? slot : (slot.dataUrl || slot.url || '');
+          return { url };
+        }).filter((item) => item.url);
+      }
+    }
     if (/grok-imagine-image/i.test(model)) {
       delete genPayload.size;
       genPayload.aspect_ratio = snapAspectRatio(size);
@@ -1567,10 +1607,11 @@ $owner.Dispose()
     size,
     n = 1,
     referenceSlots = [],
+    quality = '',
     fetchFn = (typeof fetch !== 'undefined' ? fetch : null)
   }) {
     if (!fetchFn) throw new Error('全局 fetch 未就绪');
-    const req = buildImageRequest({ baseUrl, apiKey, model, prompt, size, n, referenceSlots });
+    const req = buildImageRequest({ baseUrl, apiKey, model, prompt, size, n, referenceSlots, quality });
     const res = await fetchFn(req.url, {
       method: req.method,
       headers: req.headers,
@@ -1801,6 +1842,14 @@ $owner.Dispose()
             arrowLeft: [
               h('line', { key: 'l1', x1: '19', x2: '5', y1: '12', y2: '12' }),
               h('polyline', { key: 'pl', points: '12 19 5 12 12 5' })
+            ],
+            arrowUp: [
+              h('line', { key: 'l1', x1: '12', x2: '12', y1: '19', y2: '5' }),
+              h('polyline', { key: 'pl', points: '5 12 12 5 19 12' })
+            ],
+            arrowDown: [
+              h('line', { key: 'l1', x1: '12', x2: '12', y1: '5', y2: '19' }),
+              h('polyline', { key: 'pl', points: '19 12 12 19 5 12' })
             ],
             download: [
               h('path', { key: 'p1', d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }),
@@ -4804,12 +4853,12 @@ $owner.Dispose()
             const action = CanvasPromptUtils ? CanvasPromptUtils.getDerivedAction(actionId) : null;
             const actionName = action ? action.name : actionId;
             const derivedPrompt = CanvasPromptUtils ? CanvasPromptUtils.buildDerivedPrompt(sourceItem.data?.prompt || '', actionId) : (sourceItem.data?.prompt || '');
-            
+
             const snap = (v) => (CanvasMathUtils ? CanvasMathUtils.snapToGrid(v, 8) : Math.round(v));
             const newItemId = `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
             const newItemX = snap(sourceItem.x + (sourceItem.width || 290) + 40);
             const newItemY = snap(sourceItem.y);
-            
+
             if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
             const newItem = {
               id: newItemId,
@@ -4840,7 +4889,7 @@ $owner.Dispose()
             setCanvasItems(prev => [...prev, newItem]);
             setEdges(prev => [...prev, newEdge]);
             setSelectedIds(new Set([newItemId]));
-            
+
             setTimeout(() => {
               handleGenerateItem(newItemId);
             }, 60);
@@ -5173,8 +5222,17 @@ $owner.Dispose()
               }
               return ref.startsWith('asset:') ? null : ref;
             };
+            const chosenModel = genContext.params.model || canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
+            const refSlots = upstreamRefs.slice(0, IMAGE_REFERENCE_MAX).map(resolveRef).filter(Boolean).map(dataUrl => ({ dataUrl }));
+            const support = validateImageModelSupport(chosenModel, refSlots.length > 0);
+            if (!support.supported) {
+              const message = support.error || '当前模型不支持参考图输入';
+              setPanels(prev => prev.map(p => p.id === panelId ? { ...p, isGenerating: false, error: message } : p));
+              setProjectError(message);
+              return;
+            }
 
-            setPanels(prev => prev.map(p => p.id === panelId ? { ...p, isGenerating: true } : p));
+            setPanels(prev => prev.map(p => p.id === panelId ? { ...p, isGenerating: true, error: '' } : p));
 
             try {
               const char = characters.find(c => c.id === target.characterId);
@@ -5200,9 +5258,8 @@ $owner.Dispose()
               const apiKey = getKey();
               if (!apiKey) throw new Error('未检测到 API Key，请先点击顶栏钥匙图标输入');
 
-              const chosenModel = genContext.params.model || canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
-              // 参考图优先级: 连到分镜的上游节点 > 角色定妆照 (对齐上游 referenceImages 语义)
-              const primaryRef = upstreamRefs.length ? resolveRef(upstreamRefs[0]) : (char && char.avatar ? char.avatar : '');
+              // buildGenerationContext 已按「上游连线 -> 角色定妆照」给出完整有序参考图。
+              const panelQuality = genContext.params.quality || '1K';
 
               // WAL 预写日志: 发包前先落盘任务存根，切 Tab / F5 后仍可水合 (工程铁律: 资产绝不丢)
               const walJob = CanvasJobQueueSingleton ? CanvasJobQueueSingleton.createJob({
@@ -5210,7 +5267,6 @@ $owner.Dispose()
                 characterId: target.characterId || null
               }) : null;
 
-              const refSlots = primaryRef ? [{ dataUrl: primaryRef }] : [];
               const data = await sendImageRequest({
                 baseUrl: BASE_URL,
                 apiKey,
@@ -5218,6 +5274,7 @@ $owner.Dispose()
                 prompt: fullPrompt,
                 size: reqSize,
                 n: 1,
+                quality: panelQuality,
                 referenceSlots: refSlots
               });
               const url = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : '');
@@ -5258,61 +5315,74 @@ $owner.Dispose()
               }
               return ref.startsWith('asset:') ? null : ref;
             };
-            const primaryRef = refs.length ? resolveRef(refs[0]) : '';
+            const chosenModel = (item.data?.params?.model) || ctx.params.model || canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
+            const resolvedRefs = refs.slice(0, IMAGE_REFERENCE_MAX).map(resolveRef).filter(Boolean);
+            const support = validateImageModelSupport(chosenModel, resolvedRefs.length > 0);
+            if (!support.supported) {
+              setCanvasItems(prev => prev.map(x => x.id === itemId ? { ...x, data: { ...x.data, generating: false, error: support.error } } : x));
+              setProjectError(support.error);
+              return;
+            }
 
             setCanvasItems(prev => prev.map(x => x.id === itemId ? { ...x, data: { ...x.data, generating: true, error: '' } } : x));
             let walJob = null;
             try {
               const apiKey = getKey();
               if (!apiKey) throw new Error('未检测到 API Key，请先点击顶栏钥匙图标输入');
-              const chosenModel = (item.data?.params?.model) || ctx.params.model || canvasModel || WineTokenManifestManager.getFreeImageModel() || 'sensenova-u1.5-lite';
-              
+
               // 比例与尺寸计算
               const ratio = item.data?.params?.aspectRatio || '16:9';
               const ratioSizeMap = {
                 '1:1': '1024x1024',
                 '16:9': '1792x1024',
                 '9:16': '1024x1792',
-                '4:3': '1344x768',
-                '3:4': '768x1344'
+                '4:3': '1344x1008',
+                '3:4': '1008x1344'
               };
               let size = item.data?.params?.size || ctx.params.size;
               if (!size || !/^\d{2,5}x\d{2,5}$/.test(size)) {
                 size = ratioSizeMap[ratio] || '1792x1024';
               }
               const count = Math.max(1, Math.min(4, Number(item.data?.params?.count) || 1));
+              const quality = item.data?.params?.quality || ctx.params.quality || '1K';
+              const currentImageModel = WineTokenManifestManager.getImageModels().find(m => m.id === chosenModel) || { singleNOnly: true };
+              const singleNOnly = currentImageModel.singleNOnly !== false;
 
               // WAL 任务队列记录
               walJob = CanvasJobQueueSingleton ? CanvasJobQueueSingleton.createJob({
                 panelId: itemId, prompt, model: chosenModel, size
               }) : null;
 
-              const refSlots = primaryRef ? [{ dataUrl: primaryRef }] : [];
-              const data = await sendImageRequest({
+              const requestArgs = {
                 baseUrl: BASE_URL,
                 apiKey,
                 model: chosenModel,
                 prompt,
                 size,
-                n: count,
-                referenceSlots: refSlots
-              });
-              const url = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : '');
-              if (!url) throw new Error('接口未返回有效图像');
-              if (walJob && CanvasJobQueueSingleton) CanvasJobQueueSingleton.completeJob(walJob.id, url);
+                quality,
+                referenceSlots: resolvedRefs.map(dataUrl => ({ dataUrl }))
+              };
+              const responses = await requestImageBatches(sendImageRequest, requestArgs, count, singleNOnly);
+              const rawItems = responses.flatMap(response => Array.isArray(response?.data) ? response.data : []);
+              const urls = rawItems.map(item => item?.url || (item?.b64_json ? `data:image/png;base64,${item.b64_json}` : '')).filter(Boolean);
+              if (urls.length === 0) throw new Error('接口未返回有效图像');
+              if (walJob && CanvasJobQueueSingleton) CanvasJobQueueSingleton.completeJob(walJob.id, urls[0]);
 
               // 优先把结果落本地资产 (节点只持 assetKey)，失败真实透传，绝不静默吞错
-              let finalUrl = url;
-              let assetKey = '';
-              if (url.startsWith('data:') && canvasAssetsDriver) {
-                const saved = canvasAssetsDriver.saveDataUrl(url);
-                assetKey = saved.assetKey;
-                finalUrl = `asset:${assetKey}`;
-              }
+              const savedEntries = urls.map(url => {
+                if (url.startsWith('data:') && canvasAssetsDriver) {
+                  const saved = canvasAssetsDriver.saveDataUrl(url);
+                  return { url: `asset:${saved.assetKey}`, assetKey: saved.assetKey };
+                }
+                return { url, assetKey: '' };
+              });
+              const finalUrl = savedEntries[0].url;
+              const assetKey = savedEntries[0].assetKey;
+              const candidates = savedEntries.map(entry => entry.url);
               if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
               setCanvasItems(prev => prev.map(x => x.id === itemId ? {
                 ...x,
-                data: { ...x.data, url: finalUrl, assetKey, prompt, generating: false, error: '' }
+                data: { ...x.data, url: finalUrl, assetKey, candidates, prompt, generating: false, error: '' }
               } : x));
               updateBilling();
             } catch (err) {
@@ -5360,7 +5430,7 @@ $owner.Dispose()
             const apiKey = getKey();
             if (!apiKey) { setProjectError('未检测到 API Key，请先点击顶栏钥匙图标输入'); return; }
 
-            // 上游图片节点连线作为参考图 (支持多图全能参考与单图首帧)
+            // 上游图片节点连线作为参考图 (解析全部 refs 并按模型能力裁剪/分流)
             const projectSnapshot = { characters, panels, canvasItems, edges, groups };
             const ctx = CanvasNodeUtils && CanvasNodeUtils.buildGenerationContext
               ? CanvasNodeUtils.buildGenerationContext(projectSnapshot, itemId)
@@ -5371,108 +5441,52 @@ $owner.Dispose()
               }
               return ref.startsWith('asset:') ? '' : ref;
             };
-            const refs = ctx.referenceImages.filter(r => typeof r === 'string' && r.trim());
-            const firstFrame = refs.length ? resolveRef(refs[0]) : '';
-            const prompt = (item.data?.prompt || ctx.prompt || '电影感运镜，光线流动').trim().slice(0, 4000);
-            const chosenModel = (item.data?.params?.model) || ctx.params.model || (availableVideoModels[0]?.id) || 'MiniMax-H3';
-            const duration = Number(item.data?.params?.duration) || 5;
-            const size = item.data?.params?.size || '1280x720';
+            const rawRefs = Array.isArray(ctx.referenceImages)
+              ? ctx.referenceImages.filter(r => typeof r === 'string' && r.trim())
+              : [];
+            const resolvedRefs = rawRefs.map(resolveRef).filter(Boolean);
+            const prompt = (ctx.prompt || item.data?.prompt || '电影感运镜，光线流动').trim().slice(0, 4000);
+            const chosenModel = (item.data?.params?.model) || ctx.params?.model || (availableVideoModels[0]?.id) || 'MiniMax-H3';
+            const duration = Number(item.data?.params?.duration || ctx.params?.duration) || 5;
+            const aspectRatio = item.data?.params?.aspectRatio || ctx.params?.aspectRatio || '16:9';
+            const resolution = item.data?.params?.resolution || ctx.params?.resolution || (/minimax-h3-2k/i.test(chosenModel) ? '2K' : '720P');
+            const isVertical = aspectRatio === '9:16';
+            const defaultSize = resolution === '2K'
+              ? (isVertical ? '1440x2560' : '2560x1440')
+              : (resolution === '1080P' ? (isVertical ? '1080x1920' : '1920x1080') : (isVertical ? '720x1280' : '1280x720'));
+            const size = item.data?.params?.size || ctx.params?.size || defaultSize;
+            const generateAudio = Boolean(item.data?.params?.generateAudio || ctx.params?.generateAudio);
 
-            const payload = CanvasVideoUtils.buildVideoPayload({
-              model: chosenModel,
-              prompt,
-              duration,
-              size,
-              firstFrameUrl: firstFrame
-            });
-            if (item.data?.params?.generateAudio) {
-              payload.audio = true;
-            }
-            const endpoints = CanvasVideoUtils.resolveVideoEndpoints(BASE_URL, chosenModel);
-            const submitUrl = endpoints.submitUrl;
             const controller = new AbortController();
             videoPollAbortRef.current.set(itemId, controller);
 
             if (canvasHistoryManager) canvasHistoryManager.pushState(snapshotState());
-            updateVideoItem(itemId, { status: 'submitting', error: '', startedAt: Date.now() });
             try {
-              const submitRes = await fetch(submitUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                body: JSON.stringify(payload),
-                signal: controller.signal
+              const result = await CanvasVideoUtils.executeVideoNodeTask({
+                baseUrl: BASE_URL,
+                apiKey,
+                model: chosenModel,
+                prompt,
+                duration,
+                size,
+                ratio: aspectRatio,
+                generateAudio,
+                referenceUrls: resolvedRefs,
+                assetsDriver: canvasAssetsDriver,
+                fetchFn: fetch,
+                signal: controller.signal,
+                onStateChange: (patch) => updateVideoItem(itemId, patch)
               });
-              if (!submitRes.ok) {
-                const errText = await submitRes.text().catch(() => '');
-                let msg = `HTTP ${submitRes.status}`;
-                try { const p = JSON.parse(errText); msg = p.error?.message || msg; } catch (_) { if (errText) msg = errText.slice(0, 100); }
-                throw new Error(`创建视频任务失败: ${msg}`);
+              if (result && result.assetWarning) {
+                console.warn('[WineToken Canvas] 视频资产落盘失败，保留远程 URL:', result.assetWarning);
+                setProjectError(result.assetWarning);
               }
-              const submitData = await submitRes.json();
-              const parsed = CanvasVideoUtils.parseSubmitResponse(submitData);
-              if (parsed.error) throw new Error(parsed.error);
-              let videoUrl = parsed.directUrl;
-
-              if (!videoUrl && parsed.taskId) {
-                updateVideoItem(itemId, { status: 'polling', taskId: parsed.taskId });
-                const pollUrl = endpoints.pollUrl(parsed.taskId);
-                for (let attempt = 1; attempt <= CanvasVideoUtils.DEFAULT_MAX_ATTEMPTS; attempt++) {
-                  if (controller.signal.aborted) throw new Error('已由用户取消');
-                  await new Promise(r => setTimeout(r, CanvasVideoUtils.DEFAULT_POLL_INTERVAL_MS));
-                  if (controller.signal.aborted) throw new Error('已由用户取消');
-                  let pollData = {};
-                  try {
-                    const pollRes = await fetch(pollUrl, {
-                      headers: { 'Authorization': `Bearer ${apiKey}` }, signal: controller.signal
-                    });
-                    if (pollRes.ok) pollData = await pollRes.json();
-                  } catch (pollErr) {
-                    if (controller.signal.aborted) throw new Error('已由用户取消');
-                    pollData = {}; // 单次轮询网络异常不误判失败，继续等待
-                  }
-                  const reduced = CanvasVideoUtils.reducePollResponse(pollData, attempt, CanvasVideoUtils.DEFAULT_MAX_ATTEMPTS, endpoints.contentUrl(parsed.taskId));
-                  updateVideoItem(itemId, {
-                    status: reduced.status, attempt, error: reduced.error, videoUrl: reduced.videoUrl
-                  });
-                  if (reduced.error && reduced.done && reduced.status === 'failed') throw new Error(reduced.error);
-                  if (reduced.done && reduced.status === 'timeout') throw new Error(reduced.error);
-                  if (reduced.done && reduced.videoUrl) { videoUrl = reduced.videoUrl; break; }
-                }
-              }
-              if (!videoUrl) throw new Error('视频生成已提交但未取得结果，稍后可在创作工坊历史中核对');
-
-              // 远程视频落地为本地资产 (节点只持 assetKey)，失败真实透传不静默吞
-              let finalUrl = videoUrl;
-              let assetKey = '';
-              if (canvasAssetsDriver) {
-                try {
-                  const isContentEndpoint = Boolean(parsed.taskId) && videoUrl === endpoints.contentUrl(parsed.taskId);
-                  const binRes = await fetch(videoUrl, {
-                    ...(isContentEndpoint ? { headers: { 'Authorization': `Bearer ${apiKey}` } } : {}),
-                    signal: controller.signal
-                  });
-                  if (binRes.ok) {
-                    const buf = Buffer.from(await binRes.arrayBuffer());
-                    if (buf.length > 0) {
-                      const saved = canvasAssetsDriver.saveBuffer(buf, 'video/mp4');
-                      assetKey = saved.assetKey;
-                      finalUrl = `asset:${assetKey}`;
-                    }
-                  }
-                } catch (assetErr) {
-                  // 资产落盘失败不丢弃已付费的视频结果: 保留远程 URL 并如实告警
-                  console.warn('[WineToken Canvas] 视频资产落盘失败，保留远程 URL:', assetErr.message);
-                  setProjectError(`视频已生成但本地落盘失败: ${assetErr.message} (仍可用远程链接播放)`);
-                }
-              }
-              updateVideoItem(itemId, {
-                status: 'succeeded', error: '', videoUrl: finalUrl, assetKey
-              });
               updateBilling();
             } catch (err) {
               const cancelled = controller.signal.aborted;
               updateVideoItem(itemId, {
-                status: cancelled ? 'cancelled' : 'failed', error: err.message
+                status: cancelled ? 'cancelled' : 'failed',
+                error: err.message
               });
               if (!cancelled) setProjectError(`视频节点生成失败: ${err.message}`);
             } finally {
@@ -7597,6 +7611,34 @@ $owner.Dispose()
                     const chosenNodeModel = itemData.params?.model || (availableVideoModels[0]?.id) || 'MiniMax-H3';
                     const is2KNode = /minimax-h3-2k/i.test(chosenNodeModel);
                     const isH3Node = !is2KNode && /minimax/i.test(chosenNodeModel);
+                    const nodeVideoCaps = (CanvasVideoUtils && CanvasVideoUtils.getVideoModelCapabilities)
+                      ? CanvasVideoUtils.getVideoModelCapabilities(chosenNodeModel)
+                      : { supportsMultiRef: /minimax-h3|^omni-1\.2-flash$/i.test(chosenNodeModel), maxRefImages: /minimax-h3/i.test(chosenNodeModel) ? 9 : (/^omni-1\.2-flash$/i.test(chosenNodeModel) ? 3 : 1) };
+                    const nodeRawRefs = Array.isArray(itemCtx.referenceImages)
+                      ? itemCtx.referenceImages.filter(r => typeof r === 'string' && r.trim())
+                      : [];
+                    const nodeTotalRefs = nodeRawRefs.length;
+                    const nodeEffectiveRefs = Math.min(nodeTotalRefs, nodeVideoCaps.maxRefImages);
+                    let legacyBadgeLabel = '文生视频';
+                    let legacyBadgeColor = '#06b6d4';
+                    let legacyBadgeBorder = 'rgba(6,182,212,0.3)';
+                    if (nodeTotalRefs === 1) {
+                      legacyBadgeLabel = '首帧参考';
+                    } else if (nodeTotalRefs > 1) {
+                      if (!nodeVideoCaps.supportsMultiRef) {
+                        legacyBadgeLabel = `仅用首帧(仅前1/共${nodeTotalRefs}图)`;
+                        legacyBadgeColor = '#f59e0b';
+                        legacyBadgeBorder = 'rgba(245,158,11,0.45)';
+                      } else if (nodeTotalRefs > nodeVideoCaps.maxRefImages) {
+                        legacyBadgeLabel = `全能参考(仅前${nodeVideoCaps.maxRefImages}/共${nodeTotalRefs}图)`;
+                        legacyBadgeColor = '#f59e0b';
+                        legacyBadgeBorder = 'rgba(245,158,11,0.45)';
+                      } else {
+                        legacyBadgeLabel = `全能参考(${nodeEffectiveRefs}图)`;
+                        legacyBadgeColor = '#10b981';
+                        legacyBadgeBorder = 'rgba(16,185,129,0.4)';
+                      }
+                    }
                     const nodeModelObj = availableVideoModels.find(m => m.id === chosenNodeModel);
                     const nodeDurationOpts = is2KNode
                       ? [5, 6, 10, 15]
@@ -7640,13 +7682,15 @@ $owner.Dispose()
                         }
                       }, [
                         h('span', {
-                          title: itemCtx.mode === 'multi_reference' ? '多张上游图片连线汇入，已开启全能多图参考模式' : '视频参考模式',
+                          title: nodeTotalRefs > 1
+                            ? `当前模型上限 ${nodeVideoCaps.maxRefImages} 张参考图，实际生效前 ${nodeEffectiveRefs} 张`
+                            : '视频参考模式',
                           style: {
-                            fontSize: '9.5px', color: itemCtx.mode === 'multi_reference' ? '#10b981' : '#06b6d4',
-                            border: `1px solid ${itemCtx.mode === 'multi_reference' ? 'rgba(16,185,129,0.4)' : 'rgba(6,182,212,0.3)'}`,
+                            fontSize: '9.5px', color: legacyBadgeColor,
+                            border: `1px solid ${legacyBadgeBorder}`,
                             padding: '1px 5px', borderRadius: '4px', whiteSpace: 'nowrap', fontWeight: 600
                           }
-                        }, itemCtx.mode === 'multi_reference' ? `全能参考(${itemCtx.multiReferenceCount}图)` : (itemCtx.mode === 'single_reference' ? '首帧参考' : '文生视频')),
+                        }, legacyBadgeLabel),
                         h('select', {
                           value: chosenNodeModel,
                           onPointerDown: (ev) => ev.stopPropagation(),
@@ -7659,7 +7703,7 @@ $owner.Dispose()
                             if (nextIs2K) {
                               nextRes = '2K';
                               if (nextDuration === 4) nextDuration = 5;
-                            } else if (nextIsH3 && nextRes === '1080P') {
+                            } else if ((nextIsH3 && nextRes === '1080P') || nextRes === '2K') {
                               nextRes = '720P';
                             }
                             const nextSize = resolveNodeSize(nextRes, itemData.params?.aspectRatio || '16:9');
@@ -7672,6 +7716,47 @@ $owner.Dispose()
                           }
                         }, availableVideoModels.map(m => h('option', { key: m.id, value: m.id }, `${m.name} [${m.tag || '推荐'}]`)))
                       ]),
+
+                      // 上游参考图序号缩略带 (图1/图2...)
+                      nodeTotalRefs > 0 ? h('div', {
+                        style: {
+                          padding: '4px 8px',
+                          borderBottom: `1px solid ${theme.borderSubtle}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          overflowX: 'auto',
+                          scrollbarWidth: 'none',
+                          backgroundColor: theme.isDark ? 'rgba(0,0,0,0.16)' : 'rgba(0,0,0,0.02)'
+                        }
+                      }, nodeRawRefs.map((refVal, refIdx) => {
+                        let thumbSrc = refVal;
+                        if (thumbSrc.startsWith('asset:') && canvasAssetsDriver && canvasAssetsDriver.exists(thumbSrc.slice(6))) {
+                          try { thumbSrc = canvasAssetsDriver.readAsDataUrl(thumbSrc.slice(6)); } catch (_) { thumbSrc = ''; }
+                        } else if (thumbSrc.startsWith('asset:')) {
+                          thumbSrc = '';
+                        }
+                        const isDropped = refIdx >= nodeVideoCaps.maxRefImages;
+                        return h('div', {
+                          key: `${refIdx}_${refVal.slice(0, 20)}`,
+                          title: isDropped ? `图${refIdx + 1}: 超出当前模型上限 (${nodeVideoCaps.maxRefImages}张)，本次不提交` : `图${refIdx + 1} (按连线顺序传入)`,
+                          style: {
+                            position: 'relative', width: '28px', height: '28px', borderRadius: '4px',
+                            overflow: 'hidden', flexShrink: 0, opacity: isDropped ? 0.4 : 1,
+                            border: isDropped ? '1px solid #f59e0b' : `1px solid ${theme.borderSubtle}`,
+                            backgroundColor: theme.bgInput
+                          }
+                        }, [
+                          thumbSrc ? h('img', { src: thumbSrc, style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } }) : null,
+                          h('div', {
+                            style: {
+                              position: 'absolute', bottom: 0, left: 0, right: 0,
+                              background: isDropped ? 'rgba(245,158,11,0.88)' : 'rgba(0,0,0,0.68)',
+                              color: '#ffffff', fontSize: '8px', lineHeight: '10px', textAlign: 'center', fontWeight: 600
+                            }
+                          }, isDropped ? '忽略' : `图${refIdx + 1}`)
+                        ]);
+                      })) : null,
 
                       // 视频提示词
                       h('textarea', {
@@ -8258,7 +8343,16 @@ $owner.Dispose()
               CanvasNodeUtils,
               CanvasPromptUtils,
               CanvasVideoUtils,
-              CanvasExportUtils
+              CanvasExportUtils,
+              CanvasJobQueueSingleton,
+              BASE_URL,
+              getKey,
+              updateBilling,
+              sendImageRequest,
+              validateImageModelSupport,
+              WineTokenManifestManager,
+              getImageModels: () => WineTokenManifestManager.getImageModels(),
+              getVideoModels: () => WineTokenManifestManager.getVideoModels()
             });
             if (typeof built === 'function') {
               ReactFlowWorkspace = built;
@@ -8375,6 +8469,23 @@ $owner.Dispose()
           const availableResolutions = currentModelObj.resolutions || [];
           const availableDurations = currentModelObj.durations || [{ val: 5, label: '5 秒' }];
 
+          // 视频参考模式与模型多图能力联动 (H3: 首帧/全能参考互斥上限 9；Omni: 上限 3；Muse/Grok: 单首帧)
+          const [videoRefType, setVideoRefType] = React.useState('first_frame'); // 'first_frame' | 'reference'
+          const videoCaps = (CanvasVideoUtils && CanvasVideoUtils.getVideoModelCapabilities)
+            ? CanvasVideoUtils.getVideoModelCapabilities(selectedVideoModel)
+            : {
+                model: selectedVideoModel,
+                supportsMultiRef: /minimax-h3|^omni-1\.2-flash$/i.test(selectedVideoModel || ''),
+                maxRefImages: /minimax-h3/i.test(selectedVideoModel || '') ? 9 : (/^omni-1\.2-flash$/i.test(selectedVideoModel || '') ? 3 : 1),
+                multiRefExclusiveWithFirstFrame: /minimax-h3/i.test(selectedVideoModel || '')
+              };
+          const maxRefSlots = mode === 'image'
+            ? 5
+            : (videoCaps.supportsMultiRef ? videoCaps.maxRefImages : 1);
+          const isH3StudioModel = Boolean(videoCaps.supportsMultiRef && videoCaps.multiRefExclusiveWithFirstFrame);
+          const isOmniStudioModel = Boolean(videoCaps.supportsMultiRef && !videoCaps.multiRefExclusiveWithFirstFrame);
+          const isVideoMultiRefActive = mode === 'video' && (isOmniStudioModel || (isH3StudioModel && videoRefType === 'reference'));
+
           // 当可用模型列表变化或模式切换时，自动纠偏当前选中的模型
           React.useEffect(() => {
             if (currentModels && currentModels.length > 0) {
@@ -8418,10 +8529,24 @@ $owner.Dispose()
             : (currentModelObj.pricePerSecond || 0.15);
           const currentUnit = currentModelObj.unit || (mode === 'image' ? '张' : '秒');
           const estCost = mode === 'image'
-            ? ((effectiveSinglePrice || 0) * count)
+            ? calculateImageBatchCost(effectiveSinglePrice, count)
             : (effectiveSecPrice * duration);
 
-          // 添加文件到参考图槽位 (支持多张，最大 5 张)
+          // 上下调整参考图槽位序号 (图1/图2...)
+          const moveReferenceSlot = (slotId, delta) => {
+            setReferenceSlots(prev => {
+              const idx = prev.findIndex(s => s.id === slotId);
+              const targetIdx = idx + delta;
+              if (idx < 0 || targetIdx < 0 || targetIdx >= prev.length) return prev;
+              const next = [...prev];
+              const tmp = next[idx];
+              next[idx] = next[targetIdx];
+              next[targetIdx] = tmp;
+              return next.map((s, i) => ({ ...s, index: i + 1 }));
+            });
+          };
+
+          // 添加文件到参考图槽位 (按模型上限受控；读入时自动离屏轻量化压缩)
           const addFilesToSlots = (files, callback) => {
             if (!files || files.length === 0) return;
             const validFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
@@ -8430,11 +8555,11 @@ $owner.Dispose()
               return;
             }
             const currentLen = referenceSlots.length;
-            if (currentLen >= 5) {
-              alert('最多支持添加 5 张参考图');
+            if (currentLen >= maxRefSlots) {
+              alert(`当前模式最多支持添加 ${maxRefSlots} 张参考图`);
               return;
             }
-            const allowedCount = 5 - currentLen;
+            const allowedCount = maxRefSlots - currentLen;
             const toProcess = validFiles.slice(0, allowedCount);
 
             toProcess.forEach((file, i) => {
@@ -8443,17 +8568,30 @@ $owner.Dispose()
                 return;
               }
               const reader = new FileReader();
-              reader.onload = (ev) => {
+              reader.onload = async (ev) => {
+                const rawDataUrl = ev.target.result;
+                let finalDataUrl = rawDataUrl;
+                if (CanvasVideoUtils && typeof CanvasVideoUtils.downscaleImageDataUrl === 'function') {
+                  try {
+                    finalDataUrl = await CanvasVideoUtils.downscaleImageDataUrl(rawDataUrl, { maxEdge: 2048, quality: 0.88 });
+                  } catch (_) {
+                    finalDataUrl = rawDataUrl;
+                  }
+                }
+                const commaIdx = typeof finalDataUrl === 'string' ? finalDataUrl.indexOf(',') : -1;
+                const estBytes = (typeof finalDataUrl === 'string' && finalDataUrl.startsWith('data:') && commaIdx >= 0)
+                  ? Math.round((finalDataUrl.length - commaIdx - 1) * 0.75)
+                  : file.size;
                 const cleanName = file.name.replace(/\.[^/.]+$/, '').slice(0, 10) || `图${currentLen + i + 1}`;
                 const newSlot = {
                   id: 'slot_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
                   index: currentLen + i + 1,
                   name: cleanName,
-                  dataUrl: ev.target.result,
-                  size: (file.size / 1024).toFixed(1) + ' KB'
+                  dataUrl: finalDataUrl,
+                  size: (estBytes / 1024).toFixed(1) + ' KB'
                 };
                 setReferenceSlots(prev => {
-                  const next = [...prev, newSlot].slice(0, 5);
+                  const next = [...prev, newSlot].slice(0, maxRefSlots);
                   return next.map((s, idx) => ({ ...s, index: idx + 1 }));
                 });
                 if (callback) callback(newSlot);
@@ -8468,7 +8606,7 @@ $owner.Dispose()
             if (e.target) e.target.value = '';
           };
 
-          // 视频首帧 / 尾帧专用装载器 (单槽位，重复上传直接覆盖，杜绝多图歧义)
+          // 视频首帧专用装载器 (单槽位，重复上传直接覆盖，同步离屏轻量化压缩)
           const loadImageFileToFrame = (file, setter) => {
             if (!file) return;
             if (!file.type || !file.type.startsWith('image/')) {
@@ -8480,12 +8618,25 @@ $owner.Dispose()
               return;
             }
             const reader = new FileReader();
-            reader.onload = (ev) => {
+            reader.onload = async (ev) => {
+              const rawDataUrl = ev.target.result;
+              let finalDataUrl = rawDataUrl;
+              if (CanvasVideoUtils && typeof CanvasVideoUtils.downscaleImageDataUrl === 'function') {
+                try {
+                  finalDataUrl = await CanvasVideoUtils.downscaleImageDataUrl(rawDataUrl, { maxEdge: 2048, quality: 0.88 });
+                } catch (_) {
+                  finalDataUrl = rawDataUrl;
+                }
+              }
+              const commaIdx = typeof finalDataUrl === 'string' ? finalDataUrl.indexOf(',') : -1;
+              const estBytes = (typeof finalDataUrl === 'string' && finalDataUrl.startsWith('data:') && commaIdx >= 0)
+                ? Math.round((finalDataUrl.length - commaIdx - 1) * 0.75)
+                : file.size;
               setter({
                 id: 'frame_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
                 name: file.name.replace(/\.[^/.]+$/, '').slice(0, 10) || '画面帧',
-                dataUrl: ev.target.result,
-                size: (file.size / 1024).toFixed(1) + ' KB'
+                dataUrl: finalDataUrl,
+                size: (estBytes / 1024).toFixed(1) + ' KB'
               });
             };
             reader.readAsDataURL(file);
@@ -8496,26 +8647,44 @@ $owner.Dispose()
             if (e.target) e.target.value = '';
           };
 
-          // 模式切换时的首尾帧与多参考图槽位双向迁移 (旧创作素材无缝升级，不丢图)
-          const frameMigrationRef = React.useRef(mode);
+          // 模式/参考形态切换时的首帧与多参考图槽位双向迁移 (切模型保留槽位，仅标灰超限部分)
+          const frameMigrationRef = React.useRef({ mode, multiRef: isVideoMultiRefActive });
           React.useEffect(() => {
-            if (frameMigrationRef.current === mode) return;
-            const prevMode = frameMigrationRef.current;
-            frameMigrationRef.current = mode;
-            if (prevMode === 'image' && mode === 'video') {
-              setFirstFrame(prev => prev || (referenceSlots[0] ? {
+            const prev = frameMigrationRef.current;
+            frameMigrationRef.current = { mode, multiRef: isVideoMultiRefActive };
+            if (prev.mode === mode && prev.multiRef === isVideoMultiRefActive) return;
+
+            if (mode === 'video' && isVideoMultiRefActive) {
+              setReferenceSlots(cur => {
+                if (cur.length > 0 || !firstFrame) return cur;
+                return [{
+                  id: 'slot_' + Date.now() + '_m',
+                  index: 1,
+                  name: firstFrame.name || '图1',
+                  dataUrl: firstFrame.dataUrl,
+                  size: firstFrame.size
+                }];
+              });
+            } else if (mode === 'video' && !isVideoMultiRefActive) {
+              setFirstFrame(cur => cur || (referenceSlots[0] ? {
                 id: 'frame_' + Date.now() + '_f',
                 name: referenceSlots[0].name,
                 dataUrl: referenceSlots[0].dataUrl,
                 size: referenceSlots[0].size
               } : null));
-            } else if (prevMode === 'video' && mode === 'image') {
-              setReferenceSlots(prev => {
-                if (prev.length > 0) return prev;
-                return [firstFrame].filter(Boolean).map((f, i) => ({ ...f, index: i + 1 }));
+            } else if (prev.mode === 'video' && mode === 'image') {
+              setReferenceSlots(cur => {
+                if (cur.length > 0 || !firstFrame) return cur;
+                return [{
+                  id: 'slot_' + Date.now() + '_i',
+                  index: 1,
+                  name: firstFrame.name || '图1',
+                  dataUrl: firstFrame.dataUrl,
+                  size: firstFrame.size
+                }];
               });
             }
-          }, [mode]);
+          }, [mode, isVideoMultiRefActive]);
 
           // 视频画面帧槽位卡片 (首帧 / 尾帧共用渲染：独立上传、独立删除、语义固定)
           const renderFrameCard = (title, frame, setter, inputRef, emptyText, accentColor, hint) => h('div', {
@@ -8652,8 +8821,29 @@ $owner.Dispose()
           // Grok Imagine 协议适配：xAI 生图原生协议没有 size 参数（用固定档 aspect_ratio），
           // 视频 resolution 仅接受 480p/720p/1080p —— 非法参数会被上游以 400 拒绝
           const handleGenerate = async () => {
-            const hasVideoFrame = Boolean(firstFrame && firstFrame.dataUrl);
-            if (!prompt.trim() && referenceSlots.length === 0 && (mode !== 'video' || !hasVideoFrame)) {
+            const activeVideoSlots = isVideoMultiRefActive
+              ? referenceSlots.slice(0, maxRefSlots).filter(s => s && s.dataUrl)
+              : [];
+            const hasVideoFrame = !isVideoMultiRefActive && Boolean(firstFrame && firstFrame.dataUrl);
+            if (mode === 'video') {
+              if (isH3StudioModel && videoRefType !== 'reference' && !prompt.trim()) {
+                alert('H3 / H3-2K 首帧模式必须填写视频描述提示词 (Prompt)');
+                return;
+              }
+              if (isH3StudioModel && videoRefType === 'reference') {
+                if (!prompt.trim()) {
+                  alert('H3 全能参考模式必须填写画面描述提示词 (Prompt)');
+                  return;
+                }
+                if (activeVideoSlots.length === 0) {
+                  alert('H3 全能参考模式请至少上传 1 张参考图片，或切换回「首帧画面」');
+                  return;
+                }
+              } else if (!prompt.trim() && !hasVideoFrame && activeVideoSlots.length === 0) {
+                alert('请输入视频描述提示词 (Prompt)，或上传参考图片');
+                return;
+              }
+            } else if (!prompt.trim() && referenceSlots.length === 0) {
               alert('请输入画面描述提示词 (Prompt)，或上传参考图片');
               return;
             }
@@ -8675,9 +8865,9 @@ $owner.Dispose()
             setIsGenerating(true);
             const actionName = mode === 'image'
               ? (referenceSlots.length > 0 ? '多参考图垫图绘制' : '画面绘制')
-              : (hasVideoFrame
-                  ? '首帧图生视频渲染'
-                  : '视频生成');
+              : (activeVideoSlots.length > 0
+                  ? `全能参考(${activeVideoSlots.length}图)视频渲染`
+                  : (hasVideoFrame ? '首帧图生视频渲染' : '视频生成'));
             setStatusMsg(`AI 正在进行${actionName}，请稍候...`);
 
             try {
@@ -8693,12 +8883,14 @@ $owner.Dispose()
                     prompt: finalPrompt,
                     size: size,
                     n: nVal,
+                    quality: currentImgModel?.quality || '',
                     referenceSlots: referenceSlots
                   });
                 };
 
                 // 前置可用额度与余额校验，杜绝透支双花 (BILLING-03)
-                const totalEstCost = estCost * count;
+                // estCost 已按 effectiveSinglePrice * count 计算，预检不得重复乘张数。
+                const totalEstCost = estCost;
                 const currentWallet = billingState?.walletCNY || 0;
                 const currentSubRemain = Math.max(0, (billingState?.subTotalCNY || 0) - (billingState?.subUsedCNY || 0));
                 const totalAvailable = currentWallet + currentSubRemain;
@@ -8754,54 +8946,37 @@ $owner.Dispose()
                   updateBilling();
                 }
               } else {
-                // 真实视频网络调用与长轮询 (彻底终结假存根 BILLING-01, BILLING-05)
-                setStatusMsg(`AI 正在向云端提交视频渲染任务 (${selectedModel}, ${duration}秒)...`);
-                // Grok Imagine 视频族：xAI 仅接受 480p/720p/1080p，768P 会被上游 400 拒绝
-                const isGrokVideo = /grok-imagine-video/i.test(selectedModel || '');
-                let resolution;
-                if (/minimax-h3-2k/i.test(selectedModel || '')) {
-                  resolution = '2K';
-                } else if (/minimax/i.test(selectedModel || '')) {
-                  resolution = '768P';
-                } else if (isGrokVideo) {
-                  resolution = (size && size.includes('1080')) ? '1080P' : '720P';
-                } else if (/^muse-video$/i.test(selectedModel || '') || /^omni-1\.2-flash$/i.test(selectedModel || '')) {
-                  resolution = '720P';
-                } else {
-                  resolution = (size && (size.includes('2K') || size.startsWith('2560') || size.startsWith('1440')))
-                    ? '2K'
-                    : ((size && size.includes('1080')) ? '1080P' : '768P');
-                }
-                const videoPayload = {
-                  model: selectedModel || 'MiniMax-H3',
-                  prompt: prompt.trim(),
-                  seconds: duration || 5,
-                  duration: duration || 5,
-                  resolution
-                };
-                if (/^muse-video$/i.test(videoPayload.model)) {
-                  // Muse 走 sora 协议: seconds 必须字符串, 画幅靠 size 表达
-                  videoPayload.seconds = String(duration || 5);
-                  videoPayload.size = size || '1280x720';
-                }
-                if (/^omni-1\.2-flash$/i.test(videoPayload.model)) {
-                  // Omni 走 hailuo 协议: seconds 保持数字, 画幅靠 size 表达 (中转层据此选横竖屏)
-                  videoPayload.size = size || '1280x720';
-                }
-                // 首帧独立槽位：按模型族选择上行字段，交给 New-API 内置插件显式映射帧角色
-                // (hailuo → metadata.first_frame_image；xai → image)。尾帧已下线，绝不下发 last_frame。
-                const frameFirstUrl = firstFrame && firstFrame.dataUrl ? firstFrame.dataUrl : '';
-                if (/minimax|hailuo/i.test(videoPayload.model) || /^omni-1\.2-flash$/i.test(videoPayload.model)) {
-                  if (frameFirstUrl) {
-                    videoPayload.image = frameFirstUrl;
-                    videoPayload.metadata = { first_frame_image: frameFirstUrl };
-                  }
-                } else {
-                  if (frameFirstUrl) {
-                    videoPayload.image = frameFirstUrl;
-                    videoPayload.image_url = frameFirstUrl;
-                  }
-                }
+                // 真实视频网络调用与长轮询 (统一经由 CanvasVideoUtils 编译提示词与多图载荷)
+                const refDataUrls = activeVideoSlots.map(s => s.dataUrl).filter(Boolean);
+                const rawVideoPrompt = prompt.trim();
+                const compiledVideoPrompt = (CanvasVideoUtils && CanvasVideoUtils.compileVideoPrompt)
+                  ? CanvasVideoUtils.compileVideoPrompt(rawVideoPrompt, activeVideoSlots)
+                  : rawVideoPrompt;
+                const frameFirstUrl = hasVideoFrame ? firstFrame.dataUrl : '';
+                const refMode = (isH3StudioModel && videoRefType === 'reference')
+                  ? 'reference'
+                  : (isOmniStudioModel ? (refDataUrls.length > 1 ? 'reference' : 'auto') : 'first_frame');
+
+                setStatusMsg(`AI 正在向云端提交视频渲染任务 (${selectedModel}, ${duration}秒${refDataUrls.length > 0 ? `, ${refDataUrls.length}图参考` : ''})...`);
+                const videoPayload = (CanvasVideoUtils && CanvasVideoUtils.buildVideoPayload)
+                  ? CanvasVideoUtils.buildVideoPayload({
+                      model: selectedModel || 'MiniMax-H3',
+                      prompt: compiledVideoPrompt,
+                      duration: duration || 5,
+                      size: size || '1280x720',
+                      firstFrameUrl: frameFirstUrl,
+                      referenceImages: refDataUrls,
+                      referenceMode: refMode,
+                      ratio: (availableResolutions.find(r => r.val === size)?.icon === 'ratio9_16') ? '9:16' : '16:9'
+                    })
+                  : {
+                      model: selectedModel || 'MiniMax-H3',
+                      prompt: compiledVideoPrompt,
+                      seconds: duration || 5,
+                      duration: duration || 5,
+                      resolution: '720P',
+                      ...(frameFirstUrl ? { image: frameFirstUrl, metadata: { first_frame_image: frameFirstUrl } } : {})
+                    };
 
                 const endpoints = CanvasVideoUtils
                   ? CanvasVideoUtils.resolveVideoEndpoints(BASE_URL, videoPayload.model)
@@ -9042,15 +9217,6 @@ $owner.Dispose()
               overflow: 'hidden'
             }
           }, [
-            // 隐藏的参考图片选择框
-            h('input', {
-              type: 'file',
-              ref: fileInputRef,
-              accept: 'image/png,image/jpeg,image/webp',
-              style: { display: 'none' },
-              onChange: handleFileChange
-            }),
-
             // 1. 顶部 Header 栏 (黑白自适应)
             h('header', {
               style: {
@@ -9277,6 +9443,8 @@ $owner.Dispose()
                 isVip,
                 isSvip,
                 isSuper,
+                availableImageModels: IMAGE_MODELS,
+                availableVideoModels: VIDEO_MODELS,
                 onOpenTutorial: () => setShowTutorial(true)
               })
             ]),
@@ -9487,21 +9655,78 @@ $owner.Dispose()
                   }))
                 ]),
 
-                // 2. 多参考图槽位管理组件 (支持 1~5 张参考图、命名别名、拖拽与精准光标插入)
+                // 2. 多参考图 / 视频画面参考管理 (按模型能力动态分流)
                 h('div', {}, [
                   h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' } }, [
                     h('div', { style: { display: 'flex', alignItems: 'center', gap: '5px' } }, [
                       h('label', { style: { fontSize: '12px', fontWeight: '500', color: theme.textSecondary } },
-                        mode === 'image' ? `参考图库 (${referenceSlots.length}/5)` : '视频画面帧 (首帧)'
+                        mode === 'image'
+                          ? `参考图库 (${referenceSlots.length}/5)`
+                          : (isVideoMultiRefActive
+                              ? `${isH3StudioModel ? '全能参考图库' : '参考图库'} (${referenceSlots.length}/${maxRefSlots})`
+                              : '视频画面帧 (首帧)')
                       ),
-                      mode === 'image' && referenceSlots.length > 0 && h('span', { style: { fontSize: '10.5px', color: theme.textMuted } }, '可拖拽至输入框')
+                      (mode === 'image' || isVideoMultiRefActive) && referenceSlots.length > 0 && h('span', { style: { fontSize: '10.5px', color: theme.textMuted } }, '可拖拽至输入框')
                     ]),
-                    h('span', { style: { fontSize: '11px', color: (mode === 'video' ? Boolean(firstFrame) : referenceSlots.length > 0) ? '#22c55e' : theme.textMuted } },
+                    h('span', {
+                      style: {
+                        fontSize: '11px',
+                        color: (mode === 'video'
+                          ? (isVideoMultiRefActive
+                              ? (referenceSlots.length > maxRefSlots ? '#f59e0b' : (referenceSlots.length > 0 ? '#22c55e' : theme.textMuted))
+                              : (firstFrame ? '#22c55e' : theme.textMuted))
+                          : (referenceSlots.length > 5 ? '#f59e0b' : (referenceSlots.length > 0 ? '#22c55e' : theme.textMuted)))
+                      }
+                    },
                       mode === 'video'
-                        ? (firstFrame ? '首帧驱动 · 模型明确识别开场画面' : '可选')
-                        : (referenceSlots.length > 0 ? `已启用 ${referenceSlots.length} 张垫图` : '可选')
+                        ? (isVideoMultiRefActive
+                            ? (referenceSlots.length > maxRefSlots
+                                ? `已传 ${referenceSlots.length} 张 (仅前 ${maxRefSlots} 张生效)`
+                                : (referenceSlots.length > 0
+                                    ? `已启用 ${referenceSlots.length} 张参考图`
+                                    : (isH3StudioModel ? '需至少 1 张参考图' : `可选 · 最多 ${maxRefSlots} 张`)))
+                            : (firstFrame ? '首帧驱动 · 模型明确识别开场画面' : '可选'))
+                        : (referenceSlots.length > 5
+                            ? `已传 ${referenceSlots.length} 张 (仅前 5 张生效)`
+                            : (referenceSlots.length > 0 ? `已启用 ${referenceSlots.length} 张垫图` : '可选'))
                     )
                   ]),
+
+                  // H3 / H3-2K 专属分段开关: 首帧画面 vs 全能参考 (二者互斥)
+                  mode === 'video' && isH3StudioModel && h('div', {
+                    style: {
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '4px',
+                      padding: '3px',
+                      borderRadius: '7px',
+                      background: theme.chipNormalBg,
+                      border: `1px solid ${theme.borderSubtle}`,
+                      marginBottom: '8px'
+                    }
+                  }, [
+                    { id: 'first_frame', label: '首帧画面 (单图)' },
+                    { id: 'reference', label: `全能参考 (1~${maxRefSlots}图)` }
+                  ].map(opt => {
+                    const active = videoRefType === opt.id;
+                    return h('button', {
+                      key: opt.id,
+                      type: 'button',
+                      onClick: () => setVideoRefType(opt.id),
+                      style: {
+                        padding: '5px 8px',
+                        borderRadius: '5px',
+                        border: 'none',
+                        fontSize: '11.5px',
+                        fontWeight: active ? '600' : '400',
+                        cursor: 'pointer',
+                        background: active ? theme.chipActiveBg : 'transparent',
+                        color: active ? theme.chipActiveText : theme.textMuted,
+                        boxShadow: active ? (theme.isDark ? '0 1px 3px rgba(0,0,0,0.4)' : '0 1px 3px rgba(0,0,0,0.1)') : 'none',
+                        transition: 'all 0.15s ease'
+                      }
+                    }, opt.label);
+                  })),
 
                   // 隐藏的多选文件输入框
                   h('input', {
@@ -9513,7 +9738,7 @@ $owner.Dispose()
                     onChange: handleFileChange
                   }),
 
-                  // 首帧专用隐藏文件输入框 (视频模式)
+                  // 首帧专用隐藏文件输入框 (视频单首帧模式)
                   h('input', {
                     ref: firstFrameInputRef,
                     type: 'file',
@@ -9522,15 +9747,40 @@ $owner.Dispose()
                     onChange: handleFirstFrameChange
                   }),
 
-                  // 视频模式：首帧独立槽位 (语义在 UI 层固定，模型按显式字段识别帧角色；尾帧已下线)
-                  mode === 'video' ? h('div', {
+                  // 多图参考模式静态提示栏
+                  mode === 'video' && isVideoMultiRefActive && h('div', {
+                    style: {
+                      fontSize: '10.5px',
+                      lineHeight: '1.45',
+                      color: theme.textSecondary,
+                      background: theme.chipNormalBg,
+                      border: `1px solid ${theme.borderSubtle}`,
+                      borderRadius: '6px',
+                      padding: '6px 8px',
+                      marginBottom: '8px'
+                    }
+                  }, isH3StudioModel
+                    ? `H3 全能参考模式与首帧互斥，最多支持 ${maxRefSlots} 张参考图，提交时须填写画面描述（支持用 @[图N:别名] 指定角色或场景）。`
+                    : `Omni 1.2 Flash 最多支持 ${maxRefSlots} 张参考图；仅传 1 张时兼容首帧驱动，传 2~3 张自动开启多图协同参考。`
+                  ),
+
+                  // 视图分支：单首帧视频 vs 图像/多图视频参考图库
+                  (mode === 'video' && !isVideoMultiRefActive) ? h('div', {
                     style: {
                       display: 'flex',
-                      gap: '8px',
-                      alignItems: 'stretch'
+                      flexDirection: 'column',
+                      gap: '6px'
                     }
                   }, [
-                    renderFrameCard('首帧 · 开场画面', firstFrame, setFirstFrame, firstFrameInputRef, '上传开场画面', '#22c55e', '视频将以此画面开场 (推荐与成片比例一致)')
+                    renderFrameCard('首帧 · 开场画面', firstFrame, setFirstFrame, firstFrameInputRef, '上传开场画面', '#22c55e', '视频将以此画面开场 (推荐与成片比例一致)'),
+                    !videoCaps.supportsMultiRef && h('div', {
+                      style: {
+                        fontSize: '10.5px',
+                        color: theme.textMuted,
+                        lineHeight: '1.45',
+                        padding: '2px 2px 0'
+                      }
+                    }, '当前模型仅支持单张首帧参考，如需多图全能参考请切换 MiniMax H3 (最多9张) 或 Omni 1.2 Flash (最多3张)。')
                   ]) : referenceSlots.length > 0 ? h('div', {
                     style: {
                       display: 'flex',
@@ -9538,9 +9788,22 @@ $owner.Dispose()
                       gap: '8px'
                     }
                   }, [
+                    referenceSlots.length > maxRefSlots && h('div', {
+                      style: {
+                        fontSize: '10.5px',
+                        color: '#f59e0b',
+                        background: theme.isDark ? 'rgba(245,158,11,0.1)' : 'rgba(245,158,11,0.08)',
+                        border: '1px solid rgba(245,158,11,0.35)',
+                        borderRadius: '6px',
+                        padding: '5px 8px',
+                        lineHeight: '1.4'
+                      }
+                    }, `当前已上传 ${referenceSlots.length} 张参考图，${mode === 'video' ? selectedVideoModel : '图像模式'} 上限为 ${maxRefSlots} 张，超出槽位已标灰且仅前 ${maxRefSlots} 张生效。`),
+
                     // 槽位卡片列表
-                    referenceSlots.map((slot) => {
+                    referenceSlots.map((slot, arrIdx) => {
                       const isEditing = editingSlotId === slot.id;
+                      const isOverflowSlot = arrIdx >= maxRefSlots;
                       return h('div', {
                         key: slot.id,
                         style: {
@@ -9548,16 +9811,17 @@ $owner.Dispose()
                           alignItems: 'center',
                           gap: '8px',
                           background: theme.bgInput,
-                          border: `1px solid ${theme.borderStrong}`,
+                          border: `1px ${isOverflowSlot ? 'dashed #f59e0b' : `solid ${theme.borderStrong}`}`,
                           borderRadius: '7px',
                           padding: '6px 8px',
-                          position: 'relative'
+                          position: 'relative',
+                          opacity: isOverflowSlot ? 0.48 : 1
                         }
                       }, [
                         // 可拖拽缩略图
                         h('div', {
                           draggable: true,
-                          title: '按住拖入提示词光标处',
+                          title: isOverflowSlot ? `图${slot.index} 超出当前模型上限 (${maxRefSlots}张)` : '按住拖入提示词光标处',
                           onDragStart: (e) => {
                             e.dataTransfer.setData('application/winetoken-ref', JSON.stringify({ index: slot.index, name: slot.name }));
                             e.dataTransfer.setData('text/plain', ` @[图${slot.index}:${slot.name}] `);
@@ -9587,7 +9851,7 @@ $owner.Dispose()
                               bottom: '0',
                               left: '0',
                               right: '0',
-                              background: 'rgba(0,0,0,0.65)',
+                              background: isOverflowSlot ? 'rgba(245,158,11,0.88)' : 'rgba(0,0,0,0.65)',
                               color: '#ffffff',
                               fontSize: '9px',
                               textAlign: 'center',
@@ -9651,7 +9915,53 @@ $owner.Dispose()
                             h('span', { style: { fontWeight: '500' } }, slot.name),
                             h(Icon, { name: 'edit', size: 10, style: { opacity: 0.6 } })
                           ]),
-                          h('div', { style: { fontSize: '10.5px', color: theme.textMuted, marginTop: '2px' } }, slot.size)
+                          h('div', { style: { fontSize: '10.5px', color: isOverflowSlot ? '#f59e0b' : theme.textMuted, marginTop: '2px' } },
+                            isOverflowSlot ? `${slot.size} · 仅前 ${maxRefSlots} 张生效` : slot.size
+                          )
+                        ]),
+
+                        // 上下调序按钮 (控制 图1/图2... 传入顺序)
+                        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 } }, [
+                          h('button', {
+                            type: 'button',
+                            disabled: arrIdx === 0,
+                            title: '上移一位',
+                            onClick: () => moveReferenceSlot(slot.id, -1),
+                            style: {
+                              width: '18px',
+                              height: '15px',
+                              padding: 0,
+                              borderRadius: '3px',
+                              background: theme.chipNormalBg,
+                              border: `1px solid ${theme.borderSubtle}`,
+                              color: arrIdx === 0 ? theme.textMuted : theme.textSecondary,
+                              opacity: arrIdx === 0 ? 0.35 : 1,
+                              cursor: arrIdx === 0 ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }
+                          }, h(Icon, { name: 'arrowUp', size: 10 })),
+                          h('button', {
+                            type: 'button',
+                            disabled: arrIdx === referenceSlots.length - 1,
+                            title: '下移一位',
+                            onClick: () => moveReferenceSlot(slot.id, 1),
+                            style: {
+                              width: '18px',
+                              height: '15px',
+                              padding: 0,
+                              borderRadius: '3px',
+                              background: theme.chipNormalBg,
+                              border: `1px solid ${theme.borderSubtle}`,
+                              color: arrIdx === referenceSlots.length - 1 ? theme.textMuted : theme.textSecondary,
+                              opacity: arrIdx === referenceSlots.length - 1 ? 0.35 : 1,
+                              cursor: arrIdx === referenceSlots.length - 1 ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }
+                          }, h(Icon, { name: 'arrowDown', size: 10 }))
                         ]),
 
                         // 快捷引用到提示词按钮
@@ -9705,8 +10015,8 @@ $owner.Dispose()
                       ]);
                     }),
 
-                    // 添加更多槽位按钮 (若少于 5 张)
-                    referenceSlots.length < 5 && h('button', {
+                    // 添加更多槽位按钮 (小于当前模型上限)
+                    referenceSlots.length < maxRefSlots && h('button', {
                       type: 'button',
                       onClick: () => fileInputRef.current?.click(),
                       style: {
@@ -9727,7 +10037,7 @@ $owner.Dispose()
                       onMouseLeave: (e) => { e.currentTarget.style.borderColor = theme.borderStrong; e.currentTarget.style.color = theme.textSecondary; }
                     }, [
                       h(Icon, { name: 'plus', size: 12 }),
-                      h('span', {}, `添加参考图 (${referenceSlots.length}/5)`)
+                      h('span', {}, `添加参考图 (${referenceSlots.length}/${maxRefSlots})`)
                     ])
                   ]) : h('div', {
                     onClick: () => fileInputRef.current?.click(),
@@ -9750,8 +10060,10 @@ $owner.Dispose()
                     onMouseLeave: (e) => { e.currentTarget.style.borderColor = theme.borderStrong; }
                   }, [
                     h(Icon, { name: 'upload', size: 16, style: { color: theme.textSecondary } }),
-                    h('span', { style: { fontSize: '11.5px', color: theme.textSecondary } }, '点击或拖拽上传参考图 (最多5张)'),
-                    h('span', { style: { fontSize: '10.5px', color: theme.textMuted } }, '支持多角色人物与场景垫图、拖拽指代')
+                    h('span', { style: { fontSize: '11.5px', color: theme.textSecondary } }, `点击或拖拽上传参考图 (最多${maxRefSlots}张)`),
+                    h('span', { style: { fontSize: '10.5px', color: theme.textMuted } },
+                      mode === 'video' ? '支持多角色/场景协同参考、上下调序、拖拽进提示词' : '支持多角色人物与场景垫图、拖拽指代'
+                    )
                   ])
                 ]),
 
@@ -9759,7 +10071,7 @@ $owner.Dispose()
                 h('div', {}, [
                   h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' } }, [
                     h('label', { style: { fontSize: '12px', fontWeight: '500', color: theme.textSecondary } }, '画面描述 (Prompt)'),
-                    h('button', {
+                    (mode === 'image' || isVideoMultiRefActive) && h('button', {
                       type: 'button',
                       style: {
                         background: 'transparent',
@@ -9804,19 +10116,25 @@ $owner.Dispose()
                         if (text && text.includes('@[图')) insertText = text;
                       }
                       if (!insertText && e.dataTransfer.files?.length > 0) {
-                        // 直接拖入新文件到 textarea，自动加入槽位并在光标处插入标签
-                        addFilesToSlots(e.dataTransfer.files, (newSlot) => {
-                          insertTokenAtCursor(` @[图${newSlot.index}:${newSlot.name}] `);
-                        });
+                        if (mode === 'video' && !isVideoMultiRefActive) {
+                          loadImageFileToFrame(e.dataTransfer.files[0], setFirstFrame);
+                        } else {
+                          // 直接拖入新文件到 textarea，自动加入槽位并在光标处插入标签
+                          addFilesToSlots(e.dataTransfer.files, (newSlot) => {
+                            insertTokenAtCursor(` @[图${newSlot.index}:${newSlot.name}] `);
+                          });
+                        }
                         return;
                       }
                       if (insertText) {
                         insertTokenAtCursor(insertText);
                       }
                     },
-                    placeholder: referenceSlots.length > 0
+                    placeholder: (mode === 'image' || isVideoMultiRefActive) && referenceSlots.length > 0
                       ? '输入提示词，可直接把上方参考图拖入此处光标位置，如：华星学校 @[图3:场景]，ljw @[图1:人物] 去找 710 @[图2:人物] 玩水球...'
-                      : '详细描述画面主体、镜头构图、光影材质与氛围风格...',
+                      : (mode === 'video'
+                          ? '详细描述视频主体动作、运镜方向、光影材质与节奏氛围...'
+                          : '详细描述画面主体、镜头构图、光影材质与氛围风格...'),
                     style: {
                       width: '100%',
                       padding: '10px 12px',
@@ -9833,6 +10151,26 @@ $owner.Dispose()
                     onFocus: (e) => { e.target.style.borderColor = theme.textPrimary; },
                     onBlur: (e) => { e.target.style.borderColor = theme.borderStrong; }
                   }),
+                  (() => {
+                    if (mode !== 'video' || !isVideoMultiRefActive || !CanvasVideoUtils || typeof CanvasVideoUtils.findOutOfRangeVideoTags !== 'function') {
+                      return null;
+                    }
+                    const activeSlotsForTags = referenceSlots.slice(0, maxRefSlots).filter(s => s && s.dataUrl);
+                    const badTags = CanvasVideoUtils.findOutOfRangeVideoTags(prompt, activeSlotsForTags);
+                    if (!badTags.length) return null;
+                    return h('div', {
+                      style: {
+                        marginTop: '6px',
+                        fontSize: '11px',
+                        lineHeight: '1.4',
+                        color: '#f59e0b',
+                        background: theme.isDark ? 'rgba(245,158,11,0.1)' : 'rgba(245,158,11,0.08)',
+                        border: '1px solid rgba(245,158,11,0.35)',
+                        borderRadius: '5px',
+                        padding: '5px 8px'
+                      }
+                    }, `检测到未关联或超出上限的引用标记 ${badTags.join('、')}（当前有效参考图 ${activeSlotsForTags.length} 张），提交时将自动跳过。`);
+                  })(),
                   // 快捷灵感药丸标签
                   h('div', {
                     style: {
@@ -10018,9 +10356,11 @@ $owner.Dispose()
                       ? (referenceSlots.length > 0
                           ? `立即垫图生成 · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
                           : `立即生成 · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`)
-                      : (firstFrame
-                          ? `提交首帧生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
-                          : `提交文生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`)
+                      : (isVideoMultiRefActive && referenceSlots.length > 0
+                          ? `提交全能参考视频 (${Math.min(referenceSlots.length, maxRefSlots)}图 / ${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
+                          : (!isVideoMultiRefActive && firstFrame
+                              ? `提交首帧生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`
+                              : `提交文生视频 (${duration}秒) · 预估消耗 ¥${formatCNY(estCost)}${isVip ? ` (${isSuper ? 'SUPER' : (isSvip ? 'SVIP' : 'VIP')}优先扣套餐)` : ''}`))
                     )
                   ])
                 ])
@@ -10475,9 +10815,13 @@ $owner.Dispose()
                       h('p', { style: { margin: '0', fontSize: '12px', color: theme.textMuted, lineHeight: '1.5' } },
                         isGenerating ? (statusMsg || '请稍候片刻，正在生成高分辨率细节...') : (
                           mode === 'video'
-                            ? (firstFrame
-                                ? '已设置首帧画面，点击「提交生视频」即可开始渲染'
-                                : '在左侧配置模型或上传首帧画面，点击「提交生视频」即可在此呈现成果')
+                            ? (isVideoMultiRefActive
+                                ? (referenceSlots.length > 0
+                                    ? `已选择 ${Math.min(referenceSlots.length, maxRefSlots)} 张参考图，点击「提交全能参考视频」即可开始渲染`
+                                    : `在左侧上传 1~${maxRefSlots} 张参考图并配置参数，点击「提交全能参考视频」即可在此呈现成果`)
+                                : (firstFrame
+                                    ? '已设置首帧画面，点击「提交首帧生视频」即可开始渲染'
+                                    : '在左侧配置模型或上传首帧画面，点击「提交文生视频」即可在此呈现成果'))
                             : (referenceSlots.length > 0 ? `已选择 ${referenceSlots.length} 张参考图，点击「立即垫图生成」即可开始` : '在左侧配置模型或上传参考底图，点击「立即生成」即可在此呈现成果')
                         )
                       )
@@ -10804,8 +11148,11 @@ $owner.Dispose()
       createStudioHistoryItem,
       updateHistoryLocalPath,
       dataURLtoFile,
-      snapAspectRatio
+      snapAspectRatio,
+      normalizeImageModel,
+      requestImageBatches,
+      calculateImageBatchCost,
+      validateStudioVideoPrompt
     };
   }
 })();
-
