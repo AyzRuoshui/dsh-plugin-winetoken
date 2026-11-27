@@ -9,7 +9,7 @@ const path = require('path');
 const { homedir } = require('os');
 const { addHistoryItem } = require('./history.js');
 const { resolveApiKey, getResolvedBaseUrl } = require('./credentials.js');
-const { resolveVideoEndpoints } = require('./canvas-video.js');
+const { resolveVideoEndpoints, extractApiErrorMessage, readResponseErrorMessage } = require('./canvas-video.js');
 
 // 对标 infinite-canvas 的本地 Canvas Agent: 宿主侧画布状态桥 (磁盘工程文件为唯一权威)
 // 可选加载，模块缺失时画布工具自动禁用，绝不拖垮既有生图/生视频工具注册
@@ -239,14 +239,7 @@ async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_
   const res = await fetchFn(endpoint, init);
 
   if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    let msg = `HTTP ${res.status}`;
-    try {
-      const parsed = JSON.parse(errText);
-      msg = parsed.error?.message || msg;
-    } catch (_) {
-      if (errText) msg = errText.slice(0, 100);
-    }
+    const msg = await readResponseErrorMessage(res);
     throw new Error(`生图失败: ${msg}`);
   }
 
@@ -351,14 +344,7 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
   });
 
   if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    let msg = `HTTP ${res.status}`;
-    try {
-      const parsed = JSON.parse(errText);
-      msg = parsed.error?.message || msg;
-    } catch (_) {
-      if (errText) msg = errText.slice(0, 100);
-    }
+    const msg = await readResponseErrorMessage(res);
     throw new Error(`创建视频任务失败: ${msg}`);
   }
 
@@ -402,10 +388,13 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
         }
       }
       if (status === 'failed' || status === 'error') {
-        throw new Error(pollData.error?.message || pollData.message || '视频渲染失败');
+        const errMsg = extractApiErrorMessage({ parsed: pollData, fallback: '视频渲染失败' });
+        const pollErr = new Error(errMsg);
+        pollErr.isTerminalPollFailure = true;
+        throw pollErr;
       }
     } catch (pollErr) {
-      if (pollErr.message.includes('视频渲染失败')) throw pollErr;
+      if (pollErr && (pollErr.isTerminalPollFailure || (pollErr.message && pollErr.message.includes('视频渲染失败')))) throw pollErr;
     }
   }
 

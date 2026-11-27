@@ -25,7 +25,16 @@ try { CanvasPricingUtils = require('./canvas-pricing.js'); } catch (_) {}
 let CanvasPromptUtils = null;
 try { CanvasPromptUtils = require('./canvas-prompts.js'); } catch (_) {}
 let CanvasVideoUtils = null;
-try { CanvasVideoUtils = require('./canvas-video.js'); } catch (_) {}
+let canvasVideoLoadError = null;
+try {
+  CanvasVideoUtils = require('./canvas-video.js');
+} catch (err) {
+  canvasVideoLoadError = err;
+  if (typeof console !== 'undefined' && typeof console.error === 'function') {
+    console.error('[WineToken CanvasReactFlow] 视频组件加载失败 (./canvas-video.js):', err);
+  }
+}
+const VIDEO_MODULE_LOAD_ERROR_MSG = '视频组件加载失败（canvas-video.js），插件安装不完整，请删除后重新安装插件';
 let CanvasExportUtils = null;
 try { CanvasExportUtils = require('./canvas-export.js'); } catch (_) {}
 let initXyFlowFactory = null;
@@ -1296,7 +1305,7 @@ function VideoNode({ id, data, selected }) {
   const name = typeof data.name === 'string' ? data.name : '视频生成节点';
   const prompt = typeof data.prompt === 'string' ? data.prompt : '';
   const videoState = data.videoState || {};
-  const videoUtils = actions.CanvasVideoUtils || CanvasVideoUtils;
+  const videoUtils = actions.CanvasVideoUtils !== undefined ? actions.CanvasVideoUtils : CanvasVideoUtils;
   const videoUrl = resolveAssetUrl(videoState.videoUrl || data.url, actions.canvasAssetsDriver);
   const isBusy = (videoUtils && typeof videoUtils.isBusy === 'function')
     ? videoUtils.isBusy(videoState)
@@ -1927,7 +1936,7 @@ function createReactFlowWorkspace(deps = {}) {
   const promptUtils = deps.CanvasPromptUtils || CanvasPromptUtils;
   const nodeUtils = deps.CanvasNodeUtils || CanvasNodeUtils;
   const pricingUtils = deps.CanvasPricingUtils || CanvasPricingUtils;
-  const videoUtils = deps.CanvasVideoUtils || CanvasVideoUtils;
+  const videoUtils = deps.CanvasVideoUtils !== undefined ? deps.CanvasVideoUtils : CanvasVideoUtils;
   const exportUtils = deps.CanvasExportUtils || CanvasExportUtils;
   const jobQueue = deps.CanvasJobQueueSingleton || deps.canvasJobQueue || null;
   const manifestMgr = deps.WineTokenManifestManager || deps.manifestManager || null;
@@ -2457,16 +2466,19 @@ function createReactFlowWorkspace(deps = {}) {
       } else if (node.type === 'videoNode' || node.type === 'video') {
         const curState = (node.data && node.data.videoState) || {};
         if (videoUtils && typeof videoUtils.isBusy === 'function' && videoUtils.isBusy(curState)) return;
+        if (!videoUtils || typeof videoUtils.executeVideoNodeTask !== 'function') {
+          if (typeof console !== 'undefined' && typeof console.error === 'function') {
+            console.error('[WineToken Canvas] 视频组件不可用 (canvas-video.js):', canvasVideoLoadError || 'module missing or incomplete');
+          }
+          updateNodeData(nodeId, {
+            videoState: { ...curState, status: 'failed', error: VIDEO_MODULE_LOAD_ERROR_MSG }
+          });
+          return;
+        }
         const apiKey = typeof deps.getKey === 'function' ? deps.getKey() : '';
         if (!apiKey) {
           updateNodeData(nodeId, {
             videoState: { ...curState, status: 'failed', error: '未检测到 API Key，请先配置密钥' }
-          });
-          return;
-        }
-        if (!videoUtils || typeof videoUtils.executeVideoNodeTask !== 'function') {
-          updateNodeData(nodeId, {
-            videoState: { ...curState, status: 'failed', error: '视频执行模块未加载' }
           });
           return;
         }

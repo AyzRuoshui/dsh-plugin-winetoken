@@ -44,6 +44,7 @@
   let CanvasExportUtils = null;
   let CanvasAssetsClass = null;
   let CanvasVideoUtils = null;
+  let canvasVideoLoadError = null;
   let CanvasPromptUtils = null;
   try {
     const storageMod = require('./canvas-storage.js');
@@ -77,7 +78,12 @@
   } catch (_) {}
   try {
     CanvasVideoUtils = require('./canvas-video.js');
-  } catch (_) {}
+  } catch (err) {
+    canvasVideoLoadError = err;
+    if (typeof console !== 'undefined' && typeof console.error === 'function') {
+      console.error('[WineToken Client] 视频组件加载失败 (./canvas-video.js):', err);
+    }
+  }
   try {
     CanvasPromptUtils = require('./canvas-prompts.js');
   } catch (_) {}
@@ -1480,6 +1486,30 @@ $owner.Dispose()
     return { valid: true, message: '' };
   }
 
+  const VIDEO_MODULE_LOAD_ERROR_MSG = '视频组件加载失败（canvas-video.js），插件安装不完整，请删除后重新安装插件';
+
+  function resolveFallbackVideoResolution(model) {
+    const m = String(model || '').trim().toLowerCase();
+    if (/minimax-h3-2k/.test(m)) return '2K';
+    if (/minimax/.test(m)) return '768P';
+    if (m === 'omni-1.2-flash' || m === 'muse-video') return '720P';
+    return '720P';
+  }
+
+  function getCanvasVideoUnavailableError(utils = CanvasVideoUtils, loadError = canvasVideoLoadError) {
+    const isAvailable = Boolean(
+      utils &&
+      typeof utils.buildVideoPayload === 'function' &&
+      typeof utils.resolveVideoEndpoints === 'function' &&
+      typeof utils.executeVideoNodeTask === 'function'
+    );
+    if (isAvailable) return '';
+    if (typeof console !== 'undefined' && typeof console.error === 'function') {
+      console.error('[WineToken Client] 视频组件不可用 (canvas-video.js):', loadError || 'module missing or incomplete');
+    }
+    return VIDEO_MODULE_LOAD_ERROR_MSG;
+  }
+
   // 构建生图 / 垫图改图标准请求 (严格按协议路由，杜绝往 generations 塞图)
   function buildImageRequest({
     baseUrl = BASE_URL,
@@ -1598,6 +1628,64 @@ $owner.Dispose()
     };
   }
 
+  /** 优先复用 CanvasVideoUtils 的错误文案提取；无 CommonJS 环境时本地按同优先级兜底 */
+  function extractApiErrorMessage(opts) {
+    if (CanvasVideoUtils && typeof CanvasVideoUtils.extractApiErrorMessage === 'function') {
+      return CanvasVideoUtils.extractApiErrorMessage(opts);
+    }
+    const { parsed = null, rawText = '', status = null, fallback = '' } = opts || {};
+    let obj = parsed;
+    if (!obj && typeof rawText === 'string' && rawText.trim()) {
+      try {
+        const candidate = JSON.parse(rawText);
+        if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) obj = candidate;
+      } catch (_) {}
+    }
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      const candidates = [
+        obj.error && typeof obj.error === 'object' ? obj.error.message : '',
+        obj.message,
+        obj.error_msg,
+        obj.msg
+      ];
+      for (const c of candidates) {
+        if (typeof c === 'string' && c.trim() !== '') return c.trim();
+      }
+    }
+    if (typeof rawText === 'string' && rawText.trim()) {
+      return rawText.trim().slice(0, 200);
+    }
+    if (status) return `HTTP ${status}`;
+    return typeof fallback === 'string' ? fallback.trim() : '';
+  }
+
+  async function readResponseErrorMessage(res, fallback = '') {
+    if (CanvasVideoUtils && typeof CanvasVideoUtils.readResponseErrorMessage === 'function') {
+      return CanvasVideoUtils.readResponseErrorMessage(res, fallback);
+    }
+    let rawText = '';
+    let textReadOk = false;
+    let parsed = null;
+    if (res && typeof res.text === 'function') {
+      try {
+        rawText = await res.text();
+        textReadOk = true;
+      } catch (_) {}
+    }
+    if (!textReadOk && res && typeof res.json === 'function') {
+      try {
+        const candidate = await res.json();
+        if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) parsed = candidate;
+      } catch (_) {}
+    }
+    return extractApiErrorMessage({
+      parsed,
+      rawText,
+      status: res ? res.status : null,
+      fallback
+    });
+  }
+
   // 发送生图 / 垫图请求
   async function sendImageRequest({
     baseUrl = BASE_URL,
@@ -1618,8 +1706,7 @@ $owner.Dispose()
       body: req.body
     });
     if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.error?.message || `HTTP ${res.status}`);
+      throw new Error(await readResponseErrorMessage(res));
     }
     return await res.json();
   }
@@ -4604,8 +4691,7 @@ $owner.Dispose()
                 })
               });
               if (!res.ok) {
-                const errJson = await res.json().catch(() => ({}));
-                throw new Error(errJson.error?.message || `HTTP ${res.status}`);
+                throw new Error(await readResponseErrorMessage(res));
               }
               const data = await res.json();
               const content = data.choices?.[0]?.message?.content || '';
@@ -5424,9 +5510,15 @@ $owner.Dispose()
 
           const handleGenerateVideoItem = async (itemId) => {
             const item = canvasItems.find(x => x.id === itemId && x.type === 'video');
-            if (!item || !CanvasVideoUtils) return;
+            if (!item) return;
+            const videoLoadErr = getCanvasVideoUnavailableError();
+            if (videoLoadErr) {
+              updateVideoItem(itemId, { status: 'failed', error: videoLoadErr });
+              setProjectError(videoLoadErr);
+              return;
+            }
             const state = (item.data && item.data.videoState) || {};
-            if (CanvasVideoUtils.isBusy(state)) return;
+            if (typeof CanvasVideoUtils.isBusy === 'function' && CanvasVideoUtils.isBusy(state)) return;
             const apiKey = getKey();
             if (!apiKey) { setProjectError('未检测到 API Key，请先点击顶栏钥匙图标输入'); return; }
 
@@ -8947,6 +9039,11 @@ $owner.Dispose()
                 }
               } else {
                 // 真实视频网络调用与长轮询 (统一经由 CanvasVideoUtils 编译提示词与多图载荷)
+                const videoLoadErr = getCanvasVideoUnavailableError();
+                if (videoLoadErr) {
+                  setStatusMsg(videoLoadErr);
+                  throw new Error(videoLoadErr);
+                }
                 const refDataUrls = activeVideoSlots.map(s => s.dataUrl).filter(Boolean);
                 const rawVideoPrompt = prompt.trim();
                 const compiledVideoPrompt = (CanvasVideoUtils && CanvasVideoUtils.compileVideoPrompt)
@@ -8974,7 +9071,7 @@ $owner.Dispose()
                       prompt: compiledVideoPrompt,
                       seconds: duration || 5,
                       duration: duration || 5,
-                      resolution: '720P',
+                      resolution: resolveFallbackVideoResolution(selectedModel || 'MiniMax-H3'),
                       ...(frameFirstUrl ? { image: frameFirstUrl, metadata: { first_frame_image: frameFirstUrl } } : {})
                     };
 
@@ -9005,14 +9102,7 @@ $owner.Dispose()
                 });
 
                 if (!submitRes.ok) {
-                  const errText = await submitRes.text().catch(() => '');
-                  let msg = `HTTP ${submitRes.status}`;
-                  try {
-                    const parsed = JSON.parse(errText);
-                    msg = parsed.error?.message || msg;
-                  } catch (_) {
-                    if (errText) msg = errText.slice(0, 100);
-                  }
+                  const msg = await readResponseErrorMessage(submitRes);
                   throw new Error(`创建视频任务失败: ${msg}`);
                 }
 
@@ -9056,10 +9146,13 @@ $owner.Dispose()
                         if (finalVideoUrl) break;
                       }
                       if (status === 'failed' || status === 'error') {
-                        throw new Error(pollData.error?.message || pollData.message || '视频渲染失败');
+                        const errMsg = extractApiErrorMessage({ parsed: pollData, fallback: '视频渲染失败' });
+                        const pollErr = new Error(errMsg);
+                        pollErr.isTerminalPollFailure = true;
+                        throw pollErr;
                       }
                     } catch (pollErr) {
-                      if (pollErr.message && pollErr.message.includes('视频渲染失败')) throw pollErr;
+                      if (pollErr && (pollErr.isTerminalPollFailure || (pollErr.message && pollErr.message.includes('视频渲染失败')))) throw pollErr;
                     }
                   }
                 }
@@ -11145,6 +11238,8 @@ $owner.Dispose()
       validateImageModelSupport,
       buildImageRequest,
       sendImageRequest,
+      extractApiErrorMessage,
+      readResponseErrorMessage,
       createStudioHistoryItem,
       updateHistoryLocalPath,
       dataURLtoFile,
@@ -11152,7 +11247,10 @@ $owner.Dispose()
       normalizeImageModel,
       requestImageBatches,
       calculateImageBatchCost,
-      validateStudioVideoPrompt
+      validateStudioVideoPrompt,
+      VIDEO_MODULE_LOAD_ERROR_MSG,
+      resolveFallbackVideoResolution,
+      getCanvasVideoUnavailableError
     };
   }
 })();

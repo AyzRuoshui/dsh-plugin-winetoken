@@ -196,6 +196,74 @@ function firstString(...vals) {
   return '';
 }
 
+const MAX_ERROR_TEXT_LEN = 200;
+
+function truncateErrorText(text, maxLen = MAX_ERROR_TEXT_LEN) {
+  if (typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  return trimmed.length > maxLen ? trimmed.slice(0, maxLen) : trimmed;
+}
+
+/**
+ * 按优先级提取接口失败错误文案：
+ * 1. parsed.error?.message
+ * 2. parsed.message（顶层）
+ * 3. parsed.error_msg / parsed.msg
+ * 4. 原始响应文本截断
+ * 5. HTTP <status>
+ */
+function extractApiErrorMessage({ parsed = null, rawText = '', status = null, fallback = '' } = {}) {
+  let obj = parsed;
+  if (!obj && typeof rawText === 'string' && rawText.trim()) {
+    try {
+      const candidate = JSON.parse(rawText);
+      if (isObject(candidate)) obj = candidate;
+    } catch (_) {}
+  }
+
+  if (isObject(obj)) {
+    const structuredMsg = firstString(
+      isObject(obj.error) ? obj.error.message : '',
+      obj.message,
+      obj.error_msg,
+      obj.msg
+    );
+    if (structuredMsg) return structuredMsg;
+  }
+
+  const truncated = truncateErrorText(rawText);
+  if (truncated) return truncated;
+
+  if (status) return `HTTP ${status}`;
+  return firstString(fallback);
+}
+
+/** 从 Fetch Response 读取文本并按统一优先级提取错误文案 */
+async function readResponseErrorMessage(res, fallback = '') {
+  let rawText = '';
+  let textReadOk = false;
+  let parsed = null;
+  if (res && typeof res.text === 'function') {
+    try {
+      rawText = await res.text();
+      textReadOk = true;
+    } catch (_) {}
+  }
+  if (!textReadOk && res && typeof res.json === 'function') {
+    try {
+      const candidate = await res.json();
+      if (isObject(candidate)) parsed = candidate;
+    } catch (_) {}
+  }
+  return extractApiErrorMessage({
+    parsed,
+    rawText,
+    status: res ? res.status : null,
+    fallback
+  });
+}
+
 /**
  * 轮询状态归约: 输入一次轮询响应，输出推进后的状态。
  * 返回 { status, videoUrl, error, done } —— done=true 时调用方应停止轮询。
@@ -218,10 +286,7 @@ function reducePollResponse(payload, attempt = 1, maxAttempts = DEFAULT_MAX_ATTE
     return { status: VIDEO_STATUS.POLLING, videoUrl: '', error: '', done: false };
   }
   if (rawStatus === 'failed' || rawStatus === 'error' || rawStatus === 'cancelled') {
-    const msg = firstString(
-      isObject(payload.error) ? payload.error.message : '',
-      payload.message, payload.error_msg, '视频渲染失败'
-    );
+    const msg = extractApiErrorMessage({ parsed: payload, fallback: '视频渲染失败' });
     return { status: VIDEO_STATUS.FAILED, videoUrl: '', error: msg, done: true };
   }
   // 直接返回 URL (无 status 字段的兼容形态)
@@ -618,9 +683,7 @@ async function executeVideoNodeTask({
     ...(signal ? { signal } : {})
   });
   if (!submitRes.ok) {
-    const errText = await submitRes.text().catch(() => '');
-    let msg = `HTTP ${submitRes.status}`;
-    try { const p = JSON.parse(errText); msg = p.error?.message || msg; } catch (_) { if (errText) msg = errText.slice(0, 100); }
+    const msg = await readResponseErrorMessage(submitRes);
     throw new Error(`创建视频任务失败: ${msg}`);
   }
   const submitData = await submitRes.json();
@@ -721,5 +784,7 @@ module.exports = {
   buildVideoPayload,
   snapVideoAspectRatio,
   resolveVideoEndpoints,
-  executeVideoNodeTask
+  executeVideoNodeTask,
+  extractApiErrorMessage,
+  readResponseErrorMessage
 };
