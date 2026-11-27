@@ -3,9 +3,18 @@
  * WineToken 漫剧画布后台异步任务队列与 WAL (Write-Ahead Log) 预写日志器
  * 确保生图/生成任务脱离 React UI 生命周期，防止切 Tab 导致资产丢失并支持断点恢复
  */
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+// v2.5.19：web 渲染进程无 Node 原生 fs/path/os（打包后 import 即崩）。
+// Node 端（既有单测）走真实 fs；打包产物里 esbuild 把 fs/path/os alias 到空 stub，
+// 探测得到 false，走内存/LocalStorage 垫片。
+let HAS_FS = false;
+try {
+  const _fsProbe = require('fs');
+  HAS_FS = Boolean(_fsProbe && typeof _fsProbe.existsSync === 'function');
+} catch (_) { HAS_FS = false; }
+const _shim = HAS_FS ? null : require('./vendor/memfs-shim.cjs');
+const fs = HAS_FS ? require('fs') : _shim.fs;
+const path = HAS_FS ? require('path') : _shim.path;
+const os = HAS_FS ? require('os') : _shim.os;
 
 class CanvasJobQueue {
   constructor(customStorageDir = null) {
@@ -132,10 +141,16 @@ class CanvasJobQueue {
   }
 }
 
-// 导出全局单例
-const canvasJobQueueInstance = new CanvasJobQueue();
+// v2.5.19：惰性全局单例——import 本模块不得触发任何 fs I/O 或抛错（打包后 import 即崩的隐患）。
+// 保留 module.exports.canvasJobQueue 的原语义（读属性时才构造，之后恒为同一实例），
+// client.js:201 `queueMod.canvasJobQueue` 与既有单测的读取方式逐字不变。
+let _canvasJobQueueInstance = null;
+function getCanvasJobQueue() {
+  if (!_canvasJobQueueInstance) _canvasJobQueueInstance = new CanvasJobQueue();
+  return _canvasJobQueueInstance;
+}
 
 module.exports = {
   CanvasJobQueue,
-  canvasJobQueue: canvasJobQueueInstance
+  get canvasJobQueue() { return getCanvasJobQueue(); }
 };

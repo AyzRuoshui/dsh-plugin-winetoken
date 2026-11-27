@@ -63,7 +63,21 @@
     return candidates[0] || null;
   }
 
+  // v2.5.19 全量打包：构建期所有兄弟模块已内联进单文件，挂在
+  // globalThis.__WINETOKEN_BUNDLED_SIBLINGS__（键为原 './canvas-*.js' 模块 id）。
+  // 同步命中即返回，生产环境永远不会走到下方 require 兜底链（相对 require 在宿主必抛）。
+  function getBundledSiblings() {
+    return (typeof globalThis !== 'undefined' && globalThis)
+      ? (globalThis.__WINETOKEN_BUNDLED_SIBLINGS__ || null)
+      : null;
+  }
+
   function loadSiblingModule(moduleId, options = {}) {
+    const bundled = getBundledSiblings();
+    if (bundled && Object.prototype.hasOwnProperty.call(bundled, moduleId)) {
+      const mod = bundled[moduleId];
+      if (mod !== undefined && mod !== null) return { mod, error: null };
+    }
     const candidates = resolveRequireCandidates(options);
     if (candidates.length === 0) {
       return { mod: null, error: null };
@@ -149,8 +163,12 @@
   let canvasAssetsDriver = null;
   let assetLibraryStore = null;
 
-  // 兜底 require：注册表命中优先；未命中则按 全局 require → window.require → factory require 委托
+  // 兜底 require：打包表 → 注册表命中优先；未命中则按 全局 require → window.require → factory require 委托
   function shimRequire(id) {
+    const bundled = getBundledSiblings();
+    if (bundled && Object.prototype.hasOwnProperty.call(bundled, id) && bundled[id]) {
+      return bundled[id];
+    }
     if (Object.prototype.hasOwnProperty.call(WT_SIBLING_REGISTRY, id) && WT_SIBLING_REGISTRY[id]) {
       return WT_SIBLING_REGISTRY[id];
     }
@@ -8609,7 +8627,8 @@ $owner.Dispose()
         });
         if (rfLoadRes.mod && typeof rfLoadRes.mod.createReactFlowWorkspace === 'function') {
           createReactFlowWorkspace = rfLoadRes.mod.createReactFlowWorkspace;
-          // C5 防御：canvas-reactflow.js 若经非 CJS 路径加载，其模块内 require 可能缺失，注入 factory require 补齐
+          // C5（v2.5.19）：canvas-reactflow 已从打包表命中，其兄弟依赖同样来自打包表。
+          // 保留 hydrate 调用以覆盖兼容兜底路径（命中打包表时为幂等 no-op）。
           if (typeof rfLoadRes.mod.hydrateSiblingModules === 'function') {
             try { rfLoadRes.mod.hydrateSiblingModules(require); } catch (_) {}
           }

@@ -1,5 +1,8 @@
 // -*- coding: utf-8 -*-
-// v2.5.18 第三部分：无模块加载器环境下 factory 注入 require 加载 sibling 的回归测试
+// v2.5.19 全量打包：无模块加载器 / 忠实宿主 makeRequire 下的 sibling 加载回归测试。
+// 依赖"万能 require 桩"（把 ./canvas-*.js 映射到 src 真实文件）的旧用例已全部重写：
+// 生产路径 = 构建期把兄弟模块打进 globalThis.__WINETOKEN_BUNDLED_SIBLINGS__，
+// 运行时同步查表；宿主 require 只认 seed，相对 require 必抛 missed the module table。
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -9,7 +12,9 @@ const vm = require('node:vm');
 const CLIENT_PATH = path.resolve(__dirname, '..', 'src', 'client.js');
 const REACTFLOW_PATH = path.resolve(__dirname, '..', 'src', 'canvas-reactflow.js');
 const SRC_DIR = path.resolve(__dirname, '..', 'src');
+const DIST_CLIENT = path.resolve(__dirname, '..', 'dist', 'client.js');
 const realRequire = require;
+const { makeHostRequire, HOST_RELATIVE_ERROR } = require('./helpers/host-require-stub.cjs');
 
 const EXPECTED_SIBLINGS = [
   './canvas-storage.js',
@@ -61,28 +66,23 @@ function makeTestReact() {
   return React;
 }
 
-// 把真实 require 绑定到 src/ 目录：'react' 走 realRequire，'./canvas-*.js' 走 src/ 下真实模块
-function makeFactoryRequire({ overrides = {} } = {}) {
-  return function fakeRequire(id) {
+// 真实加载 12 兄弟 + reactflow + xyflow，构造"打包表"（模拟构建期内联模块对象）。
+// 测试进程有真实 require，故可直接加载 src 模块；vm 沙箱内的 client.js 只查这张表，
+// 不依赖任何 ./ 相对 require。
+function makeBundledTable({ overrides = {} } = {}) {
+  const table = {};
+  for (const id of EXPECTED_SIBLINGS) {
     if (Object.prototype.hasOwnProperty.call(overrides, id)) {
-      const v = overrides[id];
-      if (v === '__THROW__') throw new Error(`Cannot find module '${id}'`);
-      return v;
+      if (overrides[id] === '__THROW__') continue; // 模拟该模块未打进表（缺失）
+      table[id] = overrides[id];
+    } else {
+      table[id] = realRequire(path.join(SRC_DIR, id));
     }
-    if (id === 'react') return realRequire('react');
-    if (id.startsWith('./') && id.endsWith('.js')) {
-      return realRequire(path.join(SRC_DIR, id));
-    }
-    if (id === './vendor/xyflow.factory.cjs') {
-      return realRequire(path.join(SRC_DIR, 'vendor', 'xyflow.factory.cjs'));
-    }
-    return realRequire(id);
-  };
+  }
+  return table;
 }
 
-// 在完全无 global require、无 window.require 的沙箱里加载 client.js，
-// 并让 window.__ModuleLoader__.load(def) 同步调用 def.factory(fakeRequire)。
-function loadClientViaFactory({ factoryRequire, collect = [], consoleErrors = [] } = {}) {
+function loadClientInVm({ bundled, factoryRequire, collect = [], consoleErrors = [] } = {}) {
   const code = fs.readFileSync(CLIENT_PATH, 'utf8');
   const mod = { exports: {} };
   const sandbox = {
@@ -98,11 +98,12 @@ function loadClientViaFactory({ factoryRequire, collect = [], consoleErrors = []
     clearTimeout: () => {},
     Buffer
   };
+  if (bundled) sandbox.__WINETOKEN_BUNDLED_SIBLINGS__ = bundled;
   const windowObj = {
     __ModuleLoader__: {
       load(def) {
         collect.push(def);
-        def.factory(factoryRequire);
+        if (factoryRequire) def.factory(factoryRequire);
       }
     }
   };
@@ -111,14 +112,16 @@ function loadClientViaFactory({ factoryRequire, collect = [], consoleErrors = []
   return { exports: mod.exports, sandbox, windowObj };
 }
 
-// 用例 1【硬性必测】：无全局 require、无 window.require，仅 factory 注入 require，sibling 可加载并可用
-test('noload-factory - 无 require 环境下 factory 注入 require 后 12 个 sibling 全部加载可用', () => {
-  const factoryRequire = makeFactoryRequire();
+// 用例 1【硬性必测】：无全局 require、无 window.require，仅 factory 注入 seed require + 打包表，
+// 12 个兄弟模块从打包表全部命中并可用（生产路径）。
+test('noload-factory - 仅 factory seed require + 打包表时 12 个 sibling 全部命中可用', () => {
+  const bundled = makeBundledTable();
+  const hostReq = makeHostRequire({ seedValues: { react: makeTestReact() } });
   const regs = [];
-  const { exports } = loadClientViaFactory({ factoryRequire, collect: regs });
+  const { exports } = loadClientInVm({ bundled, factoryRequire: hostReq, collect: regs });
 
   assert.ok(regs.length === 1 && typeof regs[0].factory === 'function', 'ModuleLoader.load 应注册一个带 factory 的定义');
-  assert.equal(exports.getCanvasVideoUnavailableError(), '', 'factory 加载后视频组件应判定可用');
+  assert.equal(exports.getCanvasVideoUnavailableError(), '', '打包表命中后视频组件应判定可用');
 
   const registry = exports.WT_SIBLING_REGISTRY;
   assert.ok(registry, '应导出 WT_SIBLING_REGISTRY');
@@ -126,7 +129,7 @@ test('noload-factory - 无 require 环境下 factory 注入 require 后 12 个 s
     assert.ok(registry[id] != null, `注册表应含 ${id}`);
   }
 
-  assert.equal(exports.ensureSiblingModules(factoryRequire), true, 'ensureSiblingModules 应返回 true');
+  assert.equal(exports.ensureSiblingModules(hostReq), true, 'ensureSiblingModules 应返回 true');
 
   const video = registry['./canvas-video.js'];
   const payload = video.buildVideoPayload({ model: 'MiniMax-H3', prompt: 'p' });
@@ -136,117 +139,88 @@ test('noload-factory - 无 require 环境下 factory 注入 require 后 12 个 s
   const math = registry['./canvas-math.js'];
   assert.equal(math.snapToGrid(17, 8), 16, 'CanvasMathUtils.snapToGrid 应可用');
 
-  // canvas-project-store 的惰性 require('./canvas-storage.js') 在 factory CJS require 下自然解析
+  // canvas-project-store 的惰性 storage 依赖：优先从打包表取，无需相对 require
   const Store = registry['./canvas-project-store.js'].CanvasProjectStore;
   assert.equal(typeof Store, 'function');
-  assert.ok(realRequire(path.join(SRC_DIR, 'canvas-storage.js')).CanvasProjectStorage, '惰性 storage 依赖应可解析');
+  assert.equal(typeof Store.prototype.createProject, 'function', 'createProject 方法应保留（R1 签名）');
+
+  // 忠实宿主：相对 require 必抛宿主原文错误
+  assert.throws(() => hostReq('./canvas-video.js'), new RegExp(HOST_RELATIVE_ERROR));
 });
 
-// 用例 2：factory require 对 ./canvas-video.js 抛错 → 带原因文案，且 console.error 被调用
-test('noload-factory - factory require 对 canvas-video.js 抛错时返回带原因文案并记录错误', () => {
-  const factoryRequire = makeFactoryRequire({ overrides: { './canvas-video.js': '__THROW__' } });
+// 用例 2：打包表中缺失 canvas-video.js，且宿主 require 对相对路径抛原文错误 → 带原因文案 + console.error
+test('noload-factory - 打包表缺 canvas-video.js 且宿主报错时返回带原因文案并记录错误', () => {
+  const bundled = makeBundledTable({ overrides: { './canvas-video.js': '__THROW__' } });
+  const hostReq = makeHostRequire({ seedValues: { react: makeTestReact() } });
   const consoleErrors = [];
-  const { exports } = loadClientViaFactory({ factoryRequire, consoleErrors });
+  const { exports } = loadClientInVm({ bundled, factoryRequire: hostReq, consoleErrors });
 
   const msg = exports.getCanvasVideoUnavailableError();
   assert.ok(msg.startsWith(exports.VIDEO_MODULE_LOAD_ERROR_MSG));
-  assert.match(msg, /（原因：Cannot find module '\.\/canvas-video\.js'）/);
+  assert.match(msg, new RegExp(`（原因：.*${HOST_RELATIVE_ERROR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}）`));
   assert.ok(consoleErrors.length >= 1, '加载失败时应调用 console.error 至少一次');
 });
 
-// 用例 3：非视频模块（canvas-storage.js）抛错 → formatSiblingLoadError 文案含模块 id 与原因
-test('noload-factory - 非视频模块加载失败时 formatSiblingLoadError 文案含模块 id 与原因', () => {
-  const factoryRequire = makeFactoryRequire({ overrides: { './canvas-storage.js': '__THROW__' } });
-  const { exports } = loadClientViaFactory({ factoryRequire });
+// 用例 3：打包表缺非视频模块（canvas-storage.js）→ formatSiblingLoadError 文案含模块 id 与原因
+test('noload-factory - 打包表缺非视频模块时 formatSiblingLoadError 文案含模块 id 与原因', () => {
+  const bundled = makeBundledTable({ overrides: { './canvas-storage.js': '__THROW__' } });
+  const hostReq = makeHostRequire({ seedValues: { react: makeTestReact() } });
+  const { exports } = loadClientInVm({ bundled, factoryRequire: hostReq });
 
-  const result = exports.loadSiblingModules(factoryRequire, { force: true });
+  const result = exports.loadSiblingModules(hostReq, { force: true });
   assert.equal(result.errors.get('./canvas-storage.js') instanceof Error, true);
   const text = exports.formatSiblingLoadError('./canvas-storage.js', result.errors.get('./canvas-storage.js'));
   assert.ok(text.includes('canvas-storage.js'), '文案应含模块 id');
-  assert.ok(text.includes("Cannot find module './canvas-storage.js'"), '文案应含原因');
+  assert.ok(text.includes(HOST_RELATIVE_ERROR), '文案应含宿主原文原因');
   assert.ok(text.startsWith('画布组件加载失败'), '文案应有通用前缀');
 });
 
-// 用例 4：canvas-reactflow.js 仅由 factory require 加载，hydrate 后 CanvasVideoUtils 非 null
-test('noload-factory - canvas-reactflow.js 仅 factory require 加载时 hydrate 后组件可用', () => {
+// 用例 4：canvas-reactflow.js 在打包表 + hydrate 下组件可用（React 由 seed 注入，不再走相对 require）
+test('noload-factory - canvas-reactflow.js 打包表 hydrate 后组件可用', () => {
   const code = fs.readFileSync(REACTFLOW_PATH, 'utf8');
   const mod = { exports: {} };
+  const testReact = makeTestReact();
+  const bundled = makeBundledTable();
+  bundled['./vendor/xyflow.factory.cjs'] = () => ({ ReactFlow: 'RF', MiniMap: 'MM', cssText: '.react-flow{}' });
+  bundled['react'] = testReact;
   const sandbox = {
     module: mod,
     exports: mod.exports,
     console: { log() {}, warn() {}, error() {} },
     Buffer
   };
-  // 无 global require、无 window.require：三级链全部落空，顶层绑定为 null
+  sandbox.__WINETOKEN_BUNDLED_SIBLINGS__ = bundled;
   vm.runInNewContext(code, sandbox, { filename: REACTFLOW_PATH });
   assert.equal(typeof mod.exports.createReactFlowWorkspace, 'function');
   assert.equal(typeof mod.exports.hydrateSiblingModules, 'function');
 
-  const factoryRequire = makeFactoryRequire();
-  assert.equal(mod.exports.hydrateSiblingModules(factoryRequire), true);
-  const ws = mod.exports.createReactFlowWorkspace({});
+  const hostReq = makeHostRequire({ seedValues: { react: testReact } });
+  assert.equal(mod.exports.hydrateSiblingModules(hostReq), true);
+  const ws = mod.exports.createReactFlowWorkspace({ React: testReact });
   assert.equal(typeof ws, 'function', 'hydrate 后 createReactFlowWorkspace 仍可用');
 });
 
 // 用例 5：幂等 —— 连续两次 ensureSiblingModules 不重复实例化 canvas-job-queue
-test('noload-factory - 连续两次 ensureSiblingModules 不重复实例化 canvasJobQueue', () => {
-  // 在全新 vm 上下文中独立验证：计数桩只挂在 './canvas-job-queue.js' 上，
-  // 且两次 ensureSiblingModules 都显式传入同一个 factory require，
-  // 不依赖 ModuleLoader 注册回调的加载副作用（同文件前序用例会共享 node:test 进程，
-  // 依赖注册回调会让计数口径随执行顺序漂移）。
-  const code = fs.readFileSync(CLIENT_PATH, 'utf8');
-  const mod = { exports: {} };
-  const sandbox = {
-    module: mod,
-    exports: mod.exports,
-    console: { log() {}, warn() {}, error() {} },
-    setInterval: () => ({ unref() {} }),
-    clearInterval: () => {},
-    setTimeout: () => ({ unref() {} }),
-    clearTimeout: () => {},
-    Buffer
-  };
-  // 提供 window 但不提供 __ModuleLoader__，避免注册回调在断言前偷偷触发加载；
-  // 无 global require、无 window.require：顶层 require 链全部落空，注册表保持空
-  sandbox.window = {};
-  vm.runInNewContext(code, sandbox, { filename: CLIENT_PATH });
-  const exports = mod.exports;
+test('noload-factory - 连续两次 ensureSiblingModules 不重复取用 canvasJobQueue', () => {
+  const bundled = makeBundledTable();
+  const hostReq = makeHostRequire({ seedValues: { react: makeTestReact() } });
+  const { exports } = loadClientInVm({ bundled, factoryRequire: hostReq });
 
-  let jobQueueRequireCount = 0;
-  const realJobQueue = realRequire(path.join(SRC_DIR, 'canvas-job-queue.js'));
-  // 注意：makeFactoryRequire 的 overrides 值是「直接返回」的模块对象，不会作为函数被调用；
-  // 计数桩必须包在 require 外层，否则计数永远是 0（这正是原用例的失败根因）。
-  const baseFactoryRequire = makeFactoryRequire();
-  const factoryRequire = (id) => {
-    if (id === './canvas-job-queue.js') {
-      jobQueueRequireCount++;
-      return realJobQueue;
-    }
-    return baseFactoryRequire(id);
-  };
-
-  // 全新上下文、空注册表：第一次 ensure 应恰好加载一次
-  assert.equal(exports.ensureSiblingModules(factoryRequire), true, '首次 ensureSiblingModules 应成功');
-  assert.equal(jobQueueRequireCount, 1, '首次 ensureSiblingModules 应 require canvas-job-queue 一次');
+  assert.equal(exports.ensureSiblingModules(hostReq), true, '首次 ensureSiblingModules 应成功');
   const registry = exports.WT_SIBLING_REGISTRY;
-  assert.strictEqual(
-    registry['./canvas-job-queue.js'],
-    realJobQueue,
-    '注册表中的 canvasJobQueue 应为计数桩返回的单例'
-  );
+  const firstQueue = registry['./canvas-job-queue.js'].canvasJobQueue;
+  assert.ok(firstQueue, '注册表应含 canvasJobQueue 单例');
 
-  // 第二次 ensure：注册表命中短路，不应再次 require / 实例化
-  assert.equal(exports.ensureSiblingModules(factoryRequire), true, '第二次 ensureSiblingModules 应成功');
-  assert.equal(jobQueueRequireCount, 1, '连续调用 ensureSiblingModules 不应重复 require/实例化 canvasJobQueue');
+  assert.equal(exports.ensureSiblingModules(hostReq), true, '第二次 ensureSiblingModules 应成功');
   assert.strictEqual(
-    registry['./canvas-job-queue.js'],
-    realJobQueue,
-    '重复 ensure 后 canvasJobQueue 单例引用应保持不变'
+    registry['./canvas-job-queue.js'].canvasJobQueue,
+    firstQueue,
+    '连续调用 ensureSiblingModules 不应重复实例化 canvasJobQueue（惰性单例引用不变）'
   );
 });
 
-// 用例 6：静态审计 —— 新代码未重新引入裸 require('./...')
-test('noload-factory - 静态审计: client.js 与 canvas-reactflow.js 无裸 require("./...")', () => {
+// 用例 6：静态审计 —— 源码与产物中未引入裸相对 require('./...')
+test('noload-factory - 静态审计: client.js / canvas-reactflow.js 无裸 require("./...")，产物存在时亦无残留', () => {
   for (const filePath of [CLIENT_PATH, REACTFLOW_PATH]) {
     const raw = fs.readFileSync(filePath, 'utf8');
     const codeOnly = raw
@@ -254,5 +228,12 @@ test('noload-factory - 静态审计: client.js 与 canvas-reactflow.js 无裸 re
       .replace(/^\s*\/\/.*$/gm, '');
     const bareRelativeMatches = codeOnly.match(/(?:^|[^\w.])require\s*\(\s*['"]\.\//gm) || [];
     assert.deepEqual(bareRelativeMatches, [], `${path.basename(filePath)} 不应包含裸 require('./...')`);
+  }
+  if (fs.existsSync(DIST_CLIENT)) {
+    const raw = fs.readFileSync(DIST_CLIENT, 'utf8');
+    const matches = raw.match(/require\s*\(\s*['"]\.\/[^'"]+['"]\s*\)/g) || [];
+    assert.deepEqual(matches, [], 'dist/client.js 不应残留相对 require');
+  } else {
+    console.log('[skip] dist/client.js 不存在，产物静态审计跳过（下游构建后执行）');
   }
 });

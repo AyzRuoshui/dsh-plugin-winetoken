@@ -61,14 +61,13 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 修复插件移除后配置残留问题`;
+  const releaseTitle = `Release ${version} - 全量打包修复画布与视频组件加载`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
-- 修复生成失败时只显示 HTTP 状态码、看不到服务端具体原因的问题
-- 修复视频组件加载失败时参数错误导致生成被拒的问题，并给出明确提示
-- 修复插件移除后 cordis.patch.yml 注入段残留、重装叠加产生幽灵提供商的问题；安装与启动时自动清理旧残留
-- 修复部分环境下视频等画布组件加载失败的问题，并让报错带上真实原因
-- 修复无模块加载器的宿主环境下画布组件无法加载的问题
+- 全量打包修复：将画布/视频等 14 个兄弟模块随构建期内联进单个自包含 client.js，运行时相对 require 归零，彻底修复部分宿主环境下画布与视频组件加载失败的问题
+- ReactFlow 画布首次真正可用：xyflow 与画布工作台一并打包，不再依赖宿主任意相对路径加载
+- 保留报错带真实原因：组件确实缺失时仍给出明确提示（含具体原因），便于定位安装不完整
+- 沿用前版修复：生成失败不再只显示 HTTP 状态码、视频参数错误不再导致生成被拒、插件移除后 cordis.patch.yml 注入段残留自动清理
 
 ---
 

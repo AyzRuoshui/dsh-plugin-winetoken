@@ -8,9 +8,19 @@
  *   - 资产键白名单校验，彻底阻断路径穿越与任意扩展名写入
  * 仅依赖 Node 原生 fs/path/os，零第三方依赖、无网络、无动态代码执行。
  */
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+// v2.5.19：web 渲染进程无 Node 原生 fs/path/os（打包后 import 即崩）。
+// Node 端（既有单测）走真实 fs；打包产物里 esbuild 把 fs/path/os alias 到空 stub，
+// 探测得到 false，走内存/LocalStorage 垫片。纯函数（isSafeAssetKey/decodeDataUrl
+// 等）不依赖 fs，保持原样。
+let HAS_FS = false;
+try {
+  const _fsProbe = require('fs');
+  HAS_FS = Boolean(_fsProbe && typeof _fsProbe.existsSync === 'function');
+} catch (_) { HAS_FS = false; }
+const _shim = HAS_FS ? null : require('./vendor/memfs-shim.cjs');
+const fs = HAS_FS ? require('fs') : _shim.fs;
+const path = HAS_FS ? require('path') : _shim.path;
+const os = HAS_FS ? require('os') : _shim.os;
 
 const SAFE_KEY = /^[A-Za-z0-9_-]{1,120}\.(png|jpg|jpeg|webp|gif|mp4|webm)$/i;
 const MIME_EXT = {

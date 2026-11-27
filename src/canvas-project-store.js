@@ -7,9 +7,18 @@
  *   - 旧单文件 winetoken_canvas_project.json 首次运行零迁移接入为默认工程 (不改动原文件)
  *   - 所有写盘一律原子 rename + 双备份 + 物理回读强校验，失败向调用者真实抛错
  */
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+// v2.5.19：web 渲染进程无 Node 原生 fs/path/os（打包后 import 即崩）。
+// Node 端（既有单测）走真实 fs；打包产物里 esbuild 把 fs/path/os alias 到空 stub，
+// 探测得到 false，走内存/LocalStorage 垫片。
+let HAS_FS = false;
+try {
+  const _fsProbe = require('fs');
+  HAS_FS = Boolean(_fsProbe && typeof _fsProbe.existsSync === 'function');
+} catch (_) { HAS_FS = false; }
+const _shim = HAS_FS ? null : require('./vendor/memfs-shim.cjs');
+const fs = HAS_FS ? require('fs') : _shim.fs;
+const path = HAS_FS ? require('path') : _shim.path;
+const os = HAS_FS ? require('os') : _shim.os;
 
 const REGISTRY_VERSION = 1;
 const PROJECT_VERSION = '2.5.1';
@@ -519,7 +528,11 @@ class CanvasProjectStore {
     reg.projects.push(meta);
     if (!reg.activeId) reg.activeId = id;
     // 先落工程文件再落注册表，避免悬空引用
-    const { CanvasProjectStorage } = require('./canvas-storage.js');
+    // v2.5.19：优先从打包兄弟表取（web 生产）；Node 单测下回退到静态 require（由 esbuild 构建期内联）。
+    const bundled = (typeof globalThis !== 'undefined' && globalThis)
+      ? globalThis.__WINETOKEN_BUNDLED_SIBLINGS__ : null;
+    const storageMod = (bundled && bundled['./canvas-storage.js']) || require('./canvas-storage.js');
+    const { CanvasProjectStorage } = storageMod;
     const blank = new CanvasProjectStorage(this.projectsDir).getDefaultProject();
     this._atomicWriteJson(this.projectFilePath(id), normalizeProject(blank, id, meta.name), '新建工程');
     this._writeRegistry(reg);

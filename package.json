@@ -1,6 +1,6 @@
 {
   "name": "@winetoken/dsh-plugin-winetoken",
-  "version": "2.5.18",
+  "version": "2.5.19",
   "description": "WineToken 全平台推理模型自动同步、双账轨资产监控与现代化 AI 漫剧画布创作工坊。",
   "author": "AyzRuoshui",
   "license": "MIT",
@@ -10,13 +10,14 @@
       "import": "./src/index.mjs",
       "require": "./src/index.js"
     },
-    "./client": "./src/client.js",
+    "./client": "./dist/client.js",
     "./icon": "./icon.svg",
     "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
     "src/",
+    "dist/",
     "locale/",
     "cordis.patch.yml",
     "icon.svg",
@@ -40,7 +41,7 @@
   "scripts": {
     "sync": "node src/sync.js",
     "cleanup:patch": "node scripts/safe_uninstall.cjs",
-    "build:client": "node scripts/build-xyflow.cjs",
+    "build:client": "node scripts/build-client.cjs",
     "prepack": "npm run build:client",
     "test": "node --test tests/**/*.test.js",
     "release": "node scripts/release.cjs"

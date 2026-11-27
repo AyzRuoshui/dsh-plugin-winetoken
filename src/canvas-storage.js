@@ -3,9 +3,19 @@
  * WineToken 漫剧画布独立持久化存储驱动 (CanvasProjectStorage)
  * 采用先写临时文件后原子重命名 (Atomic Rename) 与双备份机制，彻底防御断电与异常断流
  */
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+// v2.5.19：web 渲染进程无 Node 原生 fs/path/os（打包后 import 即崩）。
+// Node 端（既有单测）走真实 fs；打包产物里 esbuild 把 fs/path/os alias 到空 stub，
+// 下面的探测得到 false，于是这组实现走内存/LocalStorage 垫片。
+// 关键：require 保持静态字面量（esbuild 才能 alias + 内联，产物不留运行时相对 require）。
+let HAS_FS = false;
+try {
+  const _fsProbe = require('fs');
+  HAS_FS = Boolean(_fsProbe && typeof _fsProbe.existsSync === 'function');
+} catch (_) { HAS_FS = false; }
+const _shim = HAS_FS ? null : require('./vendor/memfs-shim.cjs');
+const fs = HAS_FS ? require('fs') : _shim.fs;
+const path = HAS_FS ? require('path') : _shim.path;
+const os = HAS_FS ? require('os') : _shim.os;
 
 class CanvasProjectStorage {
   constructor(customStorageDir = null) {

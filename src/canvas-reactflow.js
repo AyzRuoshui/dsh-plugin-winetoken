@@ -65,7 +65,11 @@ function loadSiblingModule(moduleId, options = {}) {
 }
 
 const reactLoadRes = loadSiblingModule('react');
-let React = reactLoadRes.mod || (typeof window !== 'undefined' && window ? window.React : null);
+// v2.5.19：打包产物里 react 是 seed word，静态 require('react') 由宿主 factory 提供；
+// 该静态调用会被 esbuild 原样保留（external seed），不产生相对 require。
+let _seedReact = null;
+try { _seedReact = require('react'); } catch (_) { _seedReact = null; }
+let React = reactLoadRes.mod || _seedReact || (typeof window !== 'undefined' && window ? window.React : null);
 let h = React && typeof React.createElement === 'function' ? React.createElement : null;
 
 // 依赖按需解析兜底（v2.5.18 第三部分：改为 let，hydrateSiblingModules 可刷新）
@@ -128,15 +132,23 @@ let initXyFlowFactory = loadSiblingModule('./vendor/xyflow.factory.cjs').mod || 
  * client.js 在 factory 内加载 ./canvas-reactflow.js 成功后调用一次。
  */
 function hydrateSiblingModules(factoryRequire) {
+  // v2.5.19 全量打包：优先从打包兄弟表取值（同步命中，生产路径）。
+  const bundled = (typeof globalThis !== 'undefined' && globalThis)
+    ? (globalThis.__WINETOKEN_BUNDLED_SIBLINGS__ || null)
+    : null;
+
   const chain = [];
   if (typeof factoryRequire === 'function') chain.push(factoryRequire);
   if (typeof outerRequire === 'function' && !chain.includes(outerRequire)) chain.push(outerRequire);
   if (typeof window !== 'undefined' && window && typeof window.require === 'function' && !chain.includes(window.require)) {
     chain.push(window.require);
   }
-  if (chain.length === 0) return false;
 
   function localLoad(id) {
+    if (bundled && Object.prototype.hasOwnProperty.call(bundled, id) && bundled[id] != null) {
+      RF_SIBLING_REGISTRY[id] = bundled[id];
+      return bundled[id];
+    }
     if (RF_SIBLING_REGISTRY[id] != null) return RF_SIBLING_REGISTRY[id];
     for (const reqFn of chain) {
       try {
@@ -150,10 +162,11 @@ function hydrateSiblingModules(factoryRequire) {
     return null;
   }
 
-  const reactMod = localLoad('react');
+  const reactMod = localLoad('react') || (React || null);
   if (reactMod) {
     React = reactMod;
     h = React && typeof React.createElement === 'function' ? React.createElement : null;
+    ensureNodeActionContext();
   }
   CanvasNodeUtils = localLoad('./canvas-nodes.js') || CanvasNodeUtils;
   CanvasPricingUtils = localLoad('./canvas-pricing.js') || CanvasPricingUtils;
@@ -173,7 +186,15 @@ function hydrateSiblingModules(factoryRequire) {
 }
 
 // 全局节点操作调度 Context
-const NodeActionContext = (React && typeof React.createContext === 'function') ? React.createContext(null) : null;
+// v2.5.19：打包产物里 React 由宿主 factory 延迟注入，模块加载时可能尚未就绪；
+// 用 let + 惰性初始化，hydrateSiblingModules 拿到 React 后补建（内部闭包读同一绑定）。
+let NodeActionContext = (React && typeof React.createContext === 'function') ? React.createContext(null) : null;
+function ensureNodeActionContext() {
+  if (!NodeActionContext && React && typeof React.createContext === 'function') {
+    NodeActionContext = React.createContext(null);
+  }
+  return NodeActionContext;
+}
 
 const DEFAULT_VIDEO_MODELS_FALLBACK = [
   { id: 'MiniMax-H3', name: 'MiniMax H3', tag: '电影感' },
@@ -2061,6 +2082,8 @@ function injectXyFlowStyles(cssText) {
 function createReactFlowWorkspace(deps = {}) {
   // 提取运行时依赖
   const R = deps.React || React;
+  if (deps.React && !React) { React = deps.React; h = React && React.createElement; }
+  ensureNodeActionContext();
   const initXyFlow = deps.initXyFlow || initXyFlowFactory;
   const projectStore = deps.canvasProjectStore;
   const assetsDriver = deps.canvasAssetsDriver;
