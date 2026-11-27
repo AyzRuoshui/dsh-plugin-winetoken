@@ -362,7 +362,7 @@ function collectUpstream(project, nodeId) {
 }
 
 const PROMPT_MAX = 4000;
-const REF_MAX = 8;
+const REF_MAX = 9;
 const PARAM_KEYS = Object.freeze([
   'model', 'size', 'aspectRatio', 'shot', 'negativePrompt', 'count',
   'duration', 'resolution', 'mode', 'generateAudio', 'quality', 'preset'
@@ -474,7 +474,7 @@ function buildGenerationContext(project, nodeId) {
       if (t.trim() !== '' && !texts.includes(t)) texts.push(t);
     });
 
-    // 3) referenceImages：拒绝空值/null/undefined，avatar 末尾追加且去重，上限 8
+    // 3) referenceImages：拒绝空值/null/undefined，avatar 末尾追加且去重，上限 9
     const refs = [];
     const seenRef = new Set();
     const addRef = (v) => {

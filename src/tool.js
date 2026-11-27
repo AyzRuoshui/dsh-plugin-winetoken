@@ -136,7 +136,7 @@ function snapAspectRatio(sizeStr) {
 }
 
 function resolveGrokVideoResolution(size) {
-  return (size && size.includes && size.includes('1080')) ? '1080P' : '720P';
+  return (size && size.includes && size.includes('1080')) ? '1080p' : '720p';
 }
 
 /**
@@ -149,10 +149,12 @@ function getBaseUrl() {
 /**
  * 单张生图请求核心逻辑 (并发单张调度，彻底规避上游 invalid n 与非 32 倍数尺寸错误)
  */
-async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_url }) {
+async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_url, quality = '', fetchFn = (typeof fetch !== 'undefined' ? fetch : null) }) {
+  if (!fetchFn) throw new Error('全局 fetch 未就绪');
   const finalSize = normalizeImageSize(size, model);
+  const chosenModel = model || resolveDefaultImageModel();
   const payload = {
-    model: model || resolveDefaultImageModel(),
+    model: chosenModel,
     prompt: prompt.trim(),
     n: 1,
     size: finalSize,
@@ -171,6 +173,12 @@ async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${apiKey}`
   };
+
+  if (/nano-banana-2\.1/i.test(payload.model)) {
+    const q = String(quality || '').toLowerCase();
+    if (q === '2k' || q === 'medium') payload.quality = 'medium';
+    else if (q === '4k' || q === 'high') payload.quality = 'high';
+  }
 
   if (image_url) {
     let finalImageUrl = image_url;
@@ -195,17 +203,40 @@ async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_
         response_format: 'url',
         watermark: false
       };
-    } else {
+    } else if (/gpt-image/i.test(payload.model)) {
+      endpoint = `${cleanBase}/images/edits`;
+      const form = new FormData();
+      form.append('model', payload.model);
+      form.append('prompt', payload.prompt);
+      form.append('n', '1');
+      form.append('size', finalSize);
+      form.append('response_format', 'url');
+      if (finalImageUrl.startsWith('data:')) {
+        const comma = finalImageUrl.indexOf(',');
+        const header = finalImageUrl.slice(0, comma);
+        const mime = (header.match(/^data:([^;]+)/) || [])[1] || 'image/png';
+        const bytes = Buffer.from(finalImageUrl.slice(comma + 1), 'base64');
+        form.append('image', new Blob([bytes], { type: mime }), 'reference.png');
+      } else {
+        form.append('image_url', finalImageUrl);
+      }
+      reqBody = form;
+      delete headers['Content-Type'];
+    } else if (/nano-banana-2\.1/i.test(payload.model)) {
       endpoint = `${cleanBase}/images/generations`;
-      reqBody = payload;
+      reqBody = { ...payload, images: [{ url: finalImageUrl }] };
+    } else {
+      throw new Error(`当前模型 ${payload.model} 不支持参考图输入，已阻止按文生图发送`);
     }
   }
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(reqBody)
-  });
+  const init = { method: 'POST', headers };
+  if (reqBody instanceof FormData) init.body = reqBody;
+  else {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(reqBody);
+  }
+  const res = await fetchFn(endpoint, init);
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -230,7 +261,8 @@ async function requestSingleImage(baseUrl, apiKey, { model, prompt, size, image_
 /**
  * 视频生成请求与异步轮询任务
  */
-async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration, size, image_url }) {
+async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration, size, aspect_ratio = '', image_url, fetchFn = (typeof fetch !== 'undefined' ? fetch : null) }) {
+  if (!fetchFn) throw new Error('全局 fetch 未就绪');
   const chosenModel = model || 'MiniMax-H3';
   const isGrokVideo = /grok-imagine-video/i.test(chosenModel);
   let resolution;
@@ -264,6 +296,13 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
     // Omni 走 hailuo 协议: seconds 保持数字, 画幅靠 size 表达 (中转层据此选横竖屏)
     payload.size = size || '1280x720';
   }
+  const ratio = aspect_ratio || snapAspectRatio(size || '1280x720');
+  if (isGrokVideo) {
+    payload.aspect_ratio = ratio;
+    delete payload.audio;
+  } else if (/minimax-h3/i.test(chosenModel) && ['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'].includes(ratio)) {
+    payload.metadata = { ...(payload.metadata || {}), ratio };
+  }
 
   if (image_url) {
     let finalImageUrl = image_url;
@@ -281,7 +320,7 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
     payload.image_url = finalImageUrl;
     payload.first_frame_image = finalImageUrl;
     if (/minimax|hailuo/i.test(chosenModel) || /^omni-1\.2-flash$/i.test(chosenModel)) {
-      payload.metadata = { first_frame_image: finalImageUrl };
+      payload.metadata = { ...(payload.metadata || {}), first_frame_image: finalImageUrl };
     }
   }
 
@@ -302,7 +341,7 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
         };
       })();
 
-  const res = await fetch(endpoints.submitUrl, {
+  const res = await fetchFn(endpoints.submitUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -341,7 +380,7 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
   for (let attempt = 0; attempt < 100; attempt++) {
     await new Promise(r => setTimeout(r, 3000));
     try {
-      const pollRes = await fetch(pollUrl, {
+      const pollRes = await fetchFn(pollUrl, {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
       if (!pollRes.ok) continue;
@@ -353,7 +392,7 @@ async function requestVideoGeneration(baseUrl, apiKey, { model, prompt, duration
         if (directUrl) return directUrl;
         // 站点轮询响应不回传成片 URL: 带鉴权到内容端点取流, 转 data URL 返回
         if (typeof endpoints.contentUrl === 'function') {
-          const contentRes = await fetch(endpoints.contentUrl(taskId), {
+          const contentRes = await fetchFn(endpoints.contentUrl(taskId), {
             headers: { 'Authorization': `Bearer ${apiKey}` }
           });
           if (contentRes.ok) {
@@ -396,7 +435,7 @@ function registerWineTokenTools(ctx) {
           },
           model: {
             type: 'string',
-            description: '生图基底模型：留空则自动使用工坊当前可用列表中的首个限免/默认模型；也可显式指定服务端 manifest 中已上架的模型 ID（如 gpt-image-2.6-flare、gpt-image-2.6-sunburst、sensenova-u1.5-lite、grok-imagine-image-2.0、gemini-imagen-3、muse-image、nano-banana-2.1）。用户已指定模型时只能用该模型，不得自行替换；仅在用户未指定时才可留空自动选用',
+            description: '生图基底模型：留空则自动使用工坊当前可用列表中的首个限免/默认模型；也可显式指定服务端 manifest 中已上架的模型 ID（如 gpt-image-2.6-flare、gpt-image-2.6-sunburst、sensenova-u1.5-lite、grok-imagine-image-2.0、muse-image、nano-banana-2.1）。用户已指定模型时只能用该模型，不得自行替换；仅在用户未指定时才可留空自动选用',
             default: ''
           },
           size: {
@@ -414,6 +453,11 @@ function registerWineTokenTools(ctx) {
           image_url: {
             type: 'string',
             description: '参考底图 URL（可选，用于垫图重绘或图生图）'
+          },
+          quality: {
+            type: 'string',
+            enum: ['1K', '2K', '4K', 'low', 'medium', 'high'],
+            description: '图片画质档位；Nano Banana 将 2K/medium 映射为 medium、4K/high 映射为 high。'
           }
         },
         required: ['prompt']
@@ -555,6 +599,11 @@ function registerWineTokenTools(ctx) {
           image_url: {
             type: 'string',
             description: '首帧参考图（可选，用于首帧图生视频）：可传公网 http/https 直链，也可直接传用户本机图片的完整文件路径，本地文件会自动读取并随请求发送，无需先传图床'
+          },
+          aspect_ratio: {
+            type: 'string',
+            enum: ['16:9', '9:16', '1:1', '4:3', '3:4'],
+            description: '视频画幅比例；Grok Imagine 使用 aspect_ratio，其他模型仍按各自协议传递画幅。'
           }
         },
         required: ['prompt']
@@ -612,6 +661,7 @@ function registerWineTokenTools(ctx) {
             prompt,
             duration,
             size,
+            aspect_ratio: args.aspect_ratio || '',
             image_url: imageUrl
           });
 
@@ -860,5 +910,8 @@ function registerWineTokenTools(ctx) {
 module.exports = {
   registerWineTokenTools,
   SessionCircuitBreaker,
-  toolCircuitBreaker
+  toolCircuitBreaker,
+  requestSingleImage,
+  requestVideoGeneration,
+  resolveGrokVideoResolution
 };
