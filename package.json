@@ -1,6 +1,6 @@
 {
   "name": "@winetoken/dsh-plugin-winetoken",
-  "version": "2.5.17",
+  "version": "2.5.18",
   "description": "WineToken 全平台推理模型自动同步、双账轨资产监控与现代化 AI 漫剧画布创作工坊。",
   "author": "AyzRuoshui",
   "license": "MIT",
@@ -39,6 +39,7 @@
   },
   "scripts": {
     "sync": "node src/sync.js",
+    "cleanup:patch": "node scripts/safe_uninstall.cjs",
     "build:client": "node scripts/build-xyflow.cjs",
     "prepack": "npm run build:client",
     "test": "node --test tests/**/*.test.js",

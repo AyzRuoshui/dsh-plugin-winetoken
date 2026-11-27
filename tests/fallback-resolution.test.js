@@ -57,7 +57,10 @@ test('getCanvasVideoUnavailableError 在视频组件不可用时记录错误并�
   console.error = (...args) => logged.push(args);
   try {
     const errMsg = client.getCanvasVideoUnavailableError(null, new Error('Cannot find module ./canvas-video.js'));
-    assert.equal(errMsg, EXPECTED_LOAD_ERROR_MSG);
+    assert.equal(
+      errMsg,
+      `${EXPECTED_LOAD_ERROR_MSG}（原因：Cannot find module ./canvas-video.js）`
+    );
     assert.equal(logged.length, 1);
     assert.ok(String(logged[0][0]).includes('canvas-video.js'));
 

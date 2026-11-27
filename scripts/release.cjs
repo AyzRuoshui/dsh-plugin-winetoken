@@ -61,11 +61,14 @@ function requestGithub(endpoint, method = 'GET', data = null) {
 }
 
 async function createRelease() {
-  const releaseTitle = `Release ${version} - 修复生成失败错误信息吞没问题`;
+  const releaseTitle = `Release ${version} - 修复插件移除后配置残留问题`;
   const releaseBody = `## DeepSeek WineToken 插件 ${version}
 
 - 修复生成失败时只显示 HTTP 状态码、看不到服务端具体原因的问题
 - 修复视频组件加载失败时参数错误导致生成被拒的问题，并给出明确提示
+- 修复插件移除后 cordis.patch.yml 注入段残留、重装叠加产生幽灵提供商的问题；安装与启动时自动清理旧残留
+- 修复部分环境下视频等画布组件加载失败的问题，并让报错带上真实原因
+- 修复无模块加载器的宿主环境下画布组件无法加载的问题
 
 ---
 

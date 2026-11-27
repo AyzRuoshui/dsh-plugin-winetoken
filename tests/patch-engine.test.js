@@ -267,7 +267,8 @@ test('PatchEngine - 空流式列表 "[]" 与 "[ ]" (含行尾注释) 按空文�
   for (const input of ['[]', '[]\n', '[ ]\n', '  [  ]  # empty list\n']) {
     const merged = mergeProviderIntoPatchContent(input, provider);
     assert.equal(merged, expectedEmpty, `输入 ${JSON.stringify(input)} 应生成与空文件一致的干净根序列`);
-    assert.ok(merged.startsWith('- id: llm-pi-ai\n'), '必须以顶层 - id: llm-pi-ai 开头');
+    assert.ok(merged.startsWith('# >>> winetoken-managed:start (mode=full-entry) >>>\n- id: llm-pi-ai\n'), '必须以 managed 起止标记包裹顶层 - id: llm-pi-ai');
+    assert.ok(merged.trimEnd().endsWith('# <<< winetoken-managed:end <<<'), '必须以 managed 结束标记收尾');
     assert.ok(!merged.includes('[]'), '结果中绝不可残留 []');
 
     const second = mergeProviderIntoPatchContent(merged, provider);
@@ -289,7 +290,7 @@ test('PatchEngine - 带前置注释的空列表 "# c1\\n# c2\\n# c3\\n[]\\n" 不
   const merged = mergeProviderIntoPatchContent(reproInput, provider);
 
   assert.equal(merged, expectedEmpty, '带前置注释的 [] 应被视为空文档，生成干净根序列');
-  assert.ok(merged.startsWith('- id: llm-pi-ai\n'), '首行必须为 - id: llm-pi-ai');
+  assert.ok(merged.startsWith('# >>> winetoken-managed:start (mode=full-entry) >>>\n- id: llm-pi-ai\n'), '必须以 managed 起止标记包裹顶层 - id: llm-pi-ai');
   assert.ok(!merged.includes('[]'), '合并输出中绝不可包含 []');
 
   const second = mergeProviderIntoPatchContent(merged, provider);
@@ -310,7 +311,7 @@ test('PatchEngine - 空文件/纯空白/纯注释文件均生成标准根序列�
   for (const input of ['', '   \n\t\n', '# only comment 1\n# only comment 2\n']) {
     const merged = mergeProviderIntoPatchContent(input, provider);
     assert.equal(merged, expectedEmpty);
-    assert.ok(merged.startsWith('- id: llm-pi-ai\n'));
+    assert.ok(merged.startsWith('# >>> winetoken-managed:start (mode=full-entry) >>>\n- id: llm-pi-ai\n'));
     assert.equal(mergeProviderIntoPatchContent(merged, provider), merged, '二次合并必须完全幂等');
   }
 });

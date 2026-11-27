@@ -21,6 +21,8 @@ const {
 
 const {
   mergeProviderIntoPatchContent,
+  cleanWineTokenFromPatchContent,
+  inspectPatchState,
   getBaselineModels,
   sanitizeModelDisplayName
 } = require('./patch-engine.js');
@@ -221,21 +223,36 @@ function updateCredentials(apiKey, envKeyName = 'WINETOKEN_API_KEY') {
   return saveCredentialsRef(envKeyName, apiKey);
 }
 
+function writeFileAtomic(targetPath, content) {
+  const dir = path.dirname(targetPath);
+  const tmpPath = path.join(dir, `.${path.basename(targetPath)}.tmp.${process.pid}.${Date.now()}`);
+  try {
+    fs.writeFileSync(tmpPath, content, 'utf-8');
+    fs.renameSync(tmpPath, targetPath);
+  } catch (_) {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch (_ignored) {}
+    fs.writeFileSync(targetPath, content, 'utf-8');
+  }
+}
+
 /**
  * 更新 ~/.dsh/profiles/desktop/cordis.patch.yml
  * 采用原生 PatchEngine 实施增量合并，100% 保护用户现有 provider (如 zhaizhu) 与已有注释
  */
-function updateCordisPatch(providerConfig) {
-  const desktopProfileDir = path.dirname(CORDIS_PATCH_FILE);
+function updateCordisPatch(providerConfig, options = {}) {
+  const targetPatchFile = (options && options.patchFile) || CORDIS_PATCH_FILE;
+  const desktopProfileDir = path.dirname(targetPatchFile);
   if (!fs.existsSync(desktopProfileDir)) {
     fs.mkdirSync(desktopProfileDir, { recursive: true });
   }
 
   let originalContent = '';
   let hasExistingFile = false;
-  if (fs.existsSync(CORDIS_PATCH_FILE)) {
+  if (fs.existsSync(targetPatchFile)) {
     try {
-      originalContent = fs.readFileSync(CORDIS_PATCH_FILE, 'utf-8');
+      originalContent = fs.readFileSync(targetPatchFile, 'utf-8');
       hasExistingFile = true;
     } catch (e) {
       console.warn('读取 cordis.patch.yml 失败:', e.message);
@@ -262,30 +279,39 @@ function updateCordisPatch(providerConfig) {
   }
 
   // 覆写已存在且内容实际发生变更的 cordis.patch.yml 前，仅在 .bak 不存在时写入一次性备份
-  const backupFile = `${CORDIS_PATCH_FILE}.bak`;
+  const backupFile = `${targetPatchFile}.bak`;
   if (hasExistingFile && !fs.existsSync(backupFile)) {
-    fs.writeFileSync(backupFile, originalContent, 'utf-8');
-    console.log(`[模型同步] 已创建一次性原始备份: ${backupFile}`);
+    try {
+      fs.accessSync(desktopProfileDir, fs.constants.W_OK);
+      fs.writeFileSync(backupFile, originalContent, 'utf-8');
+      console.log(`[模型同步] 已创建一次性原始备份: ${backupFile}`);
+    } catch (bakErr) {
+      console.warn(`[模型同步] 创建备份失败 (${backupFile}):`, bakErr.message);
+    }
   }
 
-  fs.writeFileSync(CORDIS_PATCH_FILE, newContent, 'utf-8');
+  writeFileAtomic(targetPatchFile, newContent);
   console.log(`[模型注入] 已成功增量注入/更新 Provider [${targetConfig.id}] (共 ${targetConfig.models.length} 个模型) 到 cordis.patch.yml`);
   return true;
 }
 
 /**
- * 确保用户层 cordis.patch.yml 中包含基线静态模型 (无论是否有 Key 均执行，彻底解决 P0 覆盖问题)
+ * 确保用户层 cordis.patch.yml 中包含基线静态模型 (结构完整性判定 + 脏残留自愈)
  */
-function ensureBaselineProviderInPatch() {
+function ensureBaselineProviderInPatch(options = {}) {
   try {
+    const targetPatchFile = (options && options.patchFile) || CORDIS_PATCH_FILE;
     let originalContent = '';
-    if (fs.existsSync(CORDIS_PATCH_FILE)) {
-      originalContent = fs.readFileSync(CORDIS_PATCH_FILE, 'utf-8');
+    if (fs.existsSync(targetPatchFile)) {
+      originalContent = fs.readFileSync(targetPatchFile, 'utf-8');
     }
 
-    // 若已经包含 winetoken: 且有模型，跳过以免覆盖动态同步结果
-    if (originalContent && /(?:^|\n)[ \t]{4,8}winetoken:\s*$/.test(originalContent)) {
-      return true;
+    // 仅当结构完整、单一且无重复/游离注释/空骨架时跳过，避免覆盖动态同步后的在线模型清单
+    if (originalContent) {
+      const state = inspectPatchState(originalContent);
+      if (state.isCleanSingleWineToken) {
+        return true;
+      }
     }
 
     const baselineModels = getBaselineModels();
@@ -295,12 +321,91 @@ function ensureBaselineProviderInPatch() {
       baseURL: DEFAULT_BASE_URL,
       apiKeyEnv: 'WINETOKEN_API_KEY',
       models: baselineModels
-    });
+    }, { patchFile: targetPatchFile });
     return true;
   } catch (err) {
     console.warn('[WineToken Sync] 注入基线模型异常:', err.message);
     return false;
   }
+}
+
+/**
+ * 从 cordis.patch.yml 安全清除所有 WineToken 注入段与游离注释（幂等、无变更不备份不写盘）
+ */
+function cleanupCordisPatchFile(options = {}) {
+  const patchFile = (options && options.patchFile) || CORDIS_PATCH_FILE;
+  const dryRun = Boolean(options && options.dryRun);
+  const backup = !options || options.backup !== false;
+
+  if (!fs.existsSync(patchFile)) {
+    return {
+      exists: false,
+      changed: false,
+      status: 'already_clean',
+      dryRun,
+      patchFile,
+      backupFile: null,
+      stats: null
+    };
+  }
+
+  const originalContent = fs.readFileSync(patchFile, 'utf-8');
+  const cleanResult = cleanWineTokenFromPatchContent(originalContent);
+
+  if (!cleanResult.changed) {
+    return {
+      exists: true,
+      changed: false,
+      status: 'already_clean',
+      dryRun,
+      patchFile,
+      backupFile: null,
+      stats: cleanResult.stats,
+      content: cleanResult.content
+    };
+  }
+
+  if (dryRun) {
+    return {
+      exists: true,
+      changed: true,
+      status: 'cleaned',
+      dryRun: true,
+      patchFile,
+      backupFile: null,
+      stats: cleanResult.stats,
+      content: cleanResult.content
+    };
+  }
+
+  let createdBackup = null;
+  const backupFile = `${patchFile}.bak`;
+  if (backup && !fs.existsSync(backupFile)) {
+    try {
+      fs.accessSync(path.dirname(patchFile), fs.constants.W_OK);
+      fs.writeFileSync(backupFile, originalContent, 'utf-8');
+      createdBackup = backupFile;
+    } catch (bakErr) {
+      console.warn(`[WineToken Cleanup] 创建备份失败 (${backupFile}):`, bakErr.message);
+    }
+  }
+
+  writeFileAtomic(patchFile, cleanResult.content);
+  const s = cleanResult.stats;
+  console.log(
+    `[WineToken Cleanup] 已清理 ${patchFile} (managed=${s.managedBlocksRemoved}, comments=${s.commentsRemoved}, pluginEntries=${s.pluginEntriesRemoved}, providers=${s.providersRemoved}, emptyLlmEntries=${s.emptyLlmEntriesRemoved})`
+  );
+
+  return {
+    exists: true,
+    changed: true,
+    status: 'cleaned',
+    dryRun: false,
+    patchFile,
+    backupFile: createdBackup,
+    stats: cleanResult.stats,
+    content: cleanResult.content
+  };
 }
 
 /**
@@ -404,6 +509,7 @@ module.exports = {
   syncWithHarness,
   updateCordisPatch,
   ensureBaselineProviderInPatch,
+  cleanupCordisPatchFile,
   loadConfig,
   resolveSyncIntervalMinutes
 };

@@ -14,34 +14,166 @@
  * 8. 彻底去 Emoji，纯矢量极简工程风格
  */
 
-const React = require('react');
-const h = React.createElement;
+const outerRequire = typeof require === 'function' ? require : null;
 
-// 依赖按需解析兜底
-let CanvasNodeUtils = null;
-try { CanvasNodeUtils = require('./canvas-nodes.js'); } catch (_) {}
-let CanvasPricingUtils = null;
-try { CanvasPricingUtils = require('./canvas-pricing.js'); } catch (_) {}
-let CanvasPromptUtils = null;
-try { CanvasPromptUtils = require('./canvas-prompts.js'); } catch (_) {}
+function resolveRequireCandidates(options = {}) {
+  const hasCustomPrimary = Object.prototype.hasOwnProperty.call(options, 'primaryRequire');
+  const hasCustomWindow = Object.prototype.hasOwnProperty.call(options, 'windowObj');
+  const primary = hasCustomPrimary
+    ? options.primaryRequire
+    : (typeof require === 'function' ? require : null);
+  const win = hasCustomWindow
+    ? options.windowObj
+    : (typeof window !== 'undefined' ? window : null);
+  const extra = options.extraRequire;
+
+  const candidates = [];
+  if (typeof primary === 'function') {
+    candidates.push(primary);
+  }
+  if (typeof extra === 'function' && !candidates.includes(extra)) {
+    candidates.push(extra);
+  }
+  if (win && typeof win.require === 'function' && !candidates.includes(win.require)) {
+    candidates.push(win.require);
+  }
+  return candidates;
+}
+
+function resolveNodeRequire(options = {}) {
+  const candidates = resolveRequireCandidates(options);
+  return candidates[0] || null;
+}
+
+function loadSiblingModule(moduleId, options = {}) {
+  const candidates = resolveRequireCandidates(options);
+  if (candidates.length === 0) {
+    return { mod: null, error: null };
+  }
+  let lastError = null;
+  for (const reqFn of candidates) {
+    try {
+      const mod = reqFn(moduleId);
+      if (mod !== undefined && mod !== null) {
+        return { mod, error: null };
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  return { mod: null, error: lastError };
+}
+
+const reactLoadRes = loadSiblingModule('react');
+let React = reactLoadRes.mod || (typeof window !== 'undefined' && window ? window.React : null);
+let h = React && typeof React.createElement === 'function' ? React.createElement : null;
+
+// 依赖按需解析兜底（v2.5.18 第三部分：改为 let，hydrateSiblingModules 可刷新）
+const RF_SIBLING_ORDER = [
+  './canvas-nodes.js',
+  './canvas-pricing.js',
+  './canvas-prompts.js',
+  './canvas-video.js',
+  './canvas-export.js',
+  './vendor/xyflow.factory.cjs'
+];
+const RF_SIBLING_REGISTRY = (typeof window !== 'undefined' && window && window.__WINETOKEN_SIBLING_REGISTRY__)
+  ? window.__WINETOKEN_SIBLING_REGISTRY__
+  : {};
+let CanvasNodeUtils = loadSiblingModule('./canvas-nodes.js').mod || null;
+let CanvasPricingUtils = loadSiblingModule('./canvas-pricing.js').mod || null;
+let CanvasPromptUtils = loadSiblingModule('./canvas-prompts.js').mod || null;
 let CanvasVideoUtils = null;
 let canvasVideoLoadError = null;
-try {
-  CanvasVideoUtils = require('./canvas-video.js');
-} catch (err) {
-  canvasVideoLoadError = err;
+const videoLoadRes = loadSiblingModule('./canvas-video.js');
+CanvasVideoUtils = videoLoadRes.mod || null;
+if (videoLoadRes.error) {
+  canvasVideoLoadError = videoLoadRes.error;
   if (typeof console !== 'undefined' && typeof console.error === 'function') {
-    console.error('[WineToken CanvasReactFlow] 视频组件加载失败 (./canvas-video.js):', err);
+    console.error('[WineToken CanvasReactFlow] 视频组件加载失败 (./canvas-video.js):', videoLoadRes.error);
   }
 }
 const VIDEO_MODULE_LOAD_ERROR_MSG = '视频组件加载失败（canvas-video.js），插件安装不完整，请删除后重新安装插件';
-let CanvasExportUtils = null;
-try { CanvasExportUtils = require('./canvas-export.js'); } catch (_) {}
-let initXyFlowFactory = null;
-try { initXyFlowFactory = require('./vendor/xyflow.factory.cjs'); } catch (_) {}
+function formatVideoModuleLoadError(loadError) {
+  if (!loadError) return VIDEO_MODULE_LOAD_ERROR_MSG;
+  let rawReason = '';
+  if (typeof loadError === 'string') {
+    rawReason = loadError;
+  } else if (typeof loadError === 'object') {
+    if (typeof loadError.message === 'string' && loadError.message.trim()) {
+      rawReason = loadError.message;
+    } else if (typeof loadError.code === 'string' && loadError.code.trim()) {
+      rawReason = loadError.code;
+    } else {
+      try {
+        const str = String(loadError);
+        if (str && str !== '[object Object]') rawReason = str;
+      } catch (_) {}
+    }
+  } else {
+    try { rawReason = String(loadError); } catch (_) {}
+  }
+  const cleanReason = rawReason.replace(/[\r\n]+/g, ' ').trim();
+  // Error('') / Error('   ') 经 String() 兜底会得到 "Error" / "Error:" 前缀残壳，
+  // 并非真实原因；此时视为无原因，保持原文案（非空原因的输出保持不变）
+  if (!cleanReason || /^Error:?$/i.test(cleanReason)) return VIDEO_MODULE_LOAD_ERROR_MSG;
+  return `${VIDEO_MODULE_LOAD_ERROR_MSG}（原因：${cleanReason.slice(0, 120)}）`;
+}
+let CanvasExportUtils = loadSiblingModule('./canvas-export.js').mod || null;
+let initXyFlowFactory = loadSiblingModule('./vendor/xyflow.factory.cjs').mod || null;
+
+/**
+ * v2.5.18 第三部分（路线 D）：以注入的 require 重跑本模块 sibling 加载并刷新绑定。
+ * 同款三级防御链 + 局部注册表；主路径下若已加载则命中注册表成为 no-op（幂等）。
+ * client.js 在 factory 内加载 ./canvas-reactflow.js 成功后调用一次。
+ */
+function hydrateSiblingModules(factoryRequire) {
+  const chain = [];
+  if (typeof factoryRequire === 'function') chain.push(factoryRequire);
+  if (typeof outerRequire === 'function' && !chain.includes(outerRequire)) chain.push(outerRequire);
+  if (typeof window !== 'undefined' && window && typeof window.require === 'function' && !chain.includes(window.require)) {
+    chain.push(window.require);
+  }
+  if (chain.length === 0) return false;
+
+  function localLoad(id) {
+    if (RF_SIBLING_REGISTRY[id] != null) return RF_SIBLING_REGISTRY[id];
+    for (const reqFn of chain) {
+      try {
+        const mod = reqFn(id);
+        if (mod !== undefined && mod !== null) {
+          RF_SIBLING_REGISTRY[id] = mod;
+          return mod;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  const reactMod = localLoad('react');
+  if (reactMod) {
+    React = reactMod;
+    h = React && typeof React.createElement === 'function' ? React.createElement : null;
+  }
+  CanvasNodeUtils = localLoad('./canvas-nodes.js') || CanvasNodeUtils;
+  CanvasPricingUtils = localLoad('./canvas-pricing.js') || CanvasPricingUtils;
+  CanvasPromptUtils = localLoad('./canvas-prompts.js') || CanvasPromptUtils;
+  CanvasExportUtils = localLoad('./canvas-export.js') || CanvasExportUtils;
+  const xyflow = localLoad('./vendor/xyflow.factory.cjs');
+  if (xyflow) initXyFlowFactory = xyflow;
+
+  const vid = localLoad('./canvas-video.js');
+  if (vid) {
+    CanvasVideoUtils = vid;
+    canvasVideoLoadError = null;
+  } else {
+    canvasVideoLoadError = videoLoadRes.error || canvasVideoLoadError;
+  }
+  return Boolean(CanvasVideoUtils) && RF_SIBLING_ORDER.every((id) => RF_SIBLING_REGISTRY[id] != null);
+}
 
 // 全局节点操作调度 Context
-const NodeActionContext = React.createContext(null);
+const NodeActionContext = (React && typeof React.createContext === 'function') ? React.createContext(null) : null;
 
 const DEFAULT_VIDEO_MODELS_FALLBACK = [
   { id: 'MiniMax-H3', name: 'MiniMax H3', tag: '电影感' },
@@ -2467,11 +2599,12 @@ function createReactFlowWorkspace(deps = {}) {
         const curState = (node.data && node.data.videoState) || {};
         if (videoUtils && typeof videoUtils.isBusy === 'function' && videoUtils.isBusy(curState)) return;
         if (!videoUtils || typeof videoUtils.executeVideoNodeTask !== 'function') {
+          const videoLoadErr = deps.canvasVideoLoadError || canvasVideoLoadError;
           if (typeof console !== 'undefined' && typeof console.error === 'function') {
-            console.error('[WineToken Canvas] 视频组件不可用 (canvas-video.js):', canvasVideoLoadError || 'module missing or incomplete');
+            console.error('[WineToken Canvas] 视频组件不可用 (canvas-video.js):', videoLoadErr || 'module missing or incomplete');
           }
           updateNodeData(nodeId, {
-            videoState: { ...curState, status: 'failed', error: VIDEO_MODULE_LOAD_ERROR_MSG }
+            videoState: { ...curState, status: 'failed', error: formatVideoModuleLoadError(videoLoadErr) }
           });
           return;
         }
@@ -2943,6 +3076,11 @@ module.exports = {
   resolveVideoNodeOptions,
   TextNode,
   GroupNode,
-  NODE_TYPES_MAPPING
+  NODE_TYPES_MAPPING,
+  VIDEO_MODULE_LOAD_ERROR_MSG,
+  resolveNodeRequire,
+  loadSiblingModule,
+  formatVideoModuleLoadError,
+  hydrateSiblingModules
 };
 module.exports.default = createReactFlowWorkspace;

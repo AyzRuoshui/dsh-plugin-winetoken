@@ -32,75 +32,214 @@
     };
   }
 
+  const outerRequire = typeof require === 'function' ? require : null;
+
+  function resolveRequireCandidates(options = {}) {
+    const hasCustomPrimary = Object.prototype.hasOwnProperty.call(options, 'primaryRequire');
+    const hasCustomWindow = Object.prototype.hasOwnProperty.call(options, 'windowObj');
+    const primary = hasCustomPrimary
+      ? options.primaryRequire
+      : (typeof require === 'function' ? require : null);
+    const win = hasCustomWindow
+      ? options.windowObj
+      : (typeof window !== 'undefined' ? window : null);
+    const extra = options.extraRequire;
+
+    const candidates = [];
+    if (typeof primary === 'function') {
+      candidates.push(primary);
+    }
+    if (typeof extra === 'function' && !candidates.includes(extra)) {
+      candidates.push(extra);
+    }
+    if (win && typeof win.require === 'function' && !candidates.includes(win.require)) {
+      candidates.push(win.require);
+    }
+    return candidates;
+  }
+
+  function resolveNodeRequire(options = {}) {
+    const candidates = resolveRequireCandidates(options);
+    return candidates[0] || null;
+  }
+
+  function loadSiblingModule(moduleId, options = {}) {
+    const candidates = resolveRequireCandidates(options);
+    if (candidates.length === 0) {
+      return { mod: null, error: null };
+    }
+    let lastError = null;
+    for (const reqFn of candidates) {
+      try {
+        const mod = reqFn(moduleId);
+        if (mod !== undefined && mod !== null) {
+          return { mod, error: null };
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    return { mod: null, error: lastError };
+  }
+
   // 引入并挂载独立持久化存储驱动、WAL任务队列、几何计算与命令模式历史栈
   // 对标 infinite-canvas: 多工程注册表 / 小地图几何 / 统一节点视图 / 工程导入导出 / 本地资产库
+  // v2.5.18 第三部分：模块级预注册表 + factory 注入 require 兜底加载（路线 D）
+  const WT_SIBLING_ORDER = [
+    './canvas-math.js',
+    './canvas-history.js',
+    './canvas-minimap.js',
+    './canvas-nodes.js',
+    './canvas-export.js',
+    './canvas-prompts.js',
+    './canvas-pricing.js',
+    './canvas-video.js',
+    './canvas-storage.js',
+    './canvas-job-queue.js',
+    './canvas-assets.js',
+    './canvas-project-store.js'
+  ];
+  const WT_SIBLING_REGISTRY = {
+    './canvas-storage.js': null,
+    './canvas-job-queue.js': null,
+    './canvas-math.js': null,
+    './canvas-history.js': null,
+    './canvas-project-store.js': null,
+    './canvas-minimap.js': null,
+    './canvas-nodes.js': null,
+    './canvas-export.js': null,
+    './canvas-assets.js': null,
+    './canvas-video.js': null,
+    './canvas-prompts.js': null,
+    './canvas-pricing.js': null
+  };
+  let WT_SIBLING_ERRORS = new Map();
+  let capturedFactoryRequire = null;
+
+  // 供 canvas-reactflow.js 的 hydrateSiblingModules 跨模块共享同一份注册表
+  if (typeof window !== 'undefined' && window) {
+    window.__WINETOKEN_SIBLING_REGISTRY__ = WT_SIBLING_REGISTRY;
+  }
+
+  // 绑定改为可再赋值，factory 内注入 require 后可刷新（仍在模块级，闭包按引用读取）
+  let storageMod = null;
   let CanvasProjectStorageClass = null;
+  let queueMod = null;
   let CanvasJobQueueSingleton = null;
   let CanvasMathUtils = null;
+  let histMod = null;
   let CanvasHistoryManagerClass = null;
+  let projectStoreMod = null;
   let CanvasProjectStoreClass = null;
   let CanvasMiniMapUtils = null;
   let CanvasNodeUtils = null;
   let CanvasExportUtils = null;
+  let assetsMod = null;
   let CanvasAssetsClass = null;
+  let AssetLibraryStoreClass = null;
+  let videoLoadRes = { mod: null, error: null };
   let CanvasVideoUtils = null;
   let canvasVideoLoadError = null;
   let CanvasPromptUtils = null;
-  try {
-    const storageMod = require('./canvas-storage.js');
-    CanvasProjectStorageClass = storageMod.CanvasProjectStorage;
-  } catch (_) {}
-  try {
-    const queueMod = require('./canvas-job-queue.js');
-    CanvasJobQueueSingleton = queueMod.canvasJobQueue;
-  } catch (_) {}
-  try {
-    CanvasMathUtils = require('./canvas-math.js');
-  } catch (_) {}
-  try {
-    const histMod = require('./canvas-history.js');
-    CanvasHistoryManagerClass = histMod.CanvasHistoryManager;
-  } catch (_) {}
-  try {
-    CanvasProjectStoreClass = require('./canvas-project-store.js').CanvasProjectStore;
-  } catch (_) {}
-  try {
-    CanvasMiniMapUtils = require('./canvas-minimap.js');
-  } catch (_) {}
-  try {
-    CanvasNodeUtils = require('./canvas-nodes.js');
-  } catch (_) {}
-  try {
-    CanvasExportUtils = require('./canvas-export.js');
-  } catch (_) {}
-  try {
-    CanvasAssetsClass = require('./canvas-assets.js').CanvasAssets;
-  } catch (_) {}
-  try {
-    CanvasVideoUtils = require('./canvas-video.js');
-  } catch (err) {
-    canvasVideoLoadError = err;
-    if (typeof console !== 'undefined' && typeof console.error === 'function') {
-      console.error('[WineToken Client] 视频组件加载失败 (./canvas-video.js):', err);
-    }
-  }
-  try {
-    CanvasPromptUtils = require('./canvas-prompts.js');
-  } catch (_) {}
   let CanvasPricingUtils = null;
-  let AssetLibraryStoreClass = null;
-  try {
-    CanvasPricingUtils = require('./canvas-pricing.js');
-  } catch (_) {}
-  try {
-    AssetLibraryStoreClass = require('./canvas-assets.js').AssetLibraryStore;
-  } catch (_) {}
 
-  const canvasStorageDriver = CanvasProjectStorageClass ? new CanvasProjectStorageClass() : null;
-  const canvasHistoryManager = CanvasHistoryManagerClass ? new CanvasHistoryManagerClass(30) : null;
-  const canvasProjectStore = CanvasProjectStoreClass ? new CanvasProjectStoreClass() : null;
-  const canvasAssetsDriver = CanvasAssetsClass ? new CanvasAssetsClass() : null;
-  const assetLibraryStore = AssetLibraryStoreClass ? new AssetLibraryStoreClass() : null;
+  let canvasStorageDriver = null;
+  let canvasHistoryManager = null;
+  let canvasProjectStore = null;
+  let canvasAssetsDriver = null;
+  let assetLibraryStore = null;
+
+  // 兜底 require：注册表命中优先；未命中则按 全局 require → window.require → factory require 委托
+  function shimRequire(id) {
+    if (Object.prototype.hasOwnProperty.call(WT_SIBLING_REGISTRY, id) && WT_SIBLING_REGISTRY[id]) {
+      return WT_SIBLING_REGISTRY[id];
+    }
+    const chain = [outerRequire];
+    if (typeof window !== 'undefined' && window && typeof window.require === 'function') {
+      chain.push(window.require);
+    }
+    if (typeof capturedFactoryRequire === 'function') chain.push(capturedFactoryRequire);
+    for (const reqFn of chain) {
+      if (typeof reqFn !== 'function') continue;
+      try {
+        const mod = reqFn(id);
+        if (mod !== undefined && mod !== null) return mod;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  function siblingsReady() {
+    return WT_SIBLING_ORDER.every((id) => WT_SIBLING_REGISTRY[id] != null);
+  }
+
+  // 按依赖顺序（leaves 先行）加载 sibling；注册表命中即跳过，保证有状态模块只初始化一次
+  function loadSiblingModules(requireFn, { force = false } = {}) {
+    if (typeof requireFn === 'function') capturedFactoryRequire = requireFn;
+    if (!force && siblingsReady()) {
+      return { ready: true, errors: WT_SIBLING_ERRORS, registry: WT_SIBLING_REGISTRY };
+    }
+    if (force) WT_SIBLING_ERRORS = new Map();
+
+    for (const id of WT_SIBLING_ORDER) {
+      if (!force && WT_SIBLING_REGISTRY[id] != null) continue;
+      const res = loadSiblingModule(id, {
+        primaryRequire: requireFn || null,
+        extraRequire: shimRequire
+      });
+      WT_SIBLING_REGISTRY[id] = res.mod;
+      if (res.error) {
+        WT_SIBLING_ERRORS.set(id, res.error);
+      } else {
+        WT_SIBLING_ERRORS.delete(id);
+      }
+    }
+
+    storageMod = WT_SIBLING_REGISTRY['./canvas-storage.js'];
+    CanvasProjectStorageClass = (storageMod && storageMod.CanvasProjectStorage) || null;
+    queueMod = WT_SIBLING_REGISTRY['./canvas-job-queue.js'];
+    CanvasJobQueueSingleton = (queueMod && queueMod.canvasJobQueue) || null;
+    CanvasMathUtils = WT_SIBLING_REGISTRY['./canvas-math.js'] || null;
+    histMod = WT_SIBLING_REGISTRY['./canvas-history.js'];
+    CanvasHistoryManagerClass = (histMod && histMod.CanvasHistoryManager) || null;
+    projectStoreMod = WT_SIBLING_REGISTRY['./canvas-project-store.js'];
+    CanvasProjectStoreClass = (projectStoreMod && projectStoreMod.CanvasProjectStore) || null;
+    CanvasMiniMapUtils = WT_SIBLING_REGISTRY['./canvas-minimap.js'] || null;
+    CanvasNodeUtils = WT_SIBLING_REGISTRY['./canvas-nodes.js'] || null;
+    CanvasExportUtils = WT_SIBLING_REGISTRY['./canvas-export.js'] || null;
+    assetsMod = WT_SIBLING_REGISTRY['./canvas-assets.js'];
+    CanvasAssetsClass = (assetsMod && assetsMod.CanvasAssets) || null;
+    AssetLibraryStoreClass = (assetsMod && assetsMod.AssetLibraryStore) || null;
+    videoLoadRes = {
+      mod: WT_SIBLING_REGISTRY['./canvas-video.js'],
+      error: WT_SIBLING_ERRORS.get('./canvas-video.js') || null
+    };
+    CanvasVideoUtils = videoLoadRes.mod || null;
+    canvasVideoLoadError = videoLoadRes.error || null;
+    CanvasPromptUtils = WT_SIBLING_REGISTRY['./canvas-prompts.js'] || null;
+    CanvasPricingUtils = WT_SIBLING_REGISTRY['./canvas-pricing.js'] || null;
+
+    if (canvasVideoLoadError && typeof console !== 'undefined' && typeof console.error === 'function') {
+      console.error('[WineToken Client] 视频组件加载失败 (./canvas-video.js):', canvasVideoLoadError);
+    }
+
+    // driver 只在对应 Class 首次可用时实例化一次
+    if (!canvasStorageDriver && CanvasProjectStorageClass) canvasStorageDriver = new CanvasProjectStorageClass();
+    if (!canvasHistoryManager && CanvasHistoryManagerClass) canvasHistoryManager = new CanvasHistoryManagerClass(30);
+    if (!canvasProjectStore && CanvasProjectStoreClass) canvasProjectStore = new CanvasProjectStoreClass();
+    if (!canvasAssetsDriver && CanvasAssetsClass) canvasAssetsDriver = new CanvasAssetsClass();
+    if (!assetLibraryStore && AssetLibraryStoreClass) assetLibraryStore = new AssetLibraryStoreClass();
+
+    return { ready: siblingsReady(), errors: WT_SIBLING_ERRORS, registry: WT_SIBLING_REGISTRY };
+  }
+
+  // 关键注入点：factory 内以宿主 require 为主 require 触发 sibling 加载（幂等）
+  function ensureSiblingModules(factoryRequire) {
+    return loadSiblingModules(factoryRequire, { force: false }).ready;
+  }
+
+  // 顶层先按传统 require 链尝试一次；无模块加载器环境下全部落空，由 factory 内 ensureSiblingModules 兜底
+  loadSiblingModules(outerRequire);
 
   /**
    * WineToken 跨进程凭据同步中枢 (WineTokenCredentialBridge)
@@ -110,8 +249,7 @@
   const WineTokenCredentialBridge = {
     getCredentialsPath() {
       try {
-        const nodeRequire = typeof require === 'function' ? require
-          : (typeof window !== 'undefined' && window && typeof window.require === 'function' ? window.require : null);
+        const nodeRequire = resolveNodeRequire();
         if (!nodeRequire) return '';
         const path = nodeRequire('path');
         const os = nodeRequire('os');
@@ -135,9 +273,10 @@
       // 2. 若 localStorage 为空，回退读取宿主 ~/.dsh/.credentials.yaml (按优先级探测别名)
       if (!key) {
         try {
-          const fs = require('fs');
+          const nodeRequire = resolveNodeRequire();
+          const fs = nodeRequire ? nodeRequire('fs') : null;
           const credPath = this.getCredentialsPath();
-          if (credPath && fs.existsSync(credPath)) {
+          if (fs && credPath && fs.existsSync(credPath)) {
             const content = fs.readFileSync(credPath, 'utf8');
             const m = content.match(/(?:^|\n)\s*(WINETOKEN_API_KEY|ZHAIZHU_API_KEY):\s*([^\r\n#]+)/);
             if (m && m[2]) {
@@ -1369,7 +1508,7 @@ $owner.Dispose()
   }
 
   // 窗口聚焦时按需刷新
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener('focus', () => {
       updateBilling();
     });
@@ -1488,6 +1627,32 @@ $owner.Dispose()
 
   const VIDEO_MODULE_LOAD_ERROR_MSG = '视频组件加载失败（canvas-video.js），插件安装不完整，请删除后重新安装插件';
 
+  function formatVideoModuleLoadError(loadError) {
+    if (!loadError) return VIDEO_MODULE_LOAD_ERROR_MSG;
+    let rawReason = '';
+    if (typeof loadError === 'string') {
+      rawReason = loadError;
+    } else if (typeof loadError === 'object') {
+      if (typeof loadError.message === 'string' && loadError.message.trim()) {
+        rawReason = loadError.message;
+      } else if (typeof loadError.code === 'string' && loadError.code.trim()) {
+        rawReason = loadError.code;
+      } else {
+        try {
+          const str = String(loadError);
+          if (str && str !== '[object Object]') rawReason = str;
+        } catch (_) {}
+      }
+    } else {
+      try { rawReason = String(loadError); } catch (_) {}
+    }
+    const cleanReason = rawReason.replace(/[\r\n]+/g, ' ').trim();
+    // Error('') / Error('   ') 经 String() 兜底会得到 "Error" / "Error:" 前缀残壳，
+    // 并非真实原因；此时视为无原因，保持原文案（非空原因的输出保持不变）
+    if (!cleanReason || /^Error:?$/i.test(cleanReason)) return VIDEO_MODULE_LOAD_ERROR_MSG;
+    return `${VIDEO_MODULE_LOAD_ERROR_MSG}（原因：${cleanReason.slice(0, 120)}）`;
+  }
+
   function resolveFallbackVideoResolution(model) {
     const m = String(model || '').trim().toLowerCase();
     if (/minimax-h3-2k/.test(m)) return '2K';
@@ -1496,7 +1661,33 @@ $owner.Dispose()
     return '720P';
   }
 
+  function formatSiblingLoadError(moduleId, loadError) {
+    const SIBLING_LOAD_ERROR_MSG = `画布组件加载失败（${moduleId}），插件安装不完整，请删除后重新安装插件`;
+    if (!loadError) return SIBLING_LOAD_ERROR_MSG;
+    let rawReason = '';
+    if (typeof loadError === 'string') {
+      rawReason = loadError;
+    } else if (typeof loadError === 'object') {
+      if (typeof loadError.message === 'string' && loadError.message.trim()) {
+        rawReason = loadError.message;
+      } else if (typeof loadError.code === 'string' && loadError.code.trim()) {
+        rawReason = loadError.code;
+      } else {
+        try {
+          const str = String(loadError);
+          if (str && str !== '[object Object]') rawReason = str;
+        } catch (_) {}
+      }
+    } else {
+      try { rawReason = String(loadError); } catch (_) {}
+    }
+    const cleanReason = rawReason.replace(/[\r\n]+/g, ' ').trim();
+    if (!cleanReason) return SIBLING_LOAD_ERROR_MSG;
+    return `${SIBLING_LOAD_ERROR_MSG}（原因：${cleanReason.slice(0, 120)}）`;
+  }
+
   function getCanvasVideoUnavailableError(utils = CanvasVideoUtils, loadError = canvasVideoLoadError) {
+    // 默认值在每次调用时动态读取模块级 let 绑定，factory 完成加载后即可判定为可用
     const isAvailable = Boolean(
       utils &&
       typeof utils.buildVideoPayload === 'function' &&
@@ -1507,7 +1698,7 @@ $owner.Dispose()
     if (typeof console !== 'undefined' && typeof console.error === 'function') {
       console.error('[WineToken Client] 视频组件不可用 (canvas-video.js):', loadError || 'module missing or incomplete');
     }
-    return VIDEO_MODULE_LOAD_ERROR_MSG;
+    return formatVideoModuleLoadError(loadError);
   }
 
   // 构建生图 / 垫图改图标准请求 (严格按协议路由，杜绝往 generations 塞图)
@@ -1745,6 +1936,9 @@ $owner.Dispose()
       factory(require) {
         const React = require('react');
         const h = React.createElement;
+
+        // v2.5.18 第三部分（路线 D）：把工作 require 注入 sibling 加载，必须在任何组件定义消费绑定之前
+        ensureSiblingModules(require);
 
         // 全局主题设计 Tokens (方案 C：全链路黑白双模式自适应)
         const THEME_DARK = {
@@ -8409,15 +8603,24 @@ $owner.Dispose()
         // ==========================================
         let createReactFlowWorkspace = null;
         let initXyFlow = null;
-        try {
-          const rfMod = require('./canvas-reactflow.js');
-          if (rfMod && typeof rfMod.createReactFlowWorkspace === 'function') {
-            createReactFlowWorkspace = rfMod.createReactFlowWorkspace;
+        const rfLoadRes = loadSiblingModule('./canvas-reactflow.js', {
+          primaryRequire: typeof require === 'function' ? require : null,
+          extraRequire: outerRequire
+        });
+        if (rfLoadRes.mod && typeof rfLoadRes.mod.createReactFlowWorkspace === 'function') {
+          createReactFlowWorkspace = rfLoadRes.mod.createReactFlowWorkspace;
+          // C5 防御：canvas-reactflow.js 若经非 CJS 路径加载，其模块内 require 可能缺失，注入 factory require 补齐
+          if (typeof rfLoadRes.mod.hydrateSiblingModules === 'function') {
+            try { rfLoadRes.mod.hydrateSiblingModules(require); } catch (_) {}
           }
-        } catch (_) {}
-        try {
-          initXyFlow = require('./vendor/xyflow.factory.cjs');
-        } catch (_) {}
+        }
+        const xyFlowLoadRes = loadSiblingModule('./vendor/xyflow.factory.cjs', {
+          primaryRequire: typeof require === 'function' ? require : null,
+          extraRequire: outerRequire
+        });
+        if (xyFlowLoadRes.mod) {
+          initXyFlow = xyFlowLoadRes.mod;
+        }
 
         let ReactFlowWorkspace = null;
         if (typeof createReactFlowWorkspace === 'function' && typeof initXyFlow === 'function') {
@@ -8435,6 +8638,7 @@ $owner.Dispose()
               CanvasNodeUtils,
               CanvasPromptUtils,
               CanvasVideoUtils,
+              canvasVideoLoadError,
               CanvasExportUtils,
               CanvasJobQueueSingleton,
               BASE_URL,
@@ -11250,7 +11454,14 @@ $owner.Dispose()
       validateStudioVideoPrompt,
       VIDEO_MODULE_LOAD_ERROR_MSG,
       resolveFallbackVideoResolution,
-      getCanvasVideoUnavailableError
+      getCanvasVideoUnavailableError,
+      resolveNodeRequire,
+      loadSiblingModule,
+      formatVideoModuleLoadError,
+      ensureSiblingModules,
+      loadSiblingModules,
+      WT_SIBLING_REGISTRY,
+      formatSiblingLoadError
     };
   }
 })();
